@@ -1,0 +1,45 @@
+{
+  "name": "aero-backend",
+  "version": "1.0.0",
+  "description": "Aero - Production-Grade Game Server Management System Backend",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.4.2",
+    "@fastify/jwt": "^7.2.4",
+    "@fastify/websocket": "^8.3.1",
+    "@prisma/client": "^5.8.0",
+    "bcryptjs": "^2.4.3",
+    "fastify": "^4.25.2",
+    "jsonwebtoken": "^9.0.3",
+    "nanoid": "^4.0.2",
+    "pino": "^8.17.2",
+    "pino-pretty": "^10.3.1",
+    "uuid": "^9.0.1",
+    "ws": "^8.15.1",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.10.6",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "eslint": "^8.56.0",
+    "prisma": "^5.8.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

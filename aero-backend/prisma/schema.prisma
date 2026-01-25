@@ -1,0 +1,206 @@
+// Aero Backend - Prisma Schema
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// USERS & AUTHENTICATION
+// ============================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  password  String   // bcrypt hash
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles     Role[]
+  servers   ServerAccess[]
+  auditLog  AuditLog[]
+}
+
+// ============================================================================
+// ROLES & PERMISSIONS
+// ============================================================================
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions String[] // Permission enum values
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  serverRoles ServerRole[]
+}
+
+model ServerRole {
+  id        String   @id @default(cuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([serverId, roleId])
+}
+
+model ServerAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  permissions String[] // Permission enum values
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, serverId])
+}
+
+// ============================================================================
+// INFRASTRUCTURE
+// ============================================================================
+
+model Location {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  nodes   Node[]
+  servers Server[]
+}
+
+model Node {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  description    String?
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  hostname       String
+  publicAddress  String
+  secret         String   @unique
+  maxMemoryMb    Int
+  maxCpuCores    Int
+  isOnline       Boolean  @default(false)
+  lastSeenAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  servers    Server[]
+  deploymentTokens DeploymentToken[]
+}
+
+model DeploymentToken {
+  id        String   @id @default(cuid())
+  nodeId    String
+  node      Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  secret    String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+// ============================================================================
+// TEMPLATES
+// ============================================================================
+
+model ServerTemplate {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  description        String?
+  author             String
+  version            String
+  image              String
+  startup            String
+  stopCommand        String
+  sendSignalTo       String   @default("SIGTERM")
+  variables          Json     // Array of EnvironmentVariable
+  installScript      String?
+  supportedPorts     Int[]
+  allocatedMemoryMb  Int
+  allocatedCpuCores Int
+  features           Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  servers Server[]
+}
+
+// ============================================================================
+// SERVERS
+// ============================================================================
+
+model Server {
+  id             String   @id @default(cuid())
+  uuid           String   @unique
+  name           String
+  description    String?
+  templateId     String
+  template       ServerTemplate @relation(fields: [templateId], references: [id])
+  nodeId         String
+  node           Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id])
+  ownerId        String
+  status         String   @default("stopped")
+  allocatedMemoryMb Int
+  allocatedCpuCores Int
+  
+  // Container info
+  containerId    String?
+  containerName  String?
+  
+  // Networking
+  networkMode    String   @default("bridge")
+  primaryPort    Int
+  primaryIp      String?
+  portBindings   Json     @default("{}") // Record<number, number>
+  
+  // Configuration
+  environment    Json     @default("{}")
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  access         ServerAccess[]
+  roles          ServerRole[]
+  logs           ServerLog[]
+}
+
+model ServerLog {
+  id        String   @id @default(cuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  stream    String   @default("stdout") // stdout, stderr, system
+  data      String   @db.Text
+  timestamp DateTime @default(now())
+
+  @@index([serverId, timestamp])
+}
+
+// ============================================================================
+// AUDIT LOG
+// ============================================================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  resource  String
+  resourceId String?
+  details   Json?
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+}

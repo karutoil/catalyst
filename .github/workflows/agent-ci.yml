@@ -1,0 +1,61 @@
+name: CI/CD - Aero Agent
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Run cargo check
+        run: cargo check --manifest-path aero-agent/Cargo.toml
+
+      - name: Run cargo fmt check
+        run: cargo fmt --manifest-path aero-agent/Cargo.toml -- --check
+
+      - name: Run cargo clippy
+        run: cargo clippy --manifest-path aero-agent/Cargo.toml -- -D warnings
+
+      - name: Run tests
+        run: cargo test --manifest-path aero-agent/Cargo.toml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Build release
+        run: |
+          cd aero-agent
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: aero-agent-${{ matrix.target }}
+          path: aero-agent/target/${{ matrix.target }}/release/aero-agent

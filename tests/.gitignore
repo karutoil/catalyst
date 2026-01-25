@@ -1,0 +1,7 @@
+# Test logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*~
