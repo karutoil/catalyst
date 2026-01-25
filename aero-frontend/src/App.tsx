@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import { ToastProvider } from './components/providers/ToastProvider';
 import { useAuthInit } from './hooks/useAuthInit';
 import ErrorBoundary from './components/shared/ErrorBoundary';
 import LoginPage from './pages/auth/LoginPage';
@@ -23,6 +24,7 @@ function App() {
   useAuthInit();
   return (
     <ErrorBoundary>
+      <ToastProvider />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

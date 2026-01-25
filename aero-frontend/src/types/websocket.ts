@@ -5,7 +5,7 @@ export interface ConsoleLogMessage {
 }
 
 export interface ServerStateMessage {
-  type: 'server_state';
+  type: 'server_state' | 'server_state_update';
   serverId: string;
   state: string;
 }

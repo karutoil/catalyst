@@ -11,6 +11,7 @@ interface AuthState {
   isLoading: boolean;
   isReady: boolean;
   isRefreshing: boolean;
+  error: string | null;
   login: (values: LoginSchema) => Promise<void>;
   register: (values: RegisterSchema) => Promise<void>;
   refresh: () => Promise<void>;
@@ -28,28 +29,50 @@ export const useAuthStore = create<AuthState>()(
       isReady: false,
       isLoading: false,
       isRefreshing: false,
+      error: null,
       login: async (values) => {
-        set({ isLoading: true });
-        const { token, user } = await authApi.login(values);
-        set({ user, token, isAuthenticated: true, isLoading: false, isReady: true });
+        set({ isLoading: true, error: null });
+        try {
+          const { token, user } = await authApi.login(values);
+          set({ user, token, isAuthenticated: true, isLoading: false, isReady: true, error: null });
+        } catch (err: any) {
+          const message = err.response?.data?.error || err.message || 'Login failed';
+          set({ isLoading: false, error: message });
+          throw err;
+        }
       },
       register: async (values) => {
-        set({ isLoading: true });
-        const { token, user } = await authApi.register(values);
-        set({ user, token, isAuthenticated: true, isLoading: false, isReady: true });
+        set({ isLoading: true, error: null });
+        try {
+          const { token, user } = await authApi.register(values);
+          set({ user, token, isAuthenticated: true, isLoading: false, isReady: true, error: null });
+        } catch (err: any) {
+          const message = err.response?.data?.error || err.message || 'Registration failed';
+          set({ isLoading: false, error: message });
+          throw err;
+        }
       },
       refresh: async () => {
         const currentToken = get().token;
         if (!currentToken) {
-          set({ isRefreshing: false, isReady: true, isAuthenticated: false, user: null });
+          set({ isRefreshing: false, isReady: true, isAuthenticated: false, user: null, error: null });
           return;
         }
-        set({ isRefreshing: true });
+        set({ isRefreshing: true, error: null });
         try {
-          const { token, user } = await authApi.refresh();
-          set({ token, user, isAuthenticated: true, isRefreshing: false, isReady: true });
-        } catch (error) {
-          set({ token: null, user: null, isAuthenticated: false, isRefreshing: false, isReady: true });
+          const { token: newToken, user } = await authApi.refresh();
+          // Keep using the current token unless the backend explicitly returns a new one
+          set({
+            token: newToken ?? currentToken,
+            user,
+            isAuthenticated: true,
+            isRefreshing: false,
+            isReady: true,
+            error: null,
+          });
+        } catch (error: any) {
+          const message = error.response?.data?.error || error.message || 'Session expired';
+          set({ token: null, user: null, isAuthenticated: false, isRefreshing: false, isReady: true, error: message });
           throw error;
         }
       },

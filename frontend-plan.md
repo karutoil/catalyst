@@ -390,40 +390,44 @@ aero-frontend/
 - [x] Add auth interceptors to Axios
 
 ### Phase 3: Dashboard & Navigation (Week 1-2)
-- [ ] Create app layout with sidebar
-- [ ] Build navigation sidebar
-- [ ] Implement breadcrumbs
-- [ ] Create dashboard page
-- [ ] Add system statistics cards
-- [ ] Create resource usage charts
-- [ ] Add recent activity feed
-- [ ] Implement quick actions
+- [x] Create app layout with sidebar
+- [x] Build navigation sidebar
+- [x] Implement breadcrumbs
+- [x] Create dashboard page
+- [x] Add system statistics cards
+- [x] Create resource usage charts
+- [x] Add recent activity feed
+- [x] Implement quick actions
 
 ### Phase 4: Server Management (Week 2-3)
-- [ ] Create server API service
-- [ ] Build server list page with filters
-- [ ] Create server card component
-- [ ] Build create server modal
-- [ ] Implement server details page
-- [ ] Add server control buttons (start/stop/restart/kill)
-- [ ] Create server metrics display
-- [ ] Build update server modal
-- [ ] Add delete server confirmation
-- [ ] Implement server transfer modal
-- [ ] Add server status badges
-- [ ] Create TanStack Query hooks for servers
+- [x] Create server API service
+- [x] Build server list page with filters
+- [x] Create server card component
+- [x] Build create server modal
+- [x] Implement server details page
+- [x] Add server control buttons (start/stop/restart/kill)
+- [x] Create server metrics display
+- [x] Build update server modal
+- [x] Add delete server confirmation
+- [x] Implement server transfer modal
+- [x] Add server status badges
+- [x] Create TanStack Query hooks for servers
+- [x] Wire transfer modal to real nodes data
+- [x] Add success/error notifications to mutations
 
 ### Phase 5: WebSocket Integration (Week 3)
-- [ ] Create WebSocket manager class
-- [ ] Implement auto-reconnect logic
-- [ ] Add event subscription system
-- [ ] Create WebSocket store
-- [ ] Implement message handlers
+- [x] Create WebSocket manager class
+- [x] Implement auto-reconnect logic
+- [x] Add event subscription system
+- [x] Create WebSocket store
+- [x] Implement message handlers
 - [ ] Add server state update handling
 - [ ] Create console output handling
-- [ ] Add resource stats handling
-- [ ] Implement useWebSocket hook
-- [ ] Add connection status indicator
+- [x] Add resource stats handling
+- [x] Implement useWebSocket hook
+- [x] Add connection status indicator
+- [x] Create useServerMetrics hook for live metrics
+- [x] Integrate live metrics into server details
 
 ### Phase 6: Real-time Console (Week 3-4)
 - [ ] Install xterm.js and addons

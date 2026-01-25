@@ -34,9 +34,10 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.2",
     "react-router-dom": "^6.26.0",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.5",
-    "zustand": "^5.0.2",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",

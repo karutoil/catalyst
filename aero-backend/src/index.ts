@@ -102,7 +102,25 @@ async function bootstrap() {
 
     // Register plugins
     await app.register(fastifyCors, {
-      origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+      origin: function(origin, callback) {
+        // Allow requests from localhost in development, all origins in production with specific list
+        const allowedOrigins = [
+          'http://localhost:3000',
+          'http://localhost:5173', // Vite dev server
+          'http://127.0.0.1:3000',
+          'http://127.0.0.1:5173',
+          process.env.CORS_ORIGIN,
+        ].filter(Boolean);
+
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else if (process.env.NODE_ENV === 'development') {
+          // Allow all in development
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       credentials: true,
     });
 

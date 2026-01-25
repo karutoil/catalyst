@@ -460,6 +460,19 @@ impl WebSocketHandler {
 
         info!("Final startup command: {}", final_startup_command);
 
+        // Check if container already exists (from installation or previous run)
+        let container_exists = self.runtime.container_exists(server_uuid).await;
+        
+        if container_exists {
+            info!("Existing container found, removing it before creating new one...");
+            // Remove the old container (could be from install or previous start)
+            if let Err(e) = self.runtime.remove_container(server_uuid).await {
+                warn!("Failed to remove existing container: {}", e);
+                // Continue anyway - maybe it's already gone
+            }
+        }
+        
+        info!("Creating new container...");
         // Create and start container
         self.runtime.create_container(
             server_uuid,

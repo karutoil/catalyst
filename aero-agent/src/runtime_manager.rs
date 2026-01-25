@@ -417,6 +417,22 @@ impl ContainerdRuntime {
         Ok(ip)
     }
 
+    /// Check if a container exists
+    pub async fn container_exists(&self, container_id: &str) -> bool {
+        let output = Command::new("nerdctl")
+            .arg("--namespace")
+            .arg(&self.namespace)
+            .arg("inspect")
+            .arg(container_id)
+            .output()
+            .await;
+
+        match output {
+            Ok(out) => out.status.success(),
+            Err(_) => false,
+        }
+    }
+
     /// Spawn a process to stream container logs (stdout/stderr)
     /// Returns a handle to the log streaming process
     pub async fn spawn_log_stream(

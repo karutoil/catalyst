@@ -1,3 +1,4 @@
+@import 'sonner/dist/styles.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -23,8 +24,19 @@
   --destructive-foreground: 0 0% 100%;
   --ring: 199 89% 63%;
   --radius: 0.5rem;
+
+  /* Sonner toast colors */
+  --sonner-background: hsl(223 40% 9%);
+  --sonner-border: hsl(216 20% 20%);
+  --sonner-text: hsl(220 13% 91%);
+  --sonner-success: hsl(142 70% 55%);
+  --sonner-error: hsl(0 84% 60%);
+  --sonner-info: hsl(199 89% 63%);
+  --sonner-warning: hsl(38 92% 50%);
+
   color-scheme: dark;
 }
+
 
 * {
   border-color: hsl(var(--border));

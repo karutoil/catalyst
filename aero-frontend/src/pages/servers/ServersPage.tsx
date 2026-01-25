@@ -1,6 +1,27 @@
-import EmptyState from '../../components/shared/EmptyState';
+import { useMemo, useState } from 'react';
+import ServerFilters from '../../components/servers/ServerFilters';
+import ServerList from '../../components/servers/ServerList';
+import CreateServerModal from '../../components/servers/CreateServerModal';
+import { useServers } from '../../hooks/useServers';
+import type { Server } from '../../types/server';
 
 function ServersPage() {
+  const [filters, setFilters] = useState({});
+  const { data, isLoading } = useServers(filters);
+
+  const filtered = useMemo(() => {
+    if (!data) return [] as Server[];
+    const { search, status } = filters as { search?: string; status?: string };
+    return data.filter((server) => {
+      const matchesStatus = status ? server.status === status : true;
+      const matchesSearch = search
+        ? server.name.toLowerCase().includes(search.toLowerCase()) ||
+          server.nodeName?.toLowerCase().includes(search.toLowerCase())
+        : true;
+      return matchesStatus && matchesSearch;
+    });
+  }, [data, filters]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -8,14 +29,16 @@ function ServersPage() {
           <h1 className="text-2xl font-semibold text-slate-50">Servers</h1>
           <p className="text-sm text-slate-400">Create, start, and observe your game servers.</p>
         </div>
-        <button className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500">
-          New Server
-        </button>
+        <CreateServerModal />
       </div>
-      <EmptyState
-        title="No servers yet"
-        description="Connect your first node or create a server from a template."
-      />
+      <ServerFilters onChange={setFilters} />
+      {isLoading ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-200">
+          Loading servers...
+        </div>
+      ) : (
+        <ServerList servers={filtered} />
+      )}
     </div>
   );
 }

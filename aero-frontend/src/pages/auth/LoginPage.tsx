@@ -1,15 +1,29 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { loginSchema, LoginSchema } from '../../validators/auth';
 
 function LoginPage() {
-  const { login, isLoading } = useAuthStore();
+  const navigate = useNavigate();
+  const { login, isLoading, error, isAuthenticated } = useAuthStore();
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<LoginSchema>({ resolver: zodResolver(loginSchema) });
+
+  const onSubmit = async (values: LoginSchema) => {
+    try {
+      await login(values);
+      // Redirect on successful login
+      setTimeout(() => {
+        navigate('/servers');
+      }, 100);
+    } catch (err) {
+      // Error is already in the store
+    }
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
@@ -17,7 +31,13 @@ function LoginPage() {
         <h1 className="text-2xl font-semibold text-slate-50">Welcome back</h1>
         <p className="mt-2 text-sm text-slate-400">Sign in to manage your servers.</p>
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit(login)}>
+        {error ? (
+          <div className="mt-4 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400">
+            {error}
+          </div>
+        ) : null}
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-2">
             <label className="block text-sm text-slate-200" htmlFor="email">
               Email
