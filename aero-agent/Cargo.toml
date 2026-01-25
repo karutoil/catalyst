@@ -26,6 +26,7 @@ dashmap = "5.5"
 lazy_static = "1.4"
 regex = "1.10"
 sha2 = "0.10"
+base64 = "0.21"
 sysinfo = "0.30"
 libc = "0.2"
 

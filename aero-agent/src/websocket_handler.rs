@@ -1,9 +1,13 @@
 use std::sync::Arc;
 use std::path::PathBuf;
 use tokio::sync::RwLock;
+use tokio::io::AsyncReadExt;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::connect_async;
 use futures::{SinkExt, StreamExt};
+use futures::stream::SplitSink;
+use sha2::{Digest, Sha256};
+use base64::Engine;
 use tracing::{info, error, warn, debug};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -13,6 +17,7 @@ use crate::{AgentConfig, ContainerdRuntime, FileManager, AgentError, AgentResult
 type WsStream = tokio_tungstenite::WebSocketStream<
     tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
 >;
+type WsWrite = SplitSink<WsStream, Message>;
 
 pub struct WebSocketHandler {
     config: Arc<AgentConfig>,
@@ -110,7 +115,7 @@ impl WebSocketHandler {
         while let Some(msg) = read.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
-                    if let Err(e) = self.handle_message(&text).await {
+                    if let Err(e) = self.handle_message(&text, &write).await {
                         error!("Error handling message: {}", e);
                     }
                 }
@@ -129,7 +134,7 @@ impl WebSocketHandler {
         Ok(())
     }
 
-    async fn handle_message(&self, text: &str) -> AgentResult<()> {
+    async fn handle_message(&self, text: &str, write: &Arc<tokio::sync::Mutex<WsWrite>>) -> AgentResult<()> {
         let msg: Value = serde_json::from_str(text)?;
 
         match msg["type"].as_str() {
@@ -149,6 +154,10 @@ impl WebSocketHandler {
             }
             Some("console_input") => self.handle_console_input(&msg).await?,
             Some("file_operation") => self.handle_file_operation(&msg).await?,
+            Some("create_backup") => self.handle_create_backup(&msg, write).await?,
+            Some("restore_backup") => self.handle_restore_backup(&msg, write).await?,
+            Some("delete_backup") => self.handle_delete_backup(&msg, write).await?,
+            Some("download_backup") => self.handle_download_backup(&msg, write).await?,
             Some("node_handshake_response") => {
                 info!("Handshake accepted by backend");
             }
@@ -455,6 +464,238 @@ impl WebSocketHandler {
             }
         }
 
+        Ok(())
+    }
+
+    async fn handle_create_backup(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let server_id = msg["serverId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverId".to_string())
+        })?;
+        let server_uuid = msg["serverUuid"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverUuid".to_string())
+        })?;
+        let backup_name = msg["backupName"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing backupName".to_string())
+        })?;
+        let backup_path_override = msg["backupPath"].as_str();
+        let backup_id = msg["backupId"].as_str();
+
+        let server_dir = msg["serverDir"]
+            .as_str()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(self.config.server.data_dir.as_path()).join(server_uuid));
+        let default_backup_dir = PathBuf::from("/var/lib/aero/backups").join(server_uuid);
+        let backup_path = backup_path_override
+            .map(PathBuf::from)
+            .unwrap_or_else(|| default_backup_dir.join(format!("{}.tar.gz", backup_name)));
+        let backup_dir = backup_path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or(default_backup_dir);
+
+        if !server_dir.exists() {
+            return Err(AgentError::NotFound(format!(
+                "Server directory not found: {}",
+                server_dir.display()
+            )));
+        }
+
+        tokio::fs::create_dir_all(&backup_dir).await?;
+
+        info!(
+            "Creating backup {} for server {} at {}",
+            backup_name,
+            server_id,
+            backup_path.display()
+        );
+
+        let archive_result = tokio::process::Command::new("tar")
+            .arg("-czf")
+            .arg(&backup_path)
+            .arg("-C")
+            .arg(&server_dir)
+            .arg(".")
+            .output()
+            .await
+            .map_err(|e| AgentError::IoError(format!("Failed to run tar: {}", e)))?;
+
+        if !archive_result.status.success() {
+            let stderr = String::from_utf8_lossy(&archive_result.stderr);
+            return Err(AgentError::IoError(format!("Backup archive failed: {}", stderr)));
+        }
+
+        let metadata = tokio::fs::metadata(&backup_path).await.map_err(|e| {
+            AgentError::IoError(format!("Failed to read backup metadata: {}", e))
+        })?;
+        let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
+
+        let mut file = tokio::fs::File::open(&backup_path).await?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).await?;
+        let checksum = format!("{:x}", Sha256::digest(&buffer));
+
+        let event = json!({
+            "type": "backup_complete",
+            "serverId": server_id,
+            "backupName": backup_name,
+            "backupPath": backup_path.to_string_lossy(),
+            "sizeMb": size_mb,
+            "checksum": checksum,
+            "backupId": backup_id,
+            "timestamp": chrono::Utc::now().timestamp_millis(),
+        });
+
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn handle_restore_backup(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let server_id = msg["serverId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverId".to_string())
+        })?;
+        let server_uuid = msg["serverUuid"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverUuid".to_string())
+        })?;
+        let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing backupPath".to_string())
+        })?;
+
+        let server_dir = msg["serverDir"]
+            .as_str()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(self.config.server.data_dir.as_path()).join(server_uuid));
+        let backup_file = PathBuf::from(backup_path);
+
+        if !backup_file.exists() {
+            return Err(AgentError::NotFound(format!(
+                "Backup file not found: {}",
+                backup_file.display()
+            )));
+        }
+
+        tokio::fs::create_dir_all(&server_dir).await?;
+
+        info!(
+            "Restoring backup {} for server {} into {}",
+            backup_file.display(),
+            server_id,
+            server_dir.display()
+        );
+
+        let restore_result = tokio::process::Command::new("tar")
+            .arg("-xzf")
+            .arg(&backup_file)
+            .arg("-C")
+            .arg(&server_dir)
+            .output()
+            .await
+            .map_err(|e| AgentError::IoError(format!("Failed to run tar: {}", e)))?;
+
+        if !restore_result.status.success() {
+            let stderr = String::from_utf8_lossy(&restore_result.stderr);
+            return Err(AgentError::IoError(format!("Backup restore failed: {}", stderr)));
+        }
+
+        let event = json!({
+            "type": "backup_restore_complete",
+            "serverId": server_id,
+            "backupPath": backup_path,
+        });
+
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn handle_delete_backup(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let server_id = msg["serverId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverId".to_string())
+        })?;
+        let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing backupPath".to_string())
+        })?;
+
+        let backup_file = PathBuf::from(backup_path);
+        if backup_file.exists() {
+            tokio::fs::remove_file(&backup_file).await?;
+        }
+
+        let event = json!({
+            "type": "backup_delete_complete",
+            "serverId": server_id,
+            "backupPath": backup_path,
+        });
+
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn handle_download_backup(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let request_id = msg["requestId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing requestId".to_string())
+        })?;
+        let server_id = msg["serverId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverId".to_string())
+        })?;
+        let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing backupPath".to_string())
+        })?;
+
+        let backup_file = PathBuf::from(backup_path);
+        if !backup_file.exists() {
+            let event = json!({
+                "type": "backup_download_response",
+                "requestId": request_id,
+                "serverId": server_id,
+                "success": false,
+                "error": "Backup file not found",
+            });
+            let mut w = write.lock().await;
+            w.send(Message::Text(event.to_string()))
+                .await
+                .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+            return Ok(());
+        }
+
+        let data = tokio::fs::read(&backup_file).await?;
+        let event = json!({
+            "type": "backup_download_response",
+            "requestId": request_id,
+            "serverId": server_id,
+            "success": true,
+            "data": base64::engine::general_purpose::STANDARD.encode(data),
+        });
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
         Ok(())
     }
 

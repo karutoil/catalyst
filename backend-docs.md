@@ -1050,6 +1050,7 @@ Extract a tar.gz archive.
 {
   "success": true,
   "message": "Backup creation started",
+  "backupName": "manual-backup-20260125",
   "backupId": "backup123"
 }
 ```
@@ -1646,7 +1647,8 @@ Sent every 30 seconds to keep connection alive.
   "serverId": "server123",
   "backupName": "manual-20260125",
   "backupPath": "/var/lib/aero/backups/server123/manual-20260125.tar.gz",
-  "sizeMb": 256
+  "sizeMb": 256,
+  "checksum": "sha256:abc123..."
 }
 ```
 
@@ -1797,7 +1799,9 @@ Sent every 30 seconds.
   "type": "create_backup",
   "serverId": "server123",
   "serverUuid": "8fec71a3-9d19-45f7-8362-900674cde45c",
-  "backupName": "manual-20260125"
+  "backupName": "manual-20260125",
+  "serverDir": "/tmp/aero-servers/8fec71a3-9d19-45f7-8362-900674cde45c",
+  "backupPath": "/var/lib/aero/backups/8fec71a3-9d19-45f7-8362-900674cde45c/manual-20260125.tar.gz"
 }
 ```
 
@@ -1809,7 +1813,8 @@ Sent every 30 seconds.
   "type": "restore_backup",
   "serverId": "server123",
   "serverUuid": "8fec71a3-9d19-45f7-8362-900674cde45c",
-  "backupPath": "/var/lib/aero/backups/server123/manual-20260125.tar.gz"
+  "backupPath": "/var/lib/aero/backups/server123/manual-20260125.tar.gz",
+  "serverDir": "/tmp/aero-servers/8fec71a3-9d19-45f7-8362-900674cde45c"
 }
 ```
 

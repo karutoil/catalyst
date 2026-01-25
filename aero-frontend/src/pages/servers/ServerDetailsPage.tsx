@@ -11,6 +11,7 @@ import UpdateServerModal from '../../components/servers/UpdateServerModal';
 import TransferServerModal from '../../components/servers/TransferServerModal';
 import DeleteServerDialog from '../../components/servers/DeleteServerDialog';
 import FileManager from '../../components/files/FileManager';
+import BackupSection from '../../components/backups/BackupSection';
 import { useConsole } from '../../hooks/useConsole';
 import { serversApi } from '../../services/api/servers';
 import { notifyError, notifySuccess } from '../../utils/notify';
@@ -25,6 +26,7 @@ const streamStyles: Record<string, string> = {
 const tabLabels = {
   console: 'Console',
   files: 'Files',
+  backups: 'Backups',
   metrics: 'Metrics',
   configuration: 'Configuration',
   settings: 'Settings',
@@ -234,6 +236,12 @@ function ServerDetailsPage() {
       {activeTab === 'files' ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
           <FileManager serverId={server.id} />
+        </div>
+      ) : null}
+
+      {activeTab === 'backups' ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+          <BackupSection serverId={server.id} serverStatus={server.status} />
         </div>
       ) : null}
 

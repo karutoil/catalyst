@@ -456,14 +456,14 @@ aero-frontend/
 - [x] Create file manager page
 
 ### Phase 8: Backup Management (Week 5)
-- [ ] Create backup API service
-- [ ] Build backup list component
-- [ ] Add create backup modal
-- [ ] Implement restore backup confirmation
-- [ ] Add delete backup confirmation
-- [ ] Create backup size formatter
-- [ ] Add backup status indicators
-- [ ] Integrate backups into server details
+- [x] Create backup API service
+- [x] Build backup list component
+- [x] Add create backup modal
+- [x] Implement restore backup confirmation
+- [x] Add delete backup confirmation
+- [x] Create backup size formatter
+- [x] Add backup status indicators
+- [x] Integrate backups into server details
 
 ### Phase 9: Node Management (Week 5-6)
 - [ ] Create node API service

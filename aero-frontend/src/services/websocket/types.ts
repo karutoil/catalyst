@@ -29,4 +29,13 @@ export type WebSocketMessage =
       diskUsageMb?: number;
       cpu?: number;
       memory?: number;
+    }
+  | {
+      type: 'backup_complete' | 'backup_restore_complete' | 'backup_delete_complete';
+      serverId: string;
+      backupName?: string;
+      backupPath?: string;
+      sizeMb?: number;
+      checksum?: string | null;
+      backupId?: string;
     };

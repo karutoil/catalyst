@@ -1,8 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
-import * as crypto from "crypto";
 import * as fs from "fs/promises";
-import * as path from "path";
 
 export async function backupRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
@@ -10,6 +8,11 @@ export async function backupRoutes(app: FastifyInstance) {
 
   // Ensure backup directory exists
   await fs.mkdir(BACKUP_DIR, { recursive: true });
+
+  const buildServerDir = (serverUuid: string) => {
+    const serverDir = process.env.SERVER_DATA_PATH || "/tmp/aero-servers";
+    return `${serverDir}/${serverUuid}`;
+  };
 
   // Create a backup
   app.post(
@@ -38,16 +41,33 @@ export async function backupRoutes(app: FastifyInstance) {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const backupName = name || `backup-${timestamp}`;
 
+      const serverDir = buildServerDir(server.uuid);
+      const backupPath = `${BACKUP_DIR}/${server.uuid}/${backupName}.tar.gz`;
+
+      const backupRecord = await prisma.backup.create({
+        data: {
+          serverId: server.id,
+          name: backupName,
+          path: backupPath,
+          sizeMb: 0,
+          metadata: {},
+        },
+      });
+
       // Send backup request to agent
       const gateway = (app as any).wsGateway;
       const success = await gateway.sendToAgent(server.nodeId, {
         type: "create_backup",
         serverId: server.id,
         serverUuid: server.uuid,
+        serverDir,
         backupName,
+        backupPath,
+        backupId: backupRecord.id,
       });
 
       if (!success) {
+        await prisma.backup.delete({ where: { id: backupRecord.id } });
         return reply.status(503).send({ error: "Failed to send backup request to agent" });
       }
 
@@ -55,6 +75,7 @@ export async function backupRoutes(app: FastifyInstance) {
         success: true,
         message: "Backup creation started",
         backupName,
+        backupId: backupRecord.id,
       });
     }
   );
@@ -84,8 +105,30 @@ export async function backupRoutes(app: FastifyInstance) {
         prisma.backup.count({ where: { serverId } }),
       ]);
 
+      const normalizedBackups = await Promise.all(
+        backups.map(async (backup) => {
+          if (backup.sizeMb > 0) return backup;
+          try {
+            const stats = await fs.stat(backup.path);
+            if (!stats.isFile() || stats.size <= 0) return backup;
+            const sizeMb = stats.size / (1024 * 1024);
+            const updated = await prisma.backup.update({
+              where: { id: backup.id },
+              data: { sizeMb },
+            });
+            return updated;
+          } catch {
+            request.log?.warn(
+              { backupId: backup.id, path: backup.path },
+              "Failed to read backup size",
+            );
+            return backup;
+          }
+        }),
+      );
+
       reply.send({
-        backups,
+        backups: normalizedBackups,
         total,
         page: pageNum,
         pageSize: limitNum,
@@ -161,6 +204,8 @@ export async function backupRoutes(app: FastifyInstance) {
         return reply.status(503).send({ error: "Node is offline" });
       }
 
+      const serverDir = buildServerDir(server.uuid);
+
       // Send restore request to agent
       const gateway = (app as any).wsGateway;
       const success = await gateway.sendToAgent(server.nodeId, {
@@ -169,6 +214,7 @@ export async function backupRoutes(app: FastifyInstance) {
         serverUuid: server.uuid,
         backupPath: backup.path,
         backupId: backup.id,
+        serverDir,
       });
 
       if (!success) {
@@ -256,20 +302,50 @@ export async function backupRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Backup not found" });
       }
 
-      // Check if backup file exists
+      // Check if backup file exists locally; otherwise request from agent.
       try {
         await fs.access(backup.path);
         const stream = require("fs").createReadStream(backup.path);
-        
+
         reply.header("Content-Type", "application/gzip");
         reply.header(
           "Content-Disposition",
           `attachment; filename="${backup.name}.tar.gz"`
         );
-        
+
         return reply.send(stream);
-      } catch (err) {
-        return reply.status(404).send({ error: "Backup file not found on disk" });
+      } catch {
+        const server = await prisma.server.findUnique({
+          where: { id: serverId },
+          include: { node: true },
+        });
+
+        if (!server || !server.node.isOnline) {
+          return reply.status(404).send({ error: "Backup file not found on disk" });
+        }
+
+        const gateway = (app as any).wsGateway;
+        try {
+          const response = await gateway.requestFromAgent(server.nodeId, {
+            type: "download_backup",
+            serverId: server.id,
+            backupPath: backup.path,
+          });
+
+          if (!response?.data) {
+            return reply.status(404).send({ error: "Backup file not found on node" });
+          }
+
+          const buffer = Buffer.from(response.data, "base64");
+          reply.header("Content-Type", "application/gzip");
+          reply.header(
+            "Content-Disposition",
+            `attachment; filename="${backup.name}.tar.gz"`
+          );
+          return reply.send(buffer);
+        } catch (error: any) {
+          return reply.status(500).send({ error: error?.message || "Failed to download backup" });
+        }
       }
     }
   );

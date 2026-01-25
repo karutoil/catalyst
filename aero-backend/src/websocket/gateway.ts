@@ -1,4 +1,5 @@
 import pino from "pino";
+import crypto from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { FastifyRequest } from "fastify";
 import {
@@ -25,6 +26,10 @@ export class WebSocketGateway {
   private agents = new Map<string, ConnectedAgent>();
   private clients = new Map<string, ClientConnection>();
   private logger: pino.Logger;
+  private pendingAgentRequests = new Map<
+    string,
+    { resolve: (value: any) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }
+  >();
 
   constructor(private prisma: PrismaClient, logger: pino.Logger) {
     this.logger = logger.child({ component: "WebSocketGateway" });
@@ -142,6 +147,20 @@ export class WebSocketGateway {
     try {
       const message = JSON.parse(data.toString());
 
+      if (message.type === "backup_download_response") {
+        const pending = message.requestId
+          ? this.pendingAgentRequests.get(message.requestId)
+          : undefined;
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pending.resolve(message);
+          this.pendingAgentRequests.delete(message.requestId);
+        } else {
+          this.logger.warn({ requestId: message.requestId }, "No pending download request");
+        }
+        return;
+      }
+
       if (message.type === "heartbeat") {
         const agent = this.agents.get(nodeId);
         if (agent) {
@@ -161,6 +180,49 @@ export class WebSocketGateway {
           data: { status: message.state },
         });
         // Route to clients
+        await this.routeToClients(message.serverId, message);
+      } else if (message.type === "backup_complete") {
+        const server = await this.prisma.server.findUnique({
+          where: { id: message.serverId },
+        });
+
+        if (!server) {
+          return;
+        }
+
+        if (message.backupId) {
+          const updated = await this.prisma.backup.update({
+            where: { id: message.backupId },
+            data: {
+              path: message.backupPath,
+              sizeMb: Number(message.sizeMb) || 0,
+              checksum: message.checksum ?? null,
+            },
+          });
+          if (message.sizeMb !== undefined) {
+            this.logger.info(
+              { backupId: message.backupId, sizeMb: updated.sizeMb },
+              "Backup updated from agent",
+            );
+          }
+        } else {
+          await this.prisma.backup.updateMany({
+            where: {
+              serverId: message.serverId,
+              name: message.backupName,
+            },
+            data: {
+              path: message.backupPath,
+              sizeMb: Number(message.sizeMb) || 0,
+              checksum: message.checksum ?? null,
+            },
+          });
+        }
+
+        await this.routeToClients(message.serverId, message);
+      } else if (message.type === "backup_restore_complete") {
+        await this.routeToClients(message.serverId, message);
+      } else if (message.type === "backup_delete_complete") {
         await this.routeToClients(message.serverId, message);
       }
     } catch (err) {
@@ -319,5 +381,26 @@ export class WebSocketGateway {
       this.logger.error(err, `Error sending message to agent ${nodeId}`);
       return false;
     }
+  }
+
+  async requestFromAgent(nodeId: string, message: any, timeoutMs = 15000): Promise<any> {
+    const agent = this.agents.get(nodeId);
+    if (!agent || !agent.authenticated || agent.socket.socket.readyState !== 1) {
+      throw new Error(`Agent ${nodeId} not connected`);
+    }
+
+    const requestId = crypto.randomUUID();
+    const payload = { ...message, requestId };
+
+    const response = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingAgentRequests.delete(requestId);
+        reject(new Error("Agent request timed out"));
+      }, timeoutMs);
+      this.pendingAgentRequests.set(requestId, { resolve, reject, timeout });
+    });
+
+    agent.socket.socket.send(JSON.stringify(payload));
+    return response;
   }
 }
