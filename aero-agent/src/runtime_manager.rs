@@ -315,7 +315,16 @@ impl ContainerdRuntime {
         }
 
         let json_output = String::from_utf8_lossy(&output.stdout);
-        let containers: Vec<ContainerInfo> = serde_json::from_str(&json_output)?;
+        
+        // nerdctl returns newline-delimited JSON, parse each line
+        let mut containers = Vec::new();
+        for line in json_output.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let container: ContainerInfo = serde_json::from_str(line)?;
+            containers.push(container);
+        }
 
         Ok(containers)
     }
@@ -340,11 +349,13 @@ impl ContainerdRuntime {
         }
 
         let json_output = String::from_utf8_lossy(&output.stdout);
-        let stats: Vec<ContainerStats> = serde_json::from_str(&json_output)?;
-
-        Ok(stats.into_iter().next().ok_or_else(|| {
+        // nerdctl returns newline-delimited JSON, parse the first line
+        let first_line = json_output.lines().next().ok_or_else(|| {
             AgentError::ContainerError("No stats returned".to_string())
-        })?)
+        })?;
+        
+        let stats: ContainerStats = serde_json::from_str(first_line)?;
+        Ok(stats)
     }
 
     /// Execute command in running container
@@ -405,28 +416,56 @@ impl ContainerdRuntime {
         let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
         Ok(ip)
     }
+
+    /// Spawn a process to stream container logs (stdout/stderr)
+    /// Returns a handle to the log streaming process
+    pub async fn spawn_log_stream(
+        &self,
+        container_id: &str,
+    ) -> AgentResult<tokio::process::Child> {
+        info!("Starting log stream for container: {}", container_id);
+
+        let child = Command::new("nerdctl")
+            .arg("--namespace")
+            .arg(&self.namespace)
+            .arg("logs")
+            .arg("--follow")
+            .arg("--timestamps")
+            .arg(container_id)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        Ok(child)
+    }
 }
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ContainerInfo {
-    pub id: String,
     #[serde(rename = "ID")]
-    pub full_id: Option<String>,
+    pub id: String,
     #[serde(rename = "Names")]
-    pub names: Option<Vec<String>>,
+    pub names: String,
+    #[serde(rename = "Status")]
     pub status: String,
-    pub state: String,
+    #[serde(rename = "Command", default)]
+    pub command: String,
+    #[serde(rename = "Image", default)]
+    pub image: String,
 }
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ContainerStats {
+    #[serde(rename = "ID")]
     pub container_id: String,
+    #[serde(rename = "Name")]
     pub container_name: String,
+    #[serde(rename = "CPUPerc")]
     pub cpu_percent: String,
+    #[serde(rename = "MemUsage")]
     pub memory_usage: String,
-    pub memory_limit: String,
-    pub net_input: String,
-    pub net_output: String,
-    pub block_input: String,
-    pub block_output: String,
+    #[serde(rename = "NetIO")]
+    pub net_io: String,
+    #[serde(rename = "BlockIO")]
+    pub block_io: String,
 }

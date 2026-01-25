@@ -9,6 +9,7 @@ mod websocket_handler;
 mod file_manager;
 mod errors;
 mod firewall_manager;
+mod system_setup;
 
 pub use config::AgentConfig;
 pub use runtime_manager::ContainerdRuntime;
@@ -16,6 +17,7 @@ pub use websocket_handler::WebSocketHandler;
 pub use file_manager::FileManager;
 pub use errors::{AgentError, AgentResult};
 pub use firewall_manager::FirewallManager;
+pub use system_setup::SystemSetup;
 
 /// Aero Agent - Main application state
 pub struct AeroAgent {
@@ -143,6 +145,13 @@ async fn main() -> AgentResult<()> {
         .init();
 
     info!("Aero Agent starting");
+
+    // Run system initialization
+    info!("Running system setup and dependency check...");
+    if let Err(e) = SystemSetup::initialize().await {
+        warn!("System setup encountered issues: {}", e);
+        warn!("Continuing with existing configuration...");
+    }
 
     // Load config
     let config = AgentConfig::from_file("./config.toml")

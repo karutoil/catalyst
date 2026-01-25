@@ -97,6 +97,8 @@ model Node {
 
   servers    Server[]
   deploymentTokens DeploymentToken[]
+  metrics    NodeMetrics[]
+  alerts     Alert[]
 }
 
 model DeploymentToken {
@@ -169,12 +171,58 @@ model Server {
   // Configuration
   environment    Json     @default("{}")
   
+  // Crash detection & auto-restart
+  restartPolicy  String   @default("on-failure") // always, on-failure, never
+  crashCount     Int      @default(0)
+  maxCrashCount  Int      @default(5)
+  lastCrashAt    DateTime?
+  
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   access         ServerAccess[]
   roles          ServerRole[]
   logs           ServerLog[]
+  metrics        ServerMetrics[]
+  backups        Backup[]
+  scheduledTasks ScheduledTask[]
+  alerts         Alert[]
+}
+
+model Backup {
+  id          String   @id @default(cuid())
+  serverId    String
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name        String
+  path        String   // File path on disk or S3 URL
+  sizeMb      Float
+  compressed  Boolean  @default(true)
+  checksum    String?  // SHA256 checksum for integrity
+  metadata    Json     @default("{}")  // Server config snapshot
+  createdAt   DateTime @default(now())
+  restoredAt  DateTime?
+
+  @@index([serverId, createdAt])
+}
+
+model ScheduledTask {
+  id          String   @id @default(cuid())
+  serverId    String
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  action      String   // restart, stop, start, backup, command
+  payload     Json?    // Additional data (e.g., command to run)
+  schedule    String   // Cron expression (e.g., "0 3 * * *" for 3 AM daily)
+  enabled     Boolean  @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  runCount    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([serverId, enabled])
+  @@index([enabled, nextRunAt])
 }
 
 model ServerLog {
@@ -203,4 +251,77 @@ model AuditLog {
   timestamp DateTime @default(now())
 
   @@index([userId, timestamp])
+}
+
+// ============================================================================
+// RESOURCE MONITORING
+// ============================================================================
+
+model ServerMetrics {
+  id            String   @id @default(cuid())
+  serverId      String
+  server        Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  cpuPercent    Float
+  memoryUsageMb Int
+  networkRxBytes BigInt
+  networkTxBytes BigInt
+  diskUsageMb   Int
+  timestamp     DateTime @default(now())
+  
+  @@index([serverId, timestamp])
+}
+
+model NodeMetrics {
+  id                String   @id @default(cuid())
+  nodeId            String
+  node              Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  cpuPercent        Float
+  memoryUsageMb     Int
+  memoryTotalMb     Int
+  diskUsageMb       Int
+  diskTotalMb       Int
+  networkRxBytes    BigInt
+  networkTxBytes    BigInt
+  containerCount    Int
+  timestamp         DateTime @default(now())
+  
+  @@index([nodeId, timestamp])
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  serverId    String?
+  server      Server?  @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  nodeId      String?
+  node        Node?    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  type        String   // resource_threshold, node_offline, server_crashed, custom
+  severity    String   // info, warning, critical
+  title       String
+  message     String   @db.Text
+  metadata    Json     @default("{}")
+  resolved    Boolean  @default(false)
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  createdAt   DateTime @default(now())
+
+  @@index([serverId, resolved, createdAt])
+  @@index([nodeId, resolved, createdAt])
+  @@index([type, severity, resolved])
+}
+
+model AlertRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  enabled     Boolean  @default(true)
+  type        String   // resource_threshold, node_offline, server_crashed
+  target      String   // server, node, global
+  targetId    String?  // Specific server/node ID, or null for global
+  conditions  Json     // Threshold values, etc.
+  actions     Json     // Webhook URLs, notification methods
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled, type])
+  @@index([target, targetId])
 }

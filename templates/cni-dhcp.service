@@ -1,0 +1,15 @@
+[Unit]
+Description=CNI DHCP Daemon for Container Networking
+Documentation=https://github.com/containernetworking/plugins
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/cni/bin/dhcp daemon
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

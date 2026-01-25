@@ -258,6 +258,12 @@ export async function nodeRoutes(app: FastifyInstance) {
         (s) => s.status === "running" || s.status === "starting"
       ).length;
 
+      // Get latest metrics from database
+      const latestMetrics = await prisma.nodeMetrics.findFirst({
+        where: { nodeId },
+        orderBy: { timestamp: "desc" },
+      });
+
       reply.send({
         success: true,
         data: {
@@ -273,12 +279,19 @@ export async function nodeRoutes(app: FastifyInstance) {
             availableCpuCores: node.maxCpuCores - totalAllocatedCpu,
             memoryUsagePercent: (totalAllocatedMemory / node.maxMemoryMb) * 100,
             cpuUsagePercent: (totalAllocatedCpu / node.maxCpuCores) * 100,
+            // Real-time metrics from agent
+            actualMemoryUsageMb: latestMetrics?.memoryUsageMb || 0,
+            actualMemoryTotalMb: latestMetrics?.memoryTotalMb || node.maxMemoryMb,
+            actualCpuPercent: latestMetrics?.cpuPercent || 0,
+            actualDiskUsageMb: latestMetrics?.diskUsageMb || 0,
+            actualDiskTotalMb: latestMetrics?.diskTotalMb || 0,
           },
           servers: {
             total: node.servers.length,
             running: runningServers,
             stopped: node.servers.filter((s) => s.status === "stopped").length,
           },
+          lastMetricsUpdate: latestMetrics?.timestamp || null,
         },
       });
     }

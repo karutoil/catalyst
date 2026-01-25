@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import fastifyWebsocket from "@fastify/websocket";
 import fastifyCors from "@fastify/cors";
+import fastifyRateLimit from "@fastify/rate-limit";
+import fastifyHelmet from "@fastify/helmet";
 import pino from "pino";
 import { PrismaClient } from "@prisma/client";
 import "./types"; // Load type augmentations
@@ -10,7 +12,15 @@ import { authRoutes } from "./routes/auth";
 import { nodeRoutes } from "./routes/nodes";
 import { serverRoutes } from "./routes/servers";
 import { templateRoutes } from "./routes/templates";
+import { metricsRoutes } from "./routes/metrics";
+import { backupRoutes } from "./routes/backups";
 import { RbacMiddleware } from "./middleware/rbac";
+import { startSFTPServer } from "./sftp-server";
+import { adminRoutes } from "./routes/admin";
+import { taskRoutes } from "./routes/tasks";
+import { TaskScheduler } from "./services/task-scheduler";
+import { alertRoutes } from "./routes/alerts";
+import { AlertService } from "./services/alert-service";
 
 const logger = pino({
   transport: {
@@ -27,11 +37,16 @@ export const prisma = new PrismaClient({
 
 const app = Fastify({
   logger: true,
-  bodyLimit: 1048576, // 1MB
+  bodyLimit: 104857600, // 100MB for file uploads
 });
 
 const wsGateway = new WebSocketGateway(prisma, logger);
 const rbac = new RbacMiddleware(prisma);
+const taskScheduler = new TaskScheduler(prisma, logger);
+const alertService = new AlertService(prisma, logger);
+
+// Set task executor for the scheduler
+taskScheduler.setTaskExecutor(wsGateway);
 
 // ============================================================================
 // MIDDLEWARE
@@ -47,6 +62,9 @@ const authenticate = async (request: any, reply: any) => {
 
 (app as any).authenticate = authenticate;
 (app as any).wsGateway = wsGateway;
+(app as any).taskScheduler = taskScheduler;
+(app as any).alertService = alertService;
+(app as any).prisma = prisma;
 
 // ============================================================================
 // SETUP
@@ -54,6 +72,34 @@ const authenticate = async (request: any, reply: any) => {
 
 async function bootstrap() {
   try {
+    // Register security plugins
+    await app.register(fastifyHelmet, {
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "https:"],
+        },
+      },
+      crossOriginEmbedderPolicy: false, // Allow WebSocket connections
+    });
+
+    await app.register(fastifyRateLimit, {
+      global: true,
+      max: 200, // Per-IP limit: 200 requests
+      timeWindow: '1 minute',
+      errorResponseBuilder: () => ({
+        error: 'Rate limit exceeded',
+        message: 'Too many requests. Please try again later.',
+      }),
+      keyGenerator: (request) => {
+        // Use user ID for authenticated requests, IP for unauthenticated
+        return (request as any).user?.userId || request.ip;
+      },
+      skipOnError: false,
+    });
+
     // Register plugins
     await app.register(fastifyCors, {
       origin: process.env.CORS_ORIGIN || "http://localhost:3000",
@@ -71,8 +117,10 @@ async function bootstrap() {
       },
     });
 
-    // Health check
-    app.get("/health", async (request, reply) => {
+    // Health check (exempt from rate limiting)
+    app.get("/health", { 
+      config: { rateLimit: { max: 1000, timeWindow: '1 minute' } }
+    }, async (request, reply) => {
       return { status: "ok", timestamp: new Date().toISOString() };
     });
 
@@ -84,10 +132,18 @@ async function bootstrap() {
     });
 
     // API Routes
-    await app.register(authRoutes, { prefix: "/api/auth" });
+    await app.register(authRoutes, { 
+      prefix: "/api/auth",
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } } // Strict rate limit for auth
+    });
     await app.register(nodeRoutes, { prefix: "/api/nodes" });
     await app.register(serverRoutes, { prefix: "/api/servers" });
     await app.register(templateRoutes, { prefix: "/api/templates" });
+    await app.register(metricsRoutes, { prefix: "/api" });
+    await app.register(backupRoutes, { prefix: "/api/servers" });
+    await app.register(adminRoutes, { prefix: "/api/admin" });
+    await app.register(taskRoutes, { prefix: "/api/servers" });
+    await app.register(alertRoutes, { prefix: "/api" });
 
     // Node deployment script endpoint (public)
     app.get("/api/deploy/:token", async (request, reply) => {
@@ -116,6 +172,20 @@ async function bootstrap() {
     logger.info(
       `Aero Backend running on http://0.0.0.0:${process.env.PORT || 3000}`
     );
+
+    // Start SFTP server
+    if (process.env.SFTP_ENABLED !== 'false') {
+      startSFTPServer();
+      logger.info(`SFTP server enabled on port ${process.env.SFTP_PORT || 2022}`);
+    }
+
+    // Start task scheduler
+    await taskScheduler.start();
+    logger.info(`Task scheduler started with ${taskScheduler.getScheduledTasksCount()} active tasks`);
+
+    // Start alert service
+    await alertService.start();
+    logger.info('Alert monitoring service started');
   } catch (err) {
     logger.error(err, "Failed to start server");
     process.exit(1);

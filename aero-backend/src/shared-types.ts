@@ -9,6 +9,7 @@
 
 export enum ServerState {
   STOPPED = "stopped",
+  INSTALLING = "installing",
   STARTING = "starting",
   RUNNING = "running",
   STOPPING = "stopping",

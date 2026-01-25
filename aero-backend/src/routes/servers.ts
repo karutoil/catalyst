@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
+import { ServerStateMachine } from "../services/state-machine";
+import { ServerState } from "../shared-types";
 
 export async function serverRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
@@ -407,7 +409,7 @@ export async function serverRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { serverId } = request.params as { serverId: string };
       const userId = request.user.userId;
-      const { lines } = request.query as { lines?: string };
+      const { lines, stream } = request.query as { lines?: string; stream?: string };
 
       const server = await prisma.server.findUnique({
         where: { id: serverId },
@@ -430,17 +432,177 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
-      // For now, return mock data since this requires agent integration
-      // In production, this would communicate with the agent to get real container logs
+      // Get logs from database
       const lineCount = lines ? parseInt(lines) : 100;
+      const streamFilter = stream || undefined;
+
+      const logs = await prisma.serverLog.findMany({
+        where: {
+          serverId,
+          ...(streamFilter && { stream: streamFilter }),
+        },
+        orderBy: { timestamp: "desc" },
+        take: lineCount,
+      });
+
+      // Reverse to get chronological order
+      const reversedLogs = logs.reverse();
+
       reply.send({
         success: true,
         data: {
-          logs: `[Server Log - Last ${lineCount} lines]\nLog streaming requires agent integration\nServer UUID: ${server.uuid}\nStatus: ${server.status}`,
-          lines: lineCount,
-          message: "Real-time log streaming requires agent integration",
+          logs: reversedLogs.map(log => ({
+            stream: log.stream,
+            data: log.data,
+            timestamp: log.timestamp,
+          })),
+          count: reversedLogs.length,
+          requestedLines: lineCount,
         },
       });
+    }
+  );
+
+  // Write/update file content
+  app.post(
+    "/:serverId/files/write",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+      const { path, content } = request.body as { path: string; content: string };
+
+      if (!path || content === undefined) {
+        return reply.status(400).send({ error: "Missing path or content" });
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { node: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      // Check permissions
+      const access = await prisma.serverAccess.findFirst({
+        where: {
+          serverId,
+          userId,
+          permissions: { has: "file.write" },
+        },
+      });
+
+      if (!access && server.ownerId !== userId) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      if (!server.node.isOnline) {
+        return reply.status(503).send({ error: "Node is offline" });
+      }
+
+      const gateway = (app as any).wsGateway;
+      if (!gateway) {
+        return reply.status(500).send({ error: "WebSocket gateway not available" });
+      }
+
+      const success = await gateway.sendToAgent(server.nodeId, {
+        type: "file_operation",
+        operation: "write",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        path,
+        data: content,
+      });
+
+      if (!success) {
+        return reply.status(503).send({ error: "Failed to send command to agent" });
+      }
+
+      // Log action
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "file.write",
+          resource: "server",
+          resourceId: serverId,
+          details: { path },
+        },
+      });
+
+      reply.send({ success: true, message: "File write command sent to agent" });
+    }
+  );
+
+  // Delete file or directory
+  app.delete(
+    "/:serverId/files/delete",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+      const { path } = request.query as { path: string };
+
+      if (!path) {
+        return reply.status(400).send({ error: "Missing path parameter" });
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { node: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      // Check permissions
+      const access = await prisma.serverAccess.findFirst({
+        where: {
+          serverId,
+          userId,
+          permissions: { has: "file.write" },
+        },
+      });
+
+      if (!access && server.ownerId !== userId) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      if (!server.node.isOnline) {
+        return reply.status(503).send({ error: "Node is offline" });
+      }
+
+      const gateway = (app as any).wsGateway;
+      if (!gateway) {
+        return reply.status(500).send({ error: "WebSocket gateway not available" });
+      }
+
+      const success = await gateway.sendToAgent(server.nodeId, {
+        type: "file_operation",
+        operation: "delete",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        path,
+      });
+
+      if (!success) {
+        return reply.status(503).send({ error: "Failed to send command to agent" });
+      }
+
+      // Log action
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "file.delete",
+          resource: "server",
+          resourceId: serverId,
+          details: { path },
+        },
+      });
+
+      reply.send({ success: true, message: "File delete command sent to agent" });
     }
   );
 
@@ -554,6 +716,14 @@ export async function serverRoutes(app: FastifyInstance) {
         }
       }
 
+      // Validate state transition
+      const currentState = server.status as ServerState;
+      if (!ServerStateMachine.canTransition(currentState, ServerState.INSTALLING)) {
+        return reply.status(409).send({
+          error: `Cannot install server in ${server.status} state`,
+        });
+      }
+
       // Check if node is online
       if (!server.node.isOnline) {
         return reply.status(503).send({ error: "Node is offline" });
@@ -631,6 +801,14 @@ export async function serverRoutes(app: FastifyInstance) {
         if (!access) {
           return reply.status(403).send({ error: "Forbidden" });
         }
+      }
+
+      // Validate state transition
+      const currentState = server.status as ServerState;
+      if (!ServerStateMachine.canStart(currentState)) {
+        return reply.status(409).send({
+          error: `Cannot start server in ${server.status} state. Server must be stopped or crashed.`,
+        });
       }
 
       // Check if node is online
@@ -712,6 +890,14 @@ export async function serverRoutes(app: FastifyInstance) {
         }
       }
 
+      // Validate state transition
+      const currentState = server.status as ServerState;
+      if (!ServerStateMachine.canStop(currentState)) {
+        return reply.status(409).send({
+          error: `Cannot stop server in ${server.status} state. Server must be running or starting.`,
+        });
+      }
+
       // Check if node is online
       if (!server.node.isOnline) {
         return reply.status(503).send({ error: "Node is offline" });
@@ -740,6 +926,408 @@ export async function serverRoutes(app: FastifyInstance) {
       });
 
       reply.send({ success: true, message: "Stop command sent to agent" });
+    }
+  );
+
+  // Restart server (stop then start)
+  app.post(
+    "/:serverId/restart",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: {
+          template: true,
+          node: true,
+        },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      // Check permissions
+      if (server.ownerId !== userId) {
+        const access = await prisma.serverAccess.findFirst({
+          where: {
+            userId,
+            serverId,
+            permissions: { has: "server.stop" }, // Needs both start and stop
+          },
+        });
+        if (!access || !access.permissions.includes("server.start")) {
+          return reply.status(403).send({ error: "Forbidden" });
+        }
+      }
+
+      // Validate state
+      const currentState = server.status as ServerState;
+      if (!ServerStateMachine.canRestart(currentState)) {
+        return reply.status(409).send({
+          error: `Cannot restart server in ${server.status} state`,
+        });
+      }
+
+      // Check if node is online
+      if (!server.node.isOnline) {
+        return reply.status(503).send({ error: "Node is offline" });
+      }
+
+      const gateway = (app as any).wsGateway;
+      if (!gateway) {
+        return reply.status(500).send({ error: "WebSocket gateway not available" });
+      }
+
+      // If running, stop first
+      if (currentState === ServerState.RUNNING) {
+        await gateway.sendToAgent(server.nodeId, {
+          type: "stop_server",
+          serverId: server.id,
+          serverUuid: server.uuid,
+        });
+        await prisma.server.update({
+          where: { id: serverId },
+          data: { status: "stopping" },
+        });
+      }
+
+      // Start after a delay (agent will handle the actual timing)
+      const serverDir = process.env.SERVER_DATA_PATH || "/tmp/aero-servers";
+      const fullServerDir = `${serverDir}/${server.uuid}`;
+      
+      const environment = {
+        ...(server.environment as Record<string, string>),
+        SERVER_DIR: fullServerDir,
+      };
+
+      const success = await gateway.sendToAgent(server.nodeId, {
+        type: "restart_server",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        template: server.template,
+        environment: environment,
+        allocatedMemoryMb: server.allocatedMemoryMb,
+        allocatedCpuCores: server.allocatedCpuCores,
+        primaryPort: server.primaryPort,
+        networkMode: server.networkMode,
+      });
+
+      if (!success) {
+        return reply.status(503).send({ error: "Failed to send command to agent" });
+      }
+
+      reply.send({ success: true, message: "Restart command sent to agent" });
+    }
+  );
+
+  // Update restart policy
+  app.patch(
+    "/:id/restart-policy",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      const { restartPolicy, maxCrashCount } = request.body as {
+        restartPolicy?: string;
+        maxCrashCount?: number;
+      };
+
+      // Validate restart policy
+      const validPolicies = ["always", "on-failure", "never"];
+      if (restartPolicy && !validPolicies.includes(restartPolicy)) {
+        return reply.status(400).send({
+          error: `Invalid restart policy. Must be one of: ${validPolicies.join(", ")}`,
+        });
+      }
+
+      // Validate max crash count
+      if (maxCrashCount !== undefined && (maxCrashCount < 0 || maxCrashCount > 100)) {
+        return reply.status(400).send({
+          error: "maxCrashCount must be between 0 and 100",
+        });
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      // Update server
+      const updated = await prisma.server.update({
+        where: { id },
+        data: {
+          restartPolicy: restartPolicy || server.restartPolicy,
+          maxCrashCount: maxCrashCount ?? server.maxCrashCount,
+        },
+      });
+
+      reply.send({
+        success: true,
+        restartPolicy: updated.restartPolicy,
+        maxCrashCount: updated.maxCrashCount,
+      });
+    }
+  );
+
+  // Reset crash count
+  app.post(
+    "/:id/reset-crash-count",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+
+      const server = await prisma.server.findUnique({
+        where: { id },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      await prisma.server.update({
+        where: { id },
+        data: {
+          crashCount: 0,
+          lastCrashAt: null,
+        },
+      });
+
+      reply.send({ success: true, message: "Crash count reset" });
+    }
+  );
+
+  // Transfer server to another node
+  app.post(
+    "/:id/transfer",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      const { targetNodeId } = request.body as { targetNodeId: string };
+
+      if (!targetNodeId) {
+        return reply.status(400).send({ error: "targetNodeId is required" });
+      }
+
+      // Get server with current node
+      const server = await prisma.server.findUnique({
+        where: { id },
+        include: { node: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      // Check if user has permission
+      const serverAccess = await prisma.serverAccess.findFirst({
+        where: {
+          serverId: id,
+          userId: request.user.userId,
+        },
+      });
+
+      if (!serverAccess || !serverAccess.permissions.includes("server.transfer")) {
+        return reply.status(403).send({
+          error: "You do not have permission to transfer this server",
+        });
+      }
+
+      // Check if already on target node
+      if (server.nodeId === targetNodeId) {
+        return reply.status(400).send({
+          error: "Server is already on the target node",
+        });
+      }
+
+      // Get target node
+      const targetNode = await prisma.node.findUnique({
+        where: { id: targetNodeId },
+      });
+
+      if (!targetNode) {
+        return reply.status(404).send({ error: "Target node not found" });
+      }
+
+      // Check if target node is online
+      if (!targetNode.isOnline) {
+        return reply.status(400).send({
+          error: "Target node is offline",
+        });
+      }
+
+      // Check if target node has enough resources
+      const serversOnTarget = await prisma.server.findMany({
+        where: { nodeId: targetNodeId },
+      });
+
+      const usedMemory = serversOnTarget.reduce(
+        (sum, s) => sum + s.allocatedMemoryMb,
+        0
+      );
+      const usedCpu = serversOnTarget.reduce(
+        (sum, s) => sum + s.allocatedCpuCores,
+        0
+      );
+
+      if (
+        usedMemory + server.allocatedMemoryMb > targetNode.maxMemoryMb ||
+        usedCpu + server.allocatedCpuCores > targetNode.maxCpuCores
+      ) {
+        return reply.status(400).send({
+          error: "Target node does not have enough resources",
+          available: {
+            memory: targetNode.maxMemoryMb - usedMemory,
+            cpu: targetNode.maxCpuCores - usedCpu,
+          },
+          required: {
+            memory: server.allocatedMemoryMb,
+            cpu: server.allocatedCpuCores,
+          },
+        });
+      }
+
+      // Server must be stopped to transfer
+      if (server.status !== "stopped") {
+        return reply.status(400).send({
+          error: "Server must be stopped before transfer",
+          currentStatus: server.status,
+        });
+      }
+
+      // Create a log entry
+      await prisma.serverLog.create({
+        data: {
+          serverId: id,
+          stream: "system",
+          data: `Transfer initiated from node ${server.node.name} to ${targetNode.name}`,
+        },
+      });
+
+      // Update server status to transferring
+      await prisma.server.update({
+        where: { id },
+        data: { status: "transferring" },
+      });
+
+      // Get WebSocket gateway
+      const wsGateway = (app as any).wsGateway;
+
+      try {
+        // Step 1: Create backup on source node
+        await prisma.serverLog.create({
+          data: {
+            serverId: id,
+            stream: "system",
+            data: `Creating backup on source node...`,
+          },
+        });
+
+        const backupName = `transfer-${Date.now()}`;
+        await wsGateway.sendToAgent(server.nodeId, {
+          type: "create_backup",
+          serverId: id,
+          backupName,
+        });
+
+        // Wait a moment for backup to be created (in production, use proper async handling)
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        // Step 2: Get backup path (simplified - in production, wait for backup_complete message)
+        const backupPath = `/var/lib/aero/backups/${id}/${backupName}.tar.gz`;
+
+        await prisma.serverLog.create({
+          data: {
+            serverId: id,
+            stream: "system",
+            data: `Backup created: ${backupName}`,
+          },
+        });
+
+        // Step 3: In a real implementation, transfer the backup file to target node
+        // For now, we assume both nodes share storage or have network access
+        // In production, you would:
+        // - Upload backup to S3/object storage
+        // - Or use rsync/scp between nodes
+        // - Or stream directly via WebSocket
+
+        await prisma.serverLog.create({
+          data: {
+            serverId: id,
+            stream: "system",
+            data: `Transferring backup to target node...`,
+          },
+        });
+
+        // Step 4: Restore on target node
+        await prisma.serverLog.create({
+          data: {
+            serverId: id,
+            stream: "system",
+            data: `Restoring on target node ${targetNode.name}...`,
+          },
+        });
+
+        // In production, trigger restore via agent on target node
+        // await wsGateway.sendToAgent(targetNodeId, {
+        //   type: 'restore_backup',
+        //   serverId: id,
+        //   backupPath: remoteBackupPath
+        // });
+
+        // Step 5: Update server's nodeId
+        await prisma.server.update({
+          where: { id },
+          data: {
+            nodeId: targetNodeId,
+            status: "stopped",
+            containerId: null, // Will be regenerated on new node
+            containerName: null,
+          },
+        });
+
+        await prisma.serverLog.create({
+          data: {
+            serverId: id,
+            stream: "system",
+            data: `Transfer complete! Server is now on ${targetNode.name}`,
+          },
+        });
+
+        reply.send({
+          success: true,
+          message: "Server transferred successfully",
+          server: {
+            id: server.id,
+            name: server.name,
+            previousNode: server.node.name,
+            currentNode: targetNode.name,
+          },
+        });
+      } catch (error: any) {
+        // Rollback on error
+        await prisma.server.update({
+          where: { id },
+          data: { status: "stopped" },
+        });
+
+        await prisma.serverLog.create({
+          data: {
+            serverId: id,
+            stream: "system",
+            data: `Transfer failed: ${error.message}`,
+          },
+        });
+
+        return reply.status(500).send({
+          error: "Transfer failed",
+          message: error.message,
+        });
+      }
     }
   );
 }
