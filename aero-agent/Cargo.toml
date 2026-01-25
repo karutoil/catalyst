@@ -27,6 +27,7 @@ lazy_static = "1.4"
 regex = "1.10"
 sha2 = "0.10"
 sysinfo = "0.30"
+libc = "0.2"
 
 [profile.release]
 opt-level = 3

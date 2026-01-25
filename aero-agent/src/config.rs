@@ -32,10 +32,9 @@ pub struct LoggingConfig {
 
 impl AgentConfig {
     pub fn from_file(path: &str) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read config: {}", e))?;
-        toml::from_str(&content)
-            .map_err(|e| format!("Failed to parse config: {}", e))
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read config: {}", e))?;
+        toml::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))
     }
 
     pub fn from_env() -> Result<Self, String> {
@@ -43,12 +42,10 @@ impl AgentConfig {
             server: ServerConfig {
                 backend_url: std::env::var("BACKEND_URL")
                     .unwrap_or_else(|_| "ws://localhost:3000".to_string()),
-                node_id: std::env::var("NODE_ID")
-                    .map_err(|_| "NODE_ID not set".to_string())?,
+                node_id: std::env::var("NODE_ID").map_err(|_| "NODE_ID not set".to_string())?,
                 secret: std::env::var("NODE_SECRET")
                     .map_err(|_| "NODE_SECRET not set".to_string())?,
-                hostname: hostname()
-                    .map_err(|e| format!("Failed to get hostname: {}", e))?,
+                hostname: hostname().map_err(|e| format!("Failed to get hostname: {}", e))?,
                 data_dir: PathBuf::from(
                     std::env::var("DATA_DIR").unwrap_or_else(|_| "/var/lib/aero".to_string()),
                 ),
@@ -63,8 +60,7 @@ impl AgentConfig {
                     .unwrap_or_else(|_| "aero".to_string()),
             },
             logging: LoggingConfig {
-                level: std::env::var("LOG_LEVEL")
-                    .unwrap_or_else(|_| "info".to_string()),
+                level: std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
                 format: "json".to_string(),
             },
         })
@@ -74,9 +70,5 @@ impl AgentConfig {
 fn hostname() -> Result<String, std::io::Error> {
     std::process::Command::new("hostname")
         .output()
-        .map(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string()
-        })
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }

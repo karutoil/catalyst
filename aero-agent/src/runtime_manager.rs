@@ -1,20 +1,40 @@
-use std::fs;
-use std::sync::Arc;
-use std::process::Stdio;
-use tokio::process::Command;
-use tokio::io::AsyncBufReadExt;
-use tracing::{info, error, warn, debug};
-use serde_json::json;
 use std::collections::{HashMap, HashSet};
+use std::ffi::CString;
+use std::fs::{self, File};
+use std::io::Write;
 use std::net::Ipv4Addr;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Arc;
+
+use tokio::io::AsyncBufReadExt;
+use tokio::process::Command;
+use tokio::sync::Mutex;
+use tokio::task::spawn_blocking;
+use tracing::{debug, error, info, warn};
 
 use crate::errors::{AgentError, AgentResult};
 use crate::firewall_manager::FirewallManager;
+
+use libc;
 
 #[derive(Clone)]
 pub struct ContainerdRuntime {
     socket_path: String,
     namespace: String,
+    console_writers: Arc<Mutex<HashMap<String, ConsoleWriter>>>,
+}
+
+struct ConsoleWriter {
+    fifo_path: String,
+    file: File,
+}
+
+struct ConsoleFifo {
+    dir: String,
+    path: String,
 }
 
 impl ContainerdRuntime {
@@ -22,6 +42,7 @@ impl ContainerdRuntime {
         Self {
             socket_path: socket_path.to_string_lossy().to_string(),
             namespace,
+            console_writers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -39,10 +60,9 @@ impl ContainerdRuntime {
         network_mode: Option<&str>,
         network_ip: Option<&str>,
     ) -> AgentResult<String> {
-        info!(
-            "Creating container: {} from image: {}",
-            container_id, image
-        );
+        info!("Creating container: {} from image: {}", container_id, image);
+
+        let console_fifo = self.prepare_console_fifo(container_id).await?;
 
         // Build nerdctl command
         let mut cmd = Command::new("nerdctl");
@@ -54,7 +74,7 @@ impl ContainerdRuntime {
 
         // Volume mount (host data directory → /data in container)
         cmd.arg("-v").arg(format!("{}:/data", data_dir));
-        
+
         // Working directory
         cmd.arg("-w").arg("/data");
 
@@ -85,46 +105,60 @@ impl ContainerdRuntime {
         // Container name and image
         cmd.arg("--name").arg(container_id);
         cmd.arg("-d"); // Detached
+        cmd.arg("-v")
+            .arg(format!("{}:{}:ro", console_fifo.dir, console_fifo.dir));
         cmd.arg(image);
 
         // Startup command (if provided)
         if !startup_command.is_empty() {
             // Parse as shell command
-            cmd.arg("sh").arg("-c").arg(startup_command);
+            let fifo_path = &console_fifo.path;
+            let quoted_startup = shell_quote(startup_command);
+            let pipeline = format!("cat {} | sh -c {}", fifo_path, quoted_startup);
+            cmd.arg("sh").arg("-c").arg(pipeline);
         }
 
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| AgentError::ContainerError(format!("Failed to create container: {}", e)))?;
+        let output = cmd.output().await.map_err(|e| {
+            AgentError::ContainerError(format!("Failed to create container: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if let (Some(network), Some(ip)) = (network_mode, network_ip) {
                 if network != "bridge" && network != "host" {
                     if let Err(err) = Self::release_static_ip(network, ip) {
-                        warn!("Failed to release static IP {} for {}: {}", ip, network, err);
+                        warn!(
+                            "Failed to release static IP {} for {}: {}",
+                            ip, network, err
+                        );
                     }
                 }
             }
+            self.cleanup_console_fifo(container_id).await;
             return Err(AgentError::ContainerError(format!(
                 "Container creation failed: {}",
                 stderr
             )));
         }
 
-        let container_full_id = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let container_full_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         info!("Container created successfully: {}", container_full_id);
-        
+
+        self.attach_console_writer(container_id, console_fifo.path.clone())
+            .await?;
+
         // Get container IP for firewall configuration
-        let container_ip = self.get_container_ip(container_id).await
+        let container_ip = self
+            .get_container_ip(container_id)
+            .await
             .unwrap_or_else(|_| "0.0.0.0".to_string());
-        
+
         // Configure firewall to allow the port
-        info!("Configuring firewall for port {} (container IP: {})", port, container_ip);
+        info!(
+            "Configuring firewall for port {} (container IP: {})",
+            port, container_ip
+        );
         if let Err(e) = FirewallManager::allow_port(port, &container_ip).await {
             error!("Failed to configure firewall: {}", e);
             // Don't fail container creation if firewall config fails
@@ -132,8 +166,73 @@ impl ContainerdRuntime {
         } else {
             info!("✓ Firewall configured for port {}", port);
         }
-        
+
         Ok(container_full_id)
+    }
+
+    async fn prepare_console_fifo(&self, container_id: &str) -> AgentResult<ConsoleFifo> {
+        let base_dir = PathBuf::from("/tmp/aero-console");
+        let dir = base_dir.join(container_id);
+        let fifo_path = dir.join("stdin");
+
+        fs::create_dir_all(&dir).map_err(|e| {
+            AgentError::ContainerError(format!("Failed to create console directory: {}", e))
+        })?;
+
+        let mut perms = fs::metadata(&dir)
+            .map_err(|e| AgentError::ContainerError(format!("Failed to stat console dir: {}", e)))?
+            .permissions();
+        perms.set_mode(0o700);
+        fs::set_permissions(&dir, perms).map_err(|e| {
+            AgentError::ContainerError(format!(
+                "Failed to set console directory permissions: {}",
+                e
+            ))
+        })?;
+
+        if fifo_path.exists() {
+            fs::remove_file(&fifo_path).ok();
+        }
+
+        create_fifo(&fifo_path).map_err(|e| {
+            AgentError::ContainerError(format!("Failed to create console FIFO: {}", e))
+        })?;
+
+        Ok(ConsoleFifo {
+            dir: dir.to_string_lossy().into_owned(),
+            path: fifo_path.to_string_lossy().into_owned(),
+        })
+    }
+
+    async fn attach_console_writer(
+        &self,
+        container_id: &str,
+        fifo_path: String,
+    ) -> AgentResult<()> {
+        let path_clone = fifo_path.clone();
+        let file =
+            spawn_blocking(move || std::fs::OpenOptions::new().write(true).open(&path_clone))
+                .await
+                .map_err(|e| {
+                    AgentError::ContainerError(format!("Console writer task failed: {}", e))
+                })?
+                .map_err(|e| {
+                    AgentError::ContainerError(format!("Failed to open console FIFO: {}", e))
+                })?;
+
+        let mut writers = self.console_writers.lock().await;
+        writers.insert(container_id.to_string(), ConsoleWriter { fifo_path, file });
+
+        Ok(())
+    }
+
+    async fn cleanup_console_fifo(&self, container_id: &str) {
+        {
+            let mut writers = self.console_writers.lock().await;
+            writers.remove(container_id);
+        }
+        let dir = PathBuf::from("/tmp/aero-console").join(container_id);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Start a container
@@ -230,15 +329,15 @@ impl ContainerdRuntime {
             )));
         }
 
+        self.cleanup_console_fifo(container_id).await;
+
         Ok(())
     }
 
     /// Get container logs
     pub async fn get_logs(&self, container_id: &str, lines: Option<u32>) -> AgentResult<String> {
         let mut cmd = Command::new("nerdctl");
-        cmd.arg("--namespace")
-            .arg(&self.namespace)
-            .arg("logs");
+        cmd.arg("--namespace").arg(&self.namespace).arg("logs");
 
         if let Some(n) = lines {
             cmd.arg("--tail").arg(n.to_string());
@@ -328,7 +427,7 @@ impl ContainerdRuntime {
         }
 
         let json_output = String::from_utf8_lossy(&output.stdout);
-        
+
         // nerdctl returns newline-delimited JSON, parse each line
         let mut containers = Vec::new();
         for line in json_output.lines() {
@@ -423,20 +522,17 @@ impl ContainerdRuntime {
 
         let json_output = String::from_utf8_lossy(&output.stdout);
         // nerdctl returns newline-delimited JSON, parse the first line
-        let first_line = json_output.lines().next().ok_or_else(|| {
-            AgentError::ContainerError("No stats returned".to_string())
-        })?;
-        
+        let first_line = json_output
+            .lines()
+            .next()
+            .ok_or_else(|| AgentError::ContainerError("No stats returned".to_string()))?;
+
         let stats: ContainerStats = serde_json::from_str(first_line)?;
         Ok(stats)
     }
 
     /// Execute command in running container
-    pub async fn exec(
-        &self,
-        container_id: &str,
-        command: Vec<&str>,
-    ) -> AgentResult<String> {
+    pub async fn exec(&self, container_id: &str, command: Vec<&str>) -> AgentResult<String> {
         let mut cmd = Command::new("nerdctl");
         cmd.arg("--namespace")
             .arg(&self.namespace)
@@ -461,15 +557,15 @@ impl ContainerdRuntime {
     }
 
     /// Send stdin to container
-    pub async fn send_input(
-        &self,
-        container_id: &str,
-        input: &str,
-        process_hint: Option<&str>,
-    ) -> AgentResult<()> {
+    pub async fn send_input(&self, container_id: &str, input: &str) -> AgentResult<()> {
         debug!("Sending input to container: {}", container_id);
+
+        if self.write_to_console_fifo(container_id, input).await? {
+            return Ok(());
+        }
+
         let target_path = self
-            .resolve_stdin_path(container_id, process_hint)
+            .resolve_stdin_path(container_id, None)
             .await
             .unwrap_or_else(|| "/proc/1/fd/0".to_string());
         let escaped = input.replace('\'', "'\\''");
@@ -494,6 +590,32 @@ impl ContainerdRuntime {
         }
 
         Ok(())
+    }
+
+    async fn write_to_console_fifo(&self, container_id: &str, input: &str) -> AgentResult<bool> {
+        let file_handle = {
+            let mut writers = self.console_writers.lock().await;
+            if let Some(writer) = writers.get_mut(container_id) {
+                writer.file.try_clone().map_err(|e| {
+                    AgentError::ContainerError(format!("Failed to clone FIFO handle: {}", e))
+                })?
+            } else {
+                return Ok(false);
+            }
+        };
+
+        let data = input.as_bytes().to_vec();
+        spawn_blocking(move || {
+            let mut writer = file_handle;
+            writer.write_all(&data)?;
+            writer.flush()?;
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .map_err(|e| AgentError::ContainerError(format!("Console write task failed: {}", e)))?
+        .map_err(|e| AgentError::ContainerError(format!("Failed to write console input: {}", e)))?;
+
+        Ok(true)
     }
 
     async fn resolve_stdin_path(
@@ -615,10 +737,7 @@ impl ContainerdRuntime {
 
     /// Spawn a process to stream container logs (stdout/stderr)
     /// Returns a handle to the log streaming process
-    pub async fn spawn_log_stream(
-        &self,
-        container_id: &str,
-    ) -> AgentResult<tokio::process::Child> {
+    pub async fn spawn_log_stream(&self, container_id: &str) -> AgentResult<tokio::process::Child> {
         info!("Starting log stream for container: {}", container_id);
 
         let child = Command::new("nerdctl")
@@ -633,6 +752,28 @@ impl ContainerdRuntime {
             .spawn()?;
 
         Ok(child)
+    }
+}
+
+fn create_fifo(path: &Path) -> std::io::Result<()> {
+    let c_path = CString::new(path.as_os_str().as_bytes())?;
+    let ret = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::AlreadyExists {
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+fn shell_quote(input: &str) -> String {
+    if input.is_empty() {
+        "''".to_string()
+    } else if input.contains('\'') {
+        format!("'{}'", input.replace('\'', "'\\''"))
+    } else {
+        format!("'{}'", input)
     }
 }
 

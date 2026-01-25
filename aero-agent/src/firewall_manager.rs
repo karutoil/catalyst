@@ -1,6 +1,6 @@
-use std::process::Command;
-use tracing::{info, warn, error};
 use crate::errors::{AgentError, AgentResult};
+use std::process::Command;
+use tracing::{error, info, warn};
 
 /// Firewall manager for automatically configuring firewall rules
 pub struct FirewallManager;
@@ -39,7 +39,12 @@ impl FirewallManager {
         }
 
         // Check for iptables (fallback, always present on Linux)
-        if Command::new("iptables").arg("-L").arg("-n").output().is_ok() {
+        if Command::new("iptables")
+            .arg("-L")
+            .arg("-n")
+            .output()
+            .is_ok()
+        {
             info!("Using iptables for firewall management");
             return FirewallType::Iptables;
         }
@@ -51,7 +56,7 @@ impl FirewallManager {
     /// Allow a port through the detected firewall
     pub async fn allow_port(port: u16, container_ip: &str) -> AgentResult<()> {
         let firewall_type = Self::detect_firewall();
-        
+
         match firewall_type {
             FirewallType::Ufw => Self::allow_port_ufw(port).await,
             FirewallType::Firewalld => Self::allow_port_firewalld(port).await,
@@ -66,7 +71,7 @@ impl FirewallManager {
     /// Remove port rules from the detected firewall
     pub async fn remove_port(port: u16, container_ip: &str) -> AgentResult<()> {
         let firewall_type = Self::detect_firewall();
-        
+
         match firewall_type {
             FirewallType::Ufw => Self::remove_port_ufw(port).await,
             FirewallType::Firewalld => Self::remove_port_firewalld(port).await,
@@ -92,9 +97,7 @@ impl FirewallManager {
         }
 
         // Reload UFW to apply changes
-        let _ = Command::new("ufw")
-            .arg("reload")
-            .output();
+        let _ = Command::new("ufw").arg("reload").output();
 
         info!("✓ UFW configured to allow port {}", port);
         Ok(())
@@ -112,7 +115,10 @@ impl FirewallManager {
             .map_err(|e| AgentError::FirewallError(format!("Failed to run ufw: {}", e)))?;
 
         if !output.status.success() {
-            warn!("Failed to remove UFW rule for port {} (may not exist)", port);
+            warn!(
+                "Failed to remove UFW rule for port {} (may not exist)",
+                port
+            );
         }
 
         Ok(())
@@ -132,13 +138,14 @@ impl FirewallManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AgentError::FirewallError(format!("firewalld failed: {}", stderr)));
+            return Err(AgentError::FirewallError(format!(
+                "firewalld failed: {}",
+                stderr
+            )));
         }
 
         // Reload firewalld
-        let _ = Command::new("firewall-cmd")
-            .arg("--reload")
-            .output();
+        let _ = Command::new("firewall-cmd").arg("--reload").output();
 
         info!("✓ firewalld configured to allow port {}", port);
         Ok(())
@@ -156,19 +163,23 @@ impl FirewallManager {
             .map_err(|e| AgentError::FirewallError(format!("Failed to run firewall-cmd: {}", e)))?;
 
         if !output.status.success() {
-            warn!("Failed to remove firewalld rule for port {} (may not exist)", port);
+            warn!(
+                "Failed to remove firewalld rule for port {} (may not exist)",
+                port
+            );
         }
 
-        let _ = Command::new("firewall-cmd")
-            .arg("--reload")
-            .output();
+        let _ = Command::new("firewall-cmd").arg("--reload").output();
 
         Ok(())
     }
 
     /// Configure iptables to allow a port (with container FORWARD rules)
     async fn allow_port_iptables(port: u16, container_ip: &str) -> AgentResult<()> {
-        info!("Configuring iptables to allow port {} for container {}", port, container_ip);
+        info!(
+            "Configuring iptables to allow port {} for container {}",
+            port, container_ip
+        );
 
         // Add INPUT rule for the port
         let output = Command::new("iptables")
@@ -228,13 +239,19 @@ impl FirewallManager {
             warn!("iptables FORWARD rule may already exist: {}", stderr);
         }
 
-        info!("✓ iptables configured to allow port {} with container forwarding", port);
+        info!(
+            "✓ iptables configured to allow port {} with container forwarding",
+            port
+        );
         Ok(())
     }
 
     /// Remove iptables rules for a port
     async fn remove_port_iptables(port: u16, container_ip: &str) -> AgentResult<()> {
-        info!("Removing iptables rules for port {} and container {}", port, container_ip);
+        info!(
+            "Removing iptables rules for port {} and container {}",
+            port, container_ip
+        );
 
         // Remove INPUT rule
         let _ = Command::new("iptables")
@@ -289,7 +306,10 @@ mod tests {
         // Should detect at least one firewall type or None
         assert!(matches!(
             firewall,
-            FirewallType::Ufw | FirewallType::Iptables | FirewallType::Firewalld | FirewallType::None
+            FirewallType::Ufw
+                | FirewallType::Iptables
+                | FirewallType::Firewalld
+                | FirewallType::None
         ));
     }
 }

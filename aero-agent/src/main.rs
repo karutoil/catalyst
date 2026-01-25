@@ -1,23 +1,23 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, error, warn};
-use std::path::PathBuf;
+use tracing::{error, info, warn};
 
 mod config;
-mod runtime_manager;
-mod websocket_handler;
-mod file_manager;
 mod errors;
+mod file_manager;
 mod firewall_manager;
+mod runtime_manager;
 mod system_setup;
+mod websocket_handler;
 
 pub use config::AgentConfig;
-pub use runtime_manager::ContainerdRuntime;
-pub use websocket_handler::WebSocketHandler;
-pub use file_manager::FileManager;
 pub use errors::{AgentError, AgentResult};
+pub use file_manager::FileManager;
 pub use firewall_manager::FirewallManager;
+pub use runtime_manager::ContainerdRuntime;
 pub use system_setup::SystemSetup;
+pub use websocket_handler::WebSocketHandler;
 
 /// Aero Agent - Main application state
 pub struct AeroAgent {
@@ -38,9 +38,7 @@ impl AeroAgent {
             config.containerd.namespace.clone(),
         ));
 
-        let file_manager = Arc::new(FileManager::new(
-            config.server.data_dir.clone(),
-        ));
+        let file_manager = Arc::new(FileManager::new(config.server.data_dir.clone()));
 
         let ws_handler = Arc::new(WebSocketHandler::new(
             config.clone(),
@@ -112,11 +110,10 @@ impl AeroAgent {
 
         let app = Router::new()
             .route("/health", get(|| async { "ok" }))
-                .route("/stats", get(|| async { "stats" }))
-                .route("/containers", get(|| async { "containers" }));
+            .route("/stats", get(|| async { "stats" }))
+            .route("/containers", get(|| async { "containers" }));
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
-            .await?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
 
         info!("Local HTTP server listening on 127.0.0.1:8080");
 
@@ -124,7 +121,6 @@ impl AeroAgent {
             .await
             .map_err(|e| AgentError::NetworkError(e.to_string()))
     }
-
 
     fn clone_refs(&self) -> Self {
         Self {
@@ -151,9 +147,7 @@ async fn main() -> AgentResult<()> {
             .with_env_filter(filter)
             .init();
     } else {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .init();
+        tracing_subscriber::fmt().with_env_filter(filter).init();
     }
 
     info!("Aero Agent starting");

@@ -1,7 +1,7 @@
-use std::process::Command;
 use std::fs;
 use std::path::Path;
-use tracing::{info, warn, error};
+use std::process::Command;
+use tracing::{error, info, warn};
 
 pub struct SystemSetup;
 
@@ -54,7 +54,12 @@ impl SystemSetup {
     /// Ensure container runtime is installed
     async fn ensure_container_runtime(pkg_manager: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Check if nerdctl exists
-        if Command::new("which").arg("nerdctl").output()?.status.success() {
+        if Command::new("which")
+            .arg("nerdctl")
+            .output()?
+            .status
+            .success()
+        {
             info!("✓ nerdctl already installed");
             return Ok(());
         }
@@ -80,12 +85,21 @@ impl SystemSetup {
             }
             _ => {
                 warn!("Automatic installation not supported for {}", pkg_manager);
-                return Err(format!("Please install containerd/nerdctl manually for {}", pkg_manager).into());
+                return Err(format!(
+                    "Please install containerd/nerdctl manually for {}",
+                    pkg_manager
+                )
+                .into());
             }
         }
 
         // Install nerdctl if not bundled
-        if !Command::new("which").arg("nerdctl").output()?.status.success() {
+        if !Command::new("which")
+            .arg("nerdctl")
+            .output()?
+            .status
+            .success()
+        {
             warn!("Installing nerdctl...");
             Self::install_nerdctl().await?;
         }
@@ -134,19 +148,22 @@ impl SystemSetup {
     async fn install_nerdctl() -> Result<(), Box<dyn std::error::Error>> {
         let arch = std::env::consts::ARCH;
         let version = "1.7.6"; // Update as needed
-        
+
         let url = format!(
             "https://github.com/containerd/nerdctl/releases/download/v{}/nerdctl-{}-linux-{}.tar.gz",
             version, version, arch
         );
 
         info!("Downloading nerdctl from {}", url);
-        
+
         // Download and extract
-        Self::run_command("sh", &["-c", &format!(
-            "curl -fsSL {} | tar -xz -C /usr/local/bin nerdctl",
-            url
-        )])?;
+        Self::run_command(
+            "sh",
+            &[
+                "-c",
+                &format!("curl -fsSL {} | tar -xz -C /usr/local/bin nerdctl", url),
+            ],
+        )?;
 
         Ok(())
     }
@@ -174,7 +191,8 @@ impl SystemSetup {
         }
 
         // Create macvlan network configuration
-        let config = format!(r#"{{
+        let config = format!(
+            r#"{{
   "cniVersion": "1.0.0",
   "name": "mc-lan",
   "plugins": [
@@ -187,7 +205,9 @@ impl SystemSetup {
       }}
     }}
   ]
-}}"#, interface);
+}}"#,
+            interface
+        );
 
         fs::write(&cni_config, config)?;
         info!("✓ Created CNI network configuration at {}", cni_config);
@@ -218,7 +238,8 @@ impl SystemSetup {
         let (range_start, range_end) = Self::cidr_usable_range(&cidr)?;
 
         // Create macvlan network configuration (host-local IPAM)
-        let config = format!(r#"{{
+        let config = format!(
+            r#"{{
   "cniVersion": "1.0.0",
   "name": "mc-lan-static",
   "plugins": [
@@ -242,10 +263,15 @@ impl SystemSetup {
       }}
     }}
   ]
-}}"#, interface, cidr, range_start, range_end, gateway);
+}}"#,
+            interface, cidr, range_start, range_end, gateway
+        );
 
         fs::write(&cni_config, config)?;
-        info!("✓ Created CNI static network configuration at {}", cni_config);
+        info!(
+            "✓ Created CNI static network configuration at {}",
+            cni_config
+        );
 
         Ok(())
     }
@@ -300,7 +326,10 @@ impl SystemSetup {
     fn detect_interface_cidr(interface: &str) -> Result<String, Box<dyn std::error::Error>> {
         let output = Command::new("sh")
             .arg("-c")
-            .arg(format!("ip -4 addr show dev {} | awk '/inet / {{print $2}}' | head -n1", interface))
+            .arg(format!(
+                "ip -4 addr show dev {} | awk '/inet / {{print $2}}' | head -n1",
+                interface
+            ))
             .output()?;
 
         if output.status.success() {
@@ -322,7 +351,11 @@ impl SystemSetup {
 
         let addr: std::net::Ipv4Addr = addr_str.parse()?;
         let addr_u32 = u32::from(addr);
-        let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+        let mask = if prefix == 0 {
+            0
+        } else {
+            u32::MAX << (32 - prefix)
+        };
         let network = addr_u32 & mask;
         Ok(format!("{}/{}", std::net::Ipv4Addr::from(network), prefix))
     }
@@ -336,7 +369,11 @@ impl SystemSetup {
 
         let addr: std::net::Ipv4Addr = addr_str.parse()?;
         let addr_u32 = u32::from(addr);
-        let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+        let mask = if prefix == 0 {
+            0
+        } else {
+            u32::MAX << (32 - prefix)
+        };
         let network = addr_u32 & mask;
         let broadcast = network | (!mask);
 
@@ -376,10 +413,8 @@ impl SystemSetup {
 
         // Fallback: Start the DHCP daemon directly
         info!("Starting CNI DHCP daemon...");
-        
-        Command::new(dhcp_bin)
-            .arg("daemon")
-            .spawn()?;
+
+        Command::new(dhcp_bin).arg("daemon").spawn()?;
 
         // Wait a bit for daemon to start
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -397,7 +432,12 @@ impl SystemSetup {
     /// Setup systemd service for DHCP daemon
     fn setup_dhcp_systemd_service() -> Result<(), Box<dyn std::error::Error>> {
         // Check if systemd is available
-        if !Command::new("which").arg("systemctl").output()?.status.success() {
+        if !Command::new("which")
+            .arg("systemctl")
+            .output()?
+            .status
+            .success()
+        {
             return Err("systemd not available".into());
         }
 
@@ -446,7 +486,7 @@ WantedBy=multi-user.target
     async fn install_cni_plugins() -> Result<(), Box<dyn std::error::Error>> {
         let version = "v1.4.1"; // Update as needed
         let arch = std::env::consts::ARCH;
-        
+
         let url = format!(
             "https://github.com/containernetworking/plugins/releases/download/{}/cni-plugins-linux-{}-{}.tgz",
             version, arch, version
@@ -456,10 +496,13 @@ WantedBy=multi-user.target
 
         fs::create_dir_all("/opt/cni/bin")?;
 
-        Self::run_command("sh", &["-c", &format!(
-            "curl -fsSL {} | tar -xz -C /opt/cni/bin",
-            url
-        )])?;
+        Self::run_command(
+            "sh",
+            &[
+                "-c",
+                &format!("curl -fsSL {} | tar -xz -C /opt/cni/bin", url),
+            ],
+        )?;
 
         info!("✓ CNI plugins installed");
         Ok(())
@@ -468,7 +511,7 @@ WantedBy=multi-user.target
     /// Helper to run a command and check for errors
     fn run_command(cmd: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         let output = Command::new(cmd).args(args).output()?;
-        
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Command failed: {} {}\n{}", cmd, args.join(" "), stderr);

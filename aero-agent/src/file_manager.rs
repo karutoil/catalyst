@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 
 use crate::{AgentError, AgentResult};
 
@@ -42,9 +42,7 @@ impl FileManager {
                 ))
             })?;
 
-        let canonical_base = server_base
-            .canonicalize()
-            .unwrap_or(server_base.clone());
+        let canonical_base = server_base.canonicalize().unwrap_or(server_base.clone());
 
         if !canonical.starts_with(&canonical_base) {
             return Err(AgentError::PermissionDenied(
@@ -66,16 +64,22 @@ impl FileManager {
             .map_err(|e| AgentError::FileSystemError(format!("Cannot access file: {}", e)))?;
 
         if metadata.len() > MAX_FILE_SIZE {
-            return Err(AgentError::FileSystemError(
-                format!("File too large: {} > {}MB", metadata.len(), MAX_FILE_SIZE / 1024 / 1024),
-            ));
+            return Err(AgentError::FileSystemError(format!(
+                "File too large: {} > {}MB",
+                metadata.len(),
+                MAX_FILE_SIZE / 1024 / 1024
+            )));
         }
 
         let content = fs::read(&full_path)
             .await
             .map_err(|e| AgentError::FileSystemError(format!("Failed to read file: {}", e)))?;
 
-        info!("File read successfully: {:?} ({} bytes)", full_path, content.len());
+        info!(
+            "File read successfully: {:?} ({} bytes)",
+            full_path,
+            content.len()
+        );
 
         Ok(content)
     }
@@ -94,13 +98,11 @@ impl FileManager {
 
         // Check size limit before writing
         if data.len() as u64 > MAX_FILE_SIZE {
-            return Err(AgentError::FileSystemError(
-                format!(
-                    "File too large: {} > {}MB",
-                    data.len(),
-                    MAX_FILE_SIZE / 1024 / 1024
-                ),
-            ));
+            return Err(AgentError::FileSystemError(format!(
+                "File too large: {} > {}MB",
+                data.len(),
+                MAX_FILE_SIZE / 1024 / 1024
+            )));
         }
 
         fs::write(&full_path, data.as_bytes())
@@ -141,15 +143,11 @@ impl FileManager {
             .await
             .map_err(|e| AgentError::FileSystemError(format!("Error reading dir entry: {}", e)))?
         {
-            let metadata = entry
-                .metadata()
-                .await
-                .map_err(|e| AgentError::FileSystemError(format!("Failed to get metadata: {}", e)))?;
+            let metadata = entry.metadata().await.map_err(|e| {
+                AgentError::FileSystemError(format!("Failed to get metadata: {}", e))
+            })?;
 
-            let name = entry
-                .file_name()
-                .to_string_lossy()
-                .to_string();
+            let name = entry.file_name().to_string_lossy().to_string();
 
             let is_dir = metadata.is_dir();
 
@@ -169,16 +167,16 @@ impl FileManager {
             });
         }
 
-        info!("Directory listed: {:?} ({} entries)", full_path, entries.len());
+        info!(
+            "Directory listed: {:?} ({} entries)",
+            full_path,
+            entries.len()
+        );
 
         Ok(entries)
     }
 
-    pub async fn compress_directory(
-        &self,
-        server_id: &str,
-        path: &str,
-    ) -> AgentResult<Vec<u8>> {
+    pub async fn compress_directory(&self, server_id: &str, path: &str) -> AgentResult<Vec<u8>> {
         let full_path = self.resolve_path(server_id, path)?;
 
         info!("Compressing directory: {:?}", full_path);
