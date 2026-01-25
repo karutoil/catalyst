@@ -1,10 +1,12 @@
 use futures::{stream::SplitSink, SinkExt, StreamExt};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use sysinfo::System;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::ChildStdin;
 use tokio::sync::Mutex;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
@@ -21,6 +23,11 @@ pub struct WebSocketHandler {
     runtime: Arc<ContainerdRuntime>,
     file_manager: Arc<FileManager>,
     ws_writer: Arc<Mutex<Option<Arc<Mutex<WsWriter>>>>>,
+    install_sessions: Arc<Mutex<HashMap<String, InstallSession>>>,
+}
+
+struct InstallSession {
+    stdin: Arc<Mutex<ChildStdin>>,
 }
 
 impl Clone for WebSocketHandler {
@@ -30,6 +37,7 @@ impl Clone for WebSocketHandler {
             runtime: self.runtime.clone(),
             file_manager: self.file_manager.clone(),
             ws_writer: self.ws_writer.clone(),
+            install_sessions: self.install_sessions.clone(),
         }
     }
 }
@@ -45,6 +53,7 @@ impl WebSocketHandler {
             runtime,
             file_manager,
             ws_writer: Arc::new(Mutex::new(None)),
+            install_sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -300,6 +309,14 @@ impl WebSocketHandler {
                 AgentError::InvalidRequest("Missing installScript in template".to_string())
             })?;
 
+        let install_image = template
+            .get("installImage")
+            .and_then(|v| v.as_str())
+            .or_else(|| template.get("image").and_then(|v| v.as_str()))
+            .ok_or_else(|| {
+                AgentError::InvalidRequest("Missing installImage in template".to_string())
+            })?;
+
         let environment = msg
             .get("environment")
             .and_then(|v| v.as_object())
@@ -347,24 +364,30 @@ impl WebSocketHandler {
         )
         .await?;
 
+        let mut env_map = std::collections::HashMap::new();
+        for (key, value) in environment {
+            if let Some(val_str) = value.as_str() {
+                env_map.insert(key.clone(), val_str.to_string());
+            }
+        }
+        env_map.insert("SERVER_DIR".to_string(), "/data".to_string());
+
         // Replace variables in install script
         let mut final_script = install_script.to_string();
-        for (key, value) in environment {
+        for (key, value) in &env_map {
             let placeholder = format!("{{{{{}}}}}", key);
-            let replacement = value.as_str().unwrap_or("");
-            final_script = final_script.replace(&placeholder, replacement);
+            final_script = final_script.replace(&placeholder, value);
         }
 
         info!("Executing installation script");
         self.send_console_output(server_id, "system", "Executing installation script...")
             .await?;
 
-        // Execute the install script on the host
+        // Execute the install script in a container
         // NOTE: Script handles its own directory with cd {{SERVER_DIR}}
-        let output = tokio::process::Command::new("bash")
-            .arg("-c")
-            .arg(&final_script)
-            .output()
+        let mut child = self
+            .runtime
+            .spawn_installer_container(install_image, &final_script, &env_map, &server_dir)
             .await
             .map_err(|e| {
                 let err_msg = format!("Failed to execute install script: {}", e);
@@ -387,13 +410,71 @@ impl WebSocketHandler {
                 AgentError::IoError(err_msg)
             })?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Installation failed: {}", stderr);
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| AgentError::IoError("Installer stdin unavailable".to_string()))?;
+        {
+            let mut sessions = self.install_sessions.lock().await;
+            sessions.insert(
+                server_id.to_string(),
+                InstallSession {
+                    stdin: Arc::new(Mutex::new(stdin)),
+                },
+            );
+        }
+
+        if let Some(stdout) = child.stdout.take() {
+            let handler = self.clone();
+            let sid = server_id.to_string();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let _ = handler
+                        .send_console_output(&sid, "stdout", &format!("{}\n", line))
+                        .await;
+                }
+            });
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            let handler = self.clone();
+            let sid = server_id.to_string();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let _ = handler
+                        .send_console_output(&sid, "stderr", &format!("{}\n", line))
+                        .await;
+                }
+            });
+        }
+
+        let status = match child.wait().await {
+            Ok(status) => status,
+            Err(e) => {
+                let mut sessions = self.install_sessions.lock().await;
+                sessions.remove(server_id);
+                return Err(AgentError::IoError(format!(
+                    "Failed waiting for installer: {}",
+                    e
+                )));
+            }
+        };
+
+        {
+            let mut sessions = self.install_sessions.lock().await;
+            sessions.remove(server_id);
+        }
+
+        if !status.success() {
+            let detail = status
+                .code()
+                .map(|code| format!("exit code {}", code))
+                .unwrap_or_else(|| "unknown error".to_string());
+            error!("Installation failed: {}", detail);
 
             // Send error logs
-            self.send_console_output(server_id, "stderr", &stderr)
-                .await?;
             self.send_console_output(server_id, "system", "Installation FAILED")
                 .await?;
 
@@ -401,24 +482,16 @@ impl WebSocketHandler {
             self.emit_server_state_update(
                 server_id,
                 "stopped",
-                Some(format!("Installation failed: {}", stderr)),
+                Some(format!("Installation failed: {}", detail)),
             )
             .await?;
 
             return Err(AgentError::InstallationError(format!(
                 "Install script failed: {}",
-                stderr
+                detail
             )));
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("Installation output: {}", stdout);
-
-        // Send installation output
-        if !stdout.is_empty() {
-            self.send_console_output(server_id, "stdout", &stdout)
-                .await?;
-        }
         self.send_console_output(server_id, "system", "Installation completed successfully!")
             .await?;
 
@@ -688,6 +761,18 @@ impl WebSocketHandler {
             .ok_or_else(|| AgentError::InvalidRequest("Missing data".to_string()))?;
 
         debug!("Console input for {}: {}", server_id, data);
+
+        let install_stdin = {
+            let sessions = self.install_sessions.lock().await;
+            sessions.get(server_id).map(|session| session.stdin.clone())
+        };
+        if let Some(stdin) = install_stdin {
+            let mut stdin = stdin.lock().await;
+            stdin.write_all(data.as_bytes()).await.map_err(|e| {
+                AgentError::IoError(format!("Failed to write install stdin: {}", e))
+            })?;
+            return Ok(());
+        }
 
         // Send to container stdin
         self.runtime.send_input(server_uuid, data).await?;

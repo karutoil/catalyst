@@ -5,6 +5,7 @@
   "author": "Aero Maintainers",
   "version": "1.20.4",
   "image": "eclipse-temurin:21-jre",
+  "installImage": "alpine:3.19",
   "startup": "java -Xms{{MEMORY_XMS}}M -Xmx{{MEMORY}}M -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:G1HeapRegionSize=16M -jar paper.jar nogui",
   "stopCommand": "stop",
   "sendSignalTo": "SIGTERM",
@@ -130,7 +131,7 @@
       "input": "checkbox"
     }
   ],
-  "installScript": "#!/bin/bash\nset -e\n\necho '[Aero] Starting Minecraft Paper server installation...'\n\n# Create server directory\nmkdir -p {{SERVER_DIR}}\ncd {{SERVER_DIR}}\n\n# Download Paper server jar (1.20.4 build 499)\necho '[Aero] Downloading Paper 1.20.4...'\nif command -v wget >/dev/null 2>&1; then\n  wget -q -O paper.jar https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/499/downloads/paper-1.20.4-499.jar\nelif command -v curl >/dev/null 2>&1; then\n  curl -sL -o paper.jar https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/499/downloads/paper-1.20.4-499.jar\nelse\n  echo '[Aero] ERROR: Neither wget nor curl found!'\n  exit 1\nfi\n\n# Verify download\nif [ ! -f paper.jar ]; then\n  echo '[Aero] ERROR: Failed to download paper.jar'\n  exit 1\nfi\n\necho '[Aero] Downloaded paper.jar successfully'\n\n# Accept EULA\necho '[Aero] Accepting Minecraft EULA...'\necho 'eula=true' > eula.txt\n\n# Create server.properties with basic settings\ncat > server.properties << 'PROPS'\nserver-port={{PORT}}\ndifficulty={{DIFFICULTY}}\ngamemode={{GAMEMODE}}\npvp={{PVP}}\nlevel-name={{LEVEL_NAME}}\nlevel-seed={{LEVEL_SEED}}\nlevel-type={{LEVEL_TYPE}}\nonline-mode={{ONLINE_MODE}}\nwhite-list={{WHITE_LIST}}\nmax-players={{MAX_PLAYERS}}\nmotd={{MOTD}}\nenable-rcon={{ENABLE_RCON}}\nPROPS\n\necho '[Aero] Server configuration created'\necho '[Aero] Installation complete!'\n",
+  "installScript": "#!/bin/sh\nset -e\n\necho '[Aero] Starting Minecraft Paper server installation...'\n\n# Create server directory\nmkdir -p {{SERVER_DIR}}\ncd {{SERVER_DIR}}\n\n# Download Paper server jar (1.20.4 build 499)\necho '[Aero] Downloading Paper 1.20.4...'\nif command -v wget >/dev/null 2>&1; then\n  wget -q -O paper.jar https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/499/downloads/paper-1.20.4-499.jar\nelif command -v curl >/dev/null 2>&1; then\n  curl -sL -o paper.jar https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/499/downloads/paper-1.20.4-499.jar\nelse\n  echo '[Aero] ERROR: Neither wget nor curl found!'\n  exit 1\nfi\n\n# Verify download\nif [ ! -f paper.jar ]; then\n  echo '[Aero] ERROR: Failed to download paper.jar'\n  exit 1\nfi\n\necho '[Aero] Downloaded paper.jar successfully'\n\n# Accept EULA\necho '[Aero] Accepting Minecraft EULA...'\necho 'eula=true' > eula.txt\n\n# Create server.properties with basic settings\ncat > server.properties << 'PROPS'\nserver-port={{PORT}}\ndifficulty={{DIFFICULTY}}\ngamemode={{GAMEMODE}}\npvp={{PVP}}\nlevel-name={{LEVEL_NAME}}\nlevel-seed={{LEVEL_SEED}}\nlevel-type={{LEVEL_TYPE}}\nonline-mode={{ONLINE_MODE}}\nwhite-list={{WHITE_LIST}}\nmax-players={{MAX_PLAYERS}}\nmotd={{MOTD}}\nenable-rcon={{ENABLE_RCON}}\nPROPS\n\necho '[Aero] Server configuration created'\necho '[Aero] Installation complete!'\n",
   "supportedPorts": [25565],
   "allocatedMemoryMb": 1024,
   "allocatedCpuCores": 2,

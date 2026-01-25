@@ -123,6 +123,7 @@ model ServerTemplate {
   author             String
   version            String
   image              String
+  installImage       String?
   startup            String
   stopCommand        String
   sendSignalTo       String   @default("SIGTERM")

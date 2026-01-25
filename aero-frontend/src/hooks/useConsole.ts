@@ -70,11 +70,21 @@ export function useConsole(serverId?: string, options: ConsoleOptions = {}) {
       }),
     );
     setEntries((prev) => {
-      if (!prev.length) return initialEntries.slice(-maxEntries);
+      if (!isConnected || !prev.length) return initialEntries.slice(-maxEntries);
       const merged = [...initialEntries, ...prev];
       return merged.length > maxEntries ? merged.slice(-maxEntries) : merged;
     });
-  }, [logsQuery.data, buildEntry, maxEntries, serverId]);
+  }, [logsQuery.data, buildEntry, maxEntries, serverId, isConnected]);
+
+  useEffect(() => {
+    if (!serverId || isConnected) return;
+    const interval = setInterval(() => {
+      logsQuery.refetch().catch(() => {
+        // ignore polling errors
+      });
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [serverId, isConnected, logsQuery]);
 
   useEffect(() => {
     if (!serverId) return;

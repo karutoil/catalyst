@@ -45,6 +45,7 @@ export async function templateRoutes(app: FastifyInstance) {
         author,
         version,
         image,
+        installImage,
         startup,
         stopCommand,
         sendSignalTo,
@@ -60,6 +61,7 @@ export async function templateRoutes(app: FastifyInstance) {
         author: string;
         version: string;
         image: string;
+        installImage?: string;
         startup: string;
         stopCommand: string;
         sendSignalTo: string;
@@ -78,6 +80,7 @@ export async function templateRoutes(app: FastifyInstance) {
           author,
           version,
           image,
+          installImage,
           startup,
           stopCommand,
           sendSignalTo,

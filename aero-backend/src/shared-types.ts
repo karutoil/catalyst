@@ -54,6 +54,7 @@ export interface ServerTemplate {
   author: string;
   version: string;
   image: string;
+  installImage?: string;
   startup: string;
   stopCommand: string;
   sendSignalTo: "SIGTERM" | "SIGKILL";

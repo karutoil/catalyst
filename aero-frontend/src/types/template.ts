@@ -14,6 +14,7 @@ export interface Template {
   author: string;
   version: string;
   image: string;
+  installImage?: string;
   startup: string;
   stopCommand: string;
   sendSignalTo: string;

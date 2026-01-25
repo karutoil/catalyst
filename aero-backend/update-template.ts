@@ -12,6 +12,7 @@ async function main() {
     where: { id: 'minecraft-paper' },
     data: {
       image: templateData.image,
+      installImage: templateData.installImage,
       startup: templateData.startup,
       installScript: templateData.installScript,
     },

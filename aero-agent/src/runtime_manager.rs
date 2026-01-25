@@ -170,6 +170,39 @@ impl ContainerdRuntime {
         Ok(container_full_id)
     }
 
+    pub async fn spawn_installer_container(
+        &self,
+        image: &str,
+        script: &str,
+        env: &HashMap<String, String>,
+        data_dir: &str,
+    ) -> AgentResult<tokio::process::Child> {
+        info!("Spawning installer container with image: {}", image);
+
+        let mut cmd = Command::new("nerdctl");
+        cmd.arg("--namespace")
+            .arg(&self.namespace)
+            .arg("run")
+            .arg("--rm")
+            .arg("-i");
+
+        cmd.arg("-v").arg(format!("{}:/data", data_dir));
+        cmd.arg("-w").arg("/data");
+
+        for (key, value) in env {
+            cmd.arg("-e").arg(format!("{}={}", key, value));
+        }
+
+        cmd.arg(image).arg("sh").arg("-c").arg(script);
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+
+        let child = cmd.spawn().map_err(|e| {
+            AgentError::ContainerError(format!("Failed to run installer container: {}", e))
+        })?;
+
+        Ok(child)
+    }
+
     async fn prepare_console_fifo(&self, container_id: &str) -> AgentResult<ConsoleFifo> {
         let base_dir = PathBuf::from("/tmp/aero-console");
         let dir = base_dir.join(container_id);

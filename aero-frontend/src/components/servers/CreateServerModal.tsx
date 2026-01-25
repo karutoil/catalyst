@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { serversApi } from '../../services/api/servers';
 import { useTemplates } from '../../hooks/useTemplates';
@@ -19,6 +20,7 @@ function CreateServerModal() {
     'mc-lan',
   );
   const [staticIp, setStaticIp] = useState('');
+  const navigate = useNavigate();
 
   const { data: templates = [] } = useTemplates();
   const { data: nodes = [] } = useNodes();
@@ -68,7 +70,7 @@ function CreateServerModal() {
       
       return server;
     },
-    onSuccess: () => {
+    onSuccess: (server) => {
       queryClient.invalidateQueries({
         predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === 'servers',
       });
@@ -80,6 +82,9 @@ function CreateServerModal() {
       setEnvironment({});
       setNetworkMode('mc-lan');
       setStaticIp('');
+      if (server?.id) {
+        navigate(`/servers/${server.id}/console`);
+      }
     },
     onError: (error: any) => {
       const message = error?.response?.data?.error || 'Failed to create server';

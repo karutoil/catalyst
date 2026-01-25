@@ -5,6 +5,7 @@
   "author": "Aero Maintainers",
   "version": "20.x",
   "image": "node:20-alpine",
+  "installImage": "node:20-alpine",
   "startup": "{{START_COMMAND}}",
   "stopCommand": "npm run stop || kill -s SIGTERM 1",
   "sendSignalTo": "SIGTERM",
@@ -61,7 +62,7 @@
       "rules": ["in:development,production,test"]
     }
   ],
-  "installScript": "#!/bin/sh\nset -e\n\necho '[Aero] Starting Node.js app installation...'\n\nmkdir -p {{SERVER_DIR}}\ncd {{SERVER_DIR}}\n\nif [ -z \"{{GIT_REPO}}\" ]; then\n  echo '[Aero] ERROR: GIT_REPO is required'\n  exit 1\nfi\n\nif command -v git >/dev/null 2>&1; then\n  if [ -d app ]; then\n    echo '[Aero] Updating existing repo...'\n    cd app\n    git fetch --all --prune\n    git checkout {{GIT_BRANCH}}\n    git reset --hard origin/{{GIT_BRANCH}}\n  else\n    echo '[Aero] Cloning repository...'\n    git clone --depth 1 --branch {{GIT_BRANCH}} {{GIT_REPO}} app\n    cd app\n  fi\nelse\n  echo '[Aero] ERROR: git is required but not installed in the image'\n  exit 1\nfi\n\n# Create .env file with repo link and runtime config\ncat > .env << 'ENVVARS'\nGIT_REPO={{GIT_REPO}}\nNODE_ENV={{NODE_ENV}}\nPORT={{PORT}}\nENVVARS\n\n# Install dependencies\nif [ -n \"{{INSTALL_COMMAND}}\" ]; then\n  echo '[Aero] Installing dependencies...'\n  sh -c \"{{INSTALL_COMMAND}}\"\nfi\n\n# Build step (optional)\nif [ -n \"{{BUILD_COMMAND}}\" ]; then\n  echo '[Aero] Building application...'\n  sh -c \"{{BUILD_COMMAND}}\"\nfi\n\necho '[Aero] Installation complete!'\n",
+  "installScript": "#!/bin/sh\nset -e\n\necho '[Aero] Starting Node.js app installation...'\n\nmkdir -p {{SERVER_DIR}}\ncd {{SERVER_DIR}}\n\nif [ -z \"{{GIT_REPO}}\" ]; then\n  echo '[Aero] ERROR: GIT_REPO is required'\n  exit 1\nfi\n\nif ! command -v git >/dev/null 2>&1; then\n  if command -v apk >/dev/null 2>&1; then\n    echo '[Aero] Installing git via apk...'\n    apk add --no-cache git\n  elif command -v apt-get >/dev/null 2>&1; then\n    echo '[Aero] Installing git via apt-get...'\n    apt-get update -y\n    apt-get install -y git\n  else\n    echo '[Aero] ERROR: git is required but no package manager is available'\n    exit 1\n  fi\nfi\n\nif [ -d app ]; then\n  echo '[Aero] Updating existing repo...'\n  cd app\n  git fetch --all --prune\n  git checkout {{GIT_BRANCH}}\n  git reset --hard origin/{{GIT_BRANCH}}\nelse\n  echo '[Aero] Cloning repository...'\n  git clone --depth 1 --branch {{GIT_BRANCH}} {{GIT_REPO}} app\n  cd app\nfi\n\n# Create .env file with repo link and runtime config\ncat > .env << 'ENVVARS'\nGIT_REPO={{GIT_REPO}}\nNODE_ENV={{NODE_ENV}}\nPORT={{PORT}}\nENVVARS\n\n# Install dependencies\nif [ -n \"{{INSTALL_COMMAND}}\" ]; then\n  echo '[Aero] Installing dependencies...'\n  sh -c \"{{INSTALL_COMMAND}}\"\nfi\n\n# Build step (optional)\nif [ -n \"{{BUILD_COMMAND}}\" ]; then\n  echo '[Aero] Building application...'\n  sh -c \"{{BUILD_COMMAND}}\"\nfi\n\necho '[Aero] Installation complete!'\n",
   "supportedPorts": [3000],
   "allocatedMemoryMb": 512,
   "allocatedCpuCores": 1,
