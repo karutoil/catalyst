@@ -64,6 +64,7 @@ export interface ServerTemplate {
   features?: {
     restartOnExit?: boolean;
     maxInstances?: number;
+    iconUrl?: string;
   };
 }
 

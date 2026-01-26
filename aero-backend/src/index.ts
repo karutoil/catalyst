@@ -47,7 +47,101 @@ const taskScheduler = new TaskScheduler(prisma, logger);
 const alertService = new AlertService(prisma, logger);
 
 // Set task executor for the scheduler
-taskScheduler.setTaskExecutor(wsGateway);
+taskScheduler.setTaskExecutor({
+  executeTask: async (task: any) => {
+    const action = task.action;
+    if (!action) {
+      logger.warn({ taskId: task.id }, "Scheduled task missing action");
+      return;
+    }
+    const server = task.serverId
+      ? await prisma.server.findUnique({
+          where: { id: task.serverId },
+          include: { template: true },
+        })
+      : null;
+    if (!server) {
+      logger.warn({ taskId: task.id }, "Scheduled task server not found");
+      return;
+    }
+    const serverDir = process.env.SERVER_DATA_PATH || "/tmp/aero-servers";
+    const fullServerDir = `${serverDir}/${server.uuid}`;
+    const environment: Record<string, string> = {
+      ...(server.environment as Record<string, string>),
+      SERVER_DIR: fullServerDir,
+    };
+    if (server.primaryIp && !environment.AERO_NETWORK_IP) {
+      environment.AERO_NETWORK_IP = server.primaryIp;
+    }
+
+    if (action === "backup") {
+      await wsGateway.sendToAgent(server.nodeId, {
+        type: "create_backup",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        environment,
+        payload: task.payload ?? {},
+      });
+      return;
+    }
+
+    if (action === "command") {
+      const command = task.payload?.command;
+      if (!command) {
+        logger.warn({ taskId: task.id }, "Scheduled task command missing payload.command");
+        return;
+      }
+      await wsGateway.sendToAgent(server.nodeId, {
+        type: "console_input",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        data: `${command}\n`,
+      });
+      return;
+    }
+
+    if (action === "restart") {
+      await wsGateway.sendToAgent(server.nodeId, {
+        type: "restart_server",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        template: server.template,
+        environment,
+        allocatedMemoryMb: server.allocatedMemoryMb,
+        allocatedCpuCores: server.allocatedCpuCores,
+        primaryPort: server.primaryPort,
+        networkMode: server.networkMode,
+      });
+      return;
+    }
+
+    if (action === "start") {
+      await wsGateway.sendToAgent(server.nodeId, {
+        type: "start_server",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        template: server.template,
+        environment,
+        allocatedMemoryMb: server.allocatedMemoryMb,
+        allocatedCpuCores: server.allocatedCpuCores,
+        primaryPort: server.primaryPort,
+        networkMode: server.networkMode,
+      });
+      return;
+    }
+
+    if (action === "stop") {
+      await wsGateway.sendToAgent(server.nodeId, {
+        type: "stop_server",
+        serverId: server.id,
+        serverUuid: server.uuid,
+      });
+      return;
+    }
+
+    logger.warn({ taskId: task.id, action }, "Unknown scheduled task action");
+  },
+});
 
 // ============================================================================
 // MIDDLEWARE
@@ -109,24 +203,22 @@ async function bootstrap() {
 
     // Register plugins
     await app.register(fastifyCors, {
-      origin: function(origin, callback) {
-        // Allow requests from localhost in development, all origins in production with specific list
+      origin: async (origin) => {
         const allowedOrigins = [
           'http://localhost:3000',
           'http://localhost:5173', // Vite dev server
           'http://127.0.0.1:3000',
           'http://127.0.0.1:5173',
           process.env.CORS_ORIGIN,
-        ].filter(Boolean);
+        ].filter(Boolean) as string[];
 
         if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else if (process.env.NODE_ENV === 'development') {
-          // Allow all in development
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
+          return true;
         }
+        if (process.env.NODE_ENV === 'development') {
+          return true;
+        }
+        return false;
       },
       credentials: true,
     });

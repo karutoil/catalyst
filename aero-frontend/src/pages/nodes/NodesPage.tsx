@@ -5,7 +5,11 @@ import EmptyState from '../../components/shared/EmptyState';
 import { useNodes } from '../../hooks/useNodes';
 import { useAuthStore } from '../../stores/authStore';
 
-function NodesPage() {
+type Props = {
+  hideHeader?: boolean;
+};
+
+function NodesPage({ hideHeader }: Props) {
   const { data: nodes = [], isLoading } = useNodes();
   const { user } = useAuthStore();
   const isAdmin = useMemo(
@@ -16,18 +20,20 @@ function NodesPage() {
   const locationId = nodes[0]?.locationId ?? '';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-50">Nodes</h1>
-          <p className="text-sm text-slate-400">Track connected infrastructure nodes.</p>
+    <div className={hideHeader ? '' : 'space-y-4'}>
+      {!hideHeader ? (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-50">Nodes</h1>
+            <p className="text-sm text-slate-400">Track connected infrastructure nodes.</p>
+          </div>
+          {isAdmin ? (
+            <NodeCreateModal locationId={locationId} />
+          ) : (
+            <span className="text-xs text-slate-500">Admin access required</span>
+          )}
         </div>
-        {isAdmin ? (
-          <NodeCreateModal locationId={locationId} />
-        ) : (
-          <span className="text-xs text-slate-500">Admin access required</span>
-        )}
-      </div>
+      ) : null}
       {isLoading ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-200">
           Loading nodes...

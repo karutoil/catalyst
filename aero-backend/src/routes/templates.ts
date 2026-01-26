@@ -1,6 +1,24 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 
+const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyReply) => {
+  const roles = await prisma.role.findMany({
+    where: {
+      users: {
+        some: { id: userId },
+      },
+    },
+  });
+  const permissions = roles.flatMap((role) => role.permissions);
+  const isAdmin = permissions.includes("*") || permissions.includes("admin.read");
+  const hasRole = roles.some((role) => role.name.toLowerCase() === "administrator");
+  if (!isAdmin && !hasRole) {
+    reply.status(403).send({ error: "Admin access required" });
+    return false;
+  }
+  return true;
+};
+
 export async function templateRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
 
@@ -39,6 +57,8 @@ export async function templateRoutes(app: FastifyInstance) {
     "/",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
       const {
         name,
         description,
@@ -102,6 +122,8 @@ export async function templateRoutes(app: FastifyInstance) {
     "/:templateId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
       const { templateId } = request.params as { templateId: string };
 
       const template = await prisma.serverTemplate.findUnique({
@@ -126,6 +148,8 @@ export async function templateRoutes(app: FastifyInstance) {
     "/:templateId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
       const { templateId } = request.params as { templateId: string };
 
       // Check if template is in use

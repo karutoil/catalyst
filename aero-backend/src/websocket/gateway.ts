@@ -235,6 +235,15 @@ export class WebSocketGateway {
           },
         });
       } else if (message.type === "console_output") {
+        if (message.serverId && message.data) {
+          await this.prisma.serverLog.create({
+            data: {
+              serverId: message.serverId,
+              stream: message.stream || "stdout",
+              data: message.data,
+            },
+          });
+        }
         // Route console output to all subscribed clients
         await this.routeToClients(message.serverId, message);
       } else if (message.type === "server_state_update") {
@@ -243,6 +252,15 @@ export class WebSocketGateway {
           where: { id: message.serverId },
           data: { status: message.state },
         });
+        if (message.reason) {
+          await this.prisma.serverLog.create({
+            data: {
+              serverId: message.serverId,
+              stream: "system",
+              data: `Status changed to ${message.state}: ${message.reason}`,
+            },
+          });
+        }
         // Route to clients
         await this.routeToClients(message.serverId, message);
       } else if (message.type === "backup_complete") {
@@ -403,8 +421,17 @@ export class WebSocketGateway {
     token: string
   ): Promise<{ userId: string } | null> {
     try {
-      const jwt = await import("jsonwebtoken");
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || "dev-secret-key");
+      const jwtModule = await import("jsonwebtoken");
+      const verify =
+        (jwtModule as { verify?: typeof import("jsonwebtoken").verify }).verify ??
+        (jwtModule as { default?: { verify?: typeof import("jsonwebtoken").verify } }).default?.verify;
+      if (!verify) {
+        throw new Error("JWT verify unavailable");
+      }
+      const decoded = verify(
+        token,
+        process.env.JWT_SECRET || "dev-secret-key-change-in-production"
+      );
       return decoded as { userId: string };
     } catch {
       return null;

@@ -109,7 +109,7 @@ function NodeDetailsPage() {
           <Link to="/servers" className="text-xs font-medium text-sky-400 hover:text-sky-300">
             View all servers
           </Link>
-        </div>
+          </div>
         {serverList.length ? (
           <ul className="space-y-2 text-sm text-slate-300">
             {serverList.map((server) => (

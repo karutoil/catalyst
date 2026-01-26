@@ -1264,6 +1264,14 @@ export async function serverRoutes(app: FastifyInstance) {
         data: { status: "installing" },
       });
 
+      await prisma.serverLog.create({
+        data: {
+          serverId: serverId,
+          stream: "system",
+          data: "Installation started.",
+        },
+      });
+
       reply.send({ success: true, message: "Install command sent to agent" });
     }
   );
@@ -1509,7 +1517,7 @@ export async function serverRoutes(app: FastifyInstance) {
       const serverDir = process.env.SERVER_DATA_PATH || "/tmp/aero-servers";
       const fullServerDir = `${serverDir}/${server.uuid}`;
       
-      const environment = {
+      const environment: Record<string, string> = {
         ...(server.environment as Record<string, string>),
         SERVER_DIR: fullServerDir,
       };

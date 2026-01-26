@@ -34,7 +34,7 @@ function DashboardPage() {
             Create Server
           </Link>
           <Link
-            to="/nodes"
+            to="/admin/nodes"
             className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-emerald-500"
           >
             Register Node

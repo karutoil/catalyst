@@ -153,7 +153,12 @@ aero-frontend/
 │   │   │   └── CreateTemplateModal.tsx
 │   │   ├── tasks/
 │   │   │   ├── TaskList.tsx
+│   │   │   ├── TaskCard.tsx
+│   │   │   ├── TaskHistoryTable.tsx
+│   │   │   ├── TaskTab.tsx
 │   │   │   ├── CreateTaskModal.tsx
+│   │   │   ├── UpdateTaskModal.tsx
+│   │   │   ├── DeleteTaskDialog.tsx
 │   │   │   └── TaskScheduleInput.tsx
 │   │   ├── alerts/
 │   │   │   ├── AlertList.tsx
@@ -187,7 +192,7 @@ aero-frontend/
 │   │   ├── templates/
 │   │   │   └── TemplatesPage.tsx
 │   │   ├── tasks/
-│   │   │   └── TasksPage.tsx
+│   │   │   └── (moved into ServerDetails tabs)
 │   │   ├── alerts/
 │   │   │   └── AlertsPage.tsx
 │   │   ├── admin/
@@ -337,14 +342,15 @@ aero-frontend/
 - **Template variables** - Environment variable substitution
 
 ### 9. Scheduled Tasks
-- **List tasks** - All scheduled tasks
+- **Per-server tasks** - Managed from Server Details > Tasks tab
+- **List tasks** - Scheduled tasks for a server
 - **Create task** - Schedule server actions
 - **Update task** - Modify schedule or action
 - **Delete task** - Remove task
 - **Execute task** - Run immediately
 - **Task types** - Backup, restart, command, stop, start
 - **Cron schedule** - Visual cron editor
-- **Task history** - Last execution times
+- **Task history** - Last execution times with status
 
 ### 10. Alert System
 - **List alerts** - Active and resolved alerts
@@ -486,15 +492,15 @@ aero-frontend/
 - [ ] Add template icon/image support
 
 ### Phase 11: Scheduled Tasks (Week 6-7)
-- [ ] Create task API service
-- [ ] Build task list page
-- [ ] Create task card component
-- [ ] Add create task modal with cron editor
-- [ ] Implement update task modal
-- [ ] Add delete task confirmation
-- [ ] Create execute task button
-- [ ] Display task execution history
-- [ ] Add task type icons
+- [x] Create task API service scoped to server endpoints
+- [x] Build per-server task list (Server Details tab)
+- [x] Create task card component with status/tags
+- [x] Add create task modal with cron editor
+- [x] Implement update task modal
+- [x] Add delete task confirmation dialog
+- [x] Create execute task action
+- [x] Display task execution history
+- [x] Add task type icons
 
 ### Phase 12: Alert System (Week 7)
 - [ ] Create alert API service
@@ -587,7 +593,7 @@ App
 │               │   └── FileManager
 │               ├── NodesPage
 │               ├── TemplatesPage
-│               ├── TasksPage
+│               ├── ServerTasksTab
 │               ├── AlertsPage
 │               └── AdminPages
 └── ToastContainer
@@ -655,7 +661,7 @@ Key queries:
 - `useServer(id)` - Single server details
 - `useNodes` - List of nodes
 - `useTemplates` - List of templates
-- `useTasks` - List of tasks
+- `useTasks(serverId)` - List of tasks for a server
 - `useAlerts` - List of alerts
 - `useBackups(serverId)` - Server backups
 
@@ -866,8 +872,8 @@ const routes = [
       // Templates
       { path: '/templates', element: <TemplatesPage /> },
       
-      // Tasks
-      { path: '/tasks', element: <TasksPage /> },
+      // Tasks (server details tab)
+      { path: '/servers/:serverId/tasks', element: <ServerDetailsPage /> },
       
       // Alerts
       { path: '/alerts', element: <AlertsPage /> },

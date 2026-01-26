@@ -12,7 +12,7 @@ function NodeCard({ node }: { node: NodeInfo }) {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Link
-              to={`/nodes/${node.id}`}
+              to={`/admin/nodes/${node.id}`}
               className="text-lg font-semibold text-slate-50 hover:text-white"
             >
               {node.name}
@@ -23,7 +23,7 @@ function NodeCard({ node }: { node: NodeInfo }) {
           <div className="text-xs text-slate-500">Last seen: {lastSeen}</div>
         </div>
         <Link
-          to={`/nodes/${node.id}`}
+          to={`/admin/nodes/${node.id}`}
           className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
         >
           View

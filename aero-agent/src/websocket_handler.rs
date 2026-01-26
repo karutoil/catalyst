@@ -1,8 +1,9 @@
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use sysinfo::{Disks, System};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::connect_async;
 use futures::{SinkExt, StreamExt};
@@ -261,27 +262,99 @@ impl WebSocketHandler {
         }
 
         info!("Executing installation script");
+        self.emit_console_output(server_id, "system", "[Aero] Starting installation...\n")
+            .await?;
 
         // Execute the install script on the host
         // NOTE: Script handles its own directory with cd {{SERVER_DIR}}
-        let output = tokio::process::Command::new("bash")
+        let mut command = tokio::process::Command::new("bash");
+        command
             .arg("-c")
             .arg(&final_script)
-            .output()
-            .await
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command
+            .spawn()
             .map_err(|e| AgentError::IoError(format!("Failed to execute install script: {}", e)))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Installation failed: {}", stderr);
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| AgentError::InternalError("Failed to capture stdout".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| AgentError::InternalError("Failed to capture stderr".to_string()))?;
+
+        let mut stdout_reader = tokio::io::BufReader::new(stdout).lines();
+        let mut stderr_reader = tokio::io::BufReader::new(stderr).lines();
+        let mut stdout_buffer = String::new();
+        let mut stderr_buffer = String::new();
+        let mut stdout_done = false;
+        let mut stderr_done = false;
+
+        while !stdout_done || !stderr_done {
+            tokio::select! {
+                line = stdout_reader.next_line(), if !stdout_done => {
+                    match line {
+                        Ok(Some(entry)) => {
+                            let payload = format!("{}\n", entry);
+                            stdout_buffer.push_str(&payload);
+                            self.emit_console_output(server_id, "stdout", &payload).await?;
+                        }
+                        Ok(None) => stdout_done = true,
+                        Err(err) => {
+                            stdout_done = true;
+                            error!("Failed to read install stdout: {}", err);
+                        }
+                    }
+                }
+                line = stderr_reader.next_line(), if !stderr_done => {
+                    match line {
+                        Ok(Some(entry)) => {
+                            let payload = format!("{}\n", entry);
+                            stderr_buffer.push_str(&payload);
+                            self.emit_console_output(server_id, "stderr", &payload).await?;
+                        }
+                        Ok(None) => stderr_done = true,
+                        Err(err) => {
+                            stderr_done = true;
+                            error!("Failed to read install stderr: {}", err);
+                        }
+                    }
+                }
+            }
+        }
+
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| AgentError::IoError(format!("Failed to wait for install script: {}", e)))?;
+
+        if !status.success() {
+            let stderr_trimmed = stderr_buffer.trim();
+            let stdout_trimmed = stdout_buffer.trim();
+            let reason = if !stderr_trimmed.is_empty() {
+                stderr_trimmed.to_string()
+            } else if !stdout_trimmed.is_empty() {
+                stdout_trimmed.to_string()
+            } else {
+                "Install script failed".to_string()
+            };
+            self.emit_console_output(server_id, "stderr", &format!("{}\n", reason))
+                .await?;
+            self.emit_server_state_update(server_id, "error", Some(reason.clone()))
+                .await?;
             return Err(AgentError::InstallationError(format!(
                 "Install script failed: {}",
-                stderr
+                reason
             )));
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("Installation output: {}", stdout);
+        if stdout_buffer.trim().is_empty() && stderr_buffer.trim().is_empty() {
+            self.emit_console_output(server_id, "system", "[Aero] Installation complete.\n")
+                .await?;
+        }
 
         // Emit state update
         self.emit_server_state_update(server_id, "stopped", None)
@@ -779,7 +852,38 @@ impl WebSocketHandler {
 
         debug!("Emitting state update: {}", msg);
 
-        // In production, this would send to the backend via the WebSocket
+        let writer = { self.write.read().await.clone() };
+        if let Some(ws) = writer {
+            let mut w = ws.lock().await;
+            if let Err(err) = w.send(Message::Text(msg.to_string())).await {
+                error!("Failed to send state update: {}", err);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn emit_console_output(&self, server_id: &str, stream: &str, data: &str) -> AgentResult<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+
+        let msg = json!({
+            "type": "console_output",
+            "serverId": server_id,
+            "stream": stream,
+            "data": data,
+            "timestamp": chrono::Utc::now().timestamp_millis(),
+        });
+
+        let writer = { self.write.read().await.clone() };
+        if let Some(ws) = writer {
+            let mut w = ws.lock().await;
+            if let Err(err) = w.send(Message::Text(msg.to_string())).await {
+                error!("Failed to send console output: {}", err);
+            }
+        }
+
         Ok(())
     }
 

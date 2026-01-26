@@ -9,9 +9,11 @@ import RegisterPage from './pages/auth/RegisterPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import ServersPage from './pages/servers/ServersPage';
 import ServerDetailsPage from './pages/servers/ServerDetailsPage';
-import NodesPage from './pages/nodes/NodesPage';
 import NodeDetailsPage from './pages/nodes/NodeDetailsPage';
 import TemplatesPage from './pages/templates/TemplatesPage';
+import TemplateDetailsPage from './pages/templates/TemplateDetailsPage';
+import AdminTemplatesPage from './pages/admin/TemplatesPage';
+import AdminNodesPage from './pages/admin/NodesPage';
 import TasksPage from './pages/tasks/TasksPage';
 import AlertsPage from './pages/alerts/AlertsPage';
 import UsersPage from './pages/admin/UsersPage';
@@ -39,12 +41,13 @@ function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="servers" element={<ServersPage />} />
           <Route path="servers/:serverId/:tab?" element={<ServerDetailsPage />} />
-          <Route path="nodes" element={<NodesPage />} />
-          <Route path="nodes/:nodeId" element={<NodeDetailsPage />} />
-          <Route path="templates" element={<TemplatesPage />} />
+          <Route path="admin/nodes/:nodeId" element={<NodeDetailsPage />} />
+          <Route path="admin/templates/:templateId" element={<TemplateDetailsPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="admin/users" element={<UsersPage />} />
+          <Route path="admin/nodes" element={<AdminNodesPage />} />
+          <Route path="admin/templates" element={<AdminTemplatesPage />} />
           <Route path="admin/system" element={<SystemPage />} />
           <Route path="admin/audit-logs" element={<AuditLogsPage />} />
         </Route>

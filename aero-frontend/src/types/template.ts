@@ -23,5 +23,8 @@ export interface Template {
   supportedPorts: number[];
   allocatedMemoryMb: number;
   allocatedCpuCores: number;
-  features?: Record<string, any>;
+  features?: {
+    iconUrl?: string;
+    [key: string]: any;
+  };
 }
