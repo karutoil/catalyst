@@ -13,6 +13,10 @@ log_section "RBAC & Permissions Tests"
 
 log_info "Setting up test users..."
 
+# Login as admin for node creation
+ADMIN_LOGIN=$(http_post "${BACKEND_URL}/api/auth/login" "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}")
+ADMIN_TOKEN=$(echo "$ADMIN_LOGIN" | head -n-1 | jq -r '.data.token')
+
 # Create Owner User
 EMAIL1=$(random_email)
 USERNAME1="owner-$(random_string)"
@@ -29,7 +33,7 @@ response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL2\",
 USER_TOKEN=$(echo "$response" | head -n-1 | jq -r '.data.token')
 
 # Get existing location
-response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $OWNER_TOKEN")
+response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $ADMIN_TOKEN")
 body=$(parse_response "$response")
 LOCATION_ID=$(echo "$body" | jq -r '.data[0].locationId // "cmkspe7nq0000sw3ctcc39e8z"')
 log_info "Using location ID: $LOCATION_ID"
@@ -41,7 +45,7 @@ response=$(http_post "${BACKEND_URL}/api/nodes" "{
     \"publicAddress\": \"192.168.1.100\",
     \"maxMemoryMb\": 8192,
     \"maxCpuCores\": 4
-}" "Authorization: Bearer $OWNER_TOKEN")
+}" "Authorization: Bearer $ADMIN_TOKEN")
 NODE_ID=$(echo "$response" | head -n-1 | jq -r '.data.id')
 
 response=$(http_get "${BACKEND_URL}/api/templates")

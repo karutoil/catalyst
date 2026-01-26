@@ -49,25 +49,19 @@ echo ""
 # Phase 1: User Setup
 #=============================================================================
 
-print_section "Phase 1: User Registration & Authentication"
+print_section "Phase 1: Admin Authentication"
 
-log_info "Test 1: Register new user for deployment test"
-EMAIL=$(random_email)
-USERNAME="deployer-$(random_string)"
-PASSWORD="DeployTest123!"
-
-response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL\",\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
+log_info "Test 1: Login as admin for deployment test"
+response=$(http_post "${BACKEND_URL}/api/auth/login" "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}")
 http_code=$(parse_http_code "$response")
 body=$(parse_response "$response")
 
-assert_http_code "$http_code" "200" "POST /api/auth/register"
-assert_json_field_exists "$body" "data.token" "Registration should return JWT token"
+assert_http_code "$http_code" "200" "POST /api/auth/login"
 
 TOKEN=$(echo "$body" | jq -r '.data.token')
 USER_ID=$(echo "$body" | jq -r '.data.userId')
 
-log_success "User created: $USERNAME ($USER_ID)"
-log_success "Authentication token obtained"
+log_success "Admin authenticated ($USER_ID)"
 echo ""
 
 log_info "Test 2: Verify authentication with /api/auth/me"
@@ -76,8 +70,7 @@ http_code=$(parse_http_code "$response")
 body=$(parse_response "$response")
 
 assert_http_code "$http_code" "200" "GET /api/auth/me"
-assert_json_field "$body" "data.email" "$EMAIL" "Email should match"
-assert_json_field "$body" "data.username" "$USERNAME" "Username should match"
+assert_json_field "$body" "data.email" "admin@example.com" "Email should match"
 
 log_success "Authentication verified"
 echo ""

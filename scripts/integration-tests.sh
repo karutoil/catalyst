@@ -16,14 +16,14 @@ echo "╚═══════════════════════�
 echo ""
 echo "Setting up test environment..."
 
-# Register test user
+# Register test user (non-admin)
 echo "1. Registering test user..."
 REGISTER_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/auth/register" \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",
     "username": "testuser",
-    "password": "TestPassword123"
+    "password": "TestPassword123!"
   }')
 
 echo "$REGISTER_RESPONSE" | jq .
@@ -38,25 +38,31 @@ fi
 
 echo "✓ User registered, token: ${TOKEN:0:20}..."
 
-# Create location
-echo ""
-echo "2. Creating location..."
-LOCATION_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/locations" \
-  -H "Authorization: Bearer $TOKEN" \
+# Login as admin for node creation
+ADMIN_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/auth/login" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "test-us-east",
-    "description": "Test location"
+    "email": "admin@example.com",
+    "password": "admin123"
   }')
 
-LOCATION_ID=$(echo "$LOCATION_RESPONSE" | jq -r '.data.id')
-echo "✓ Location created: $LOCATION_ID"
+ADMIN_TOKEN=$(echo "$ADMIN_RESPONSE" | jq -r '.data.token')
+if [ -z "$ADMIN_TOKEN" ] || [ "$ADMIN_TOKEN" = "null" ]; then
+    echo "✗ Failed to login as admin"
+    exit 1
+fi
 
-# Create node
+# Use seeded location (no public create endpoint)
+echo ""
+echo "2. Using seeded location..."
+LOCATION_ID="cmkspe7nq0000sw3ctcc39e8z"
+echo "✓ Location ID: $LOCATION_ID"
+
+# Create node (admin-only)
 echo ""
 echo "3. Creating node..."
 NODE_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/nodes" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "'$NODE_ID'",

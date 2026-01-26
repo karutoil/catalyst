@@ -127,31 +127,31 @@ assert_http_code "$http_code" "401" "POST /api/auth/login (non-existent user)"
 
 # Test 9: JWT Token Validation - Valid Token
 log_info "Test 9: Access protected endpoint with valid token"
-response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $TOKEN")
+response=$(http_get "${BACKEND_URL}/api/templates" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")
-assert_http_code "$http_code" "200" "GET /api/nodes (with valid token)"
+assert_http_code "$http_code" "200" "GET /api/templates (with valid token)"
 
 # Test 10: JWT Token Validation - No Token
 log_info "Test 10: Access protected endpoint without token"
-response=$(http_get "${BACKEND_URL}/api/nodes")
+response=$(http_get "${BACKEND_URL}/api/templates")
 
 http_code=$(parse_http_code "$response")
-assert_http_code "$http_code" "401" "GET /api/nodes (no token)"
+assert_http_code "$http_code" "401" "GET /api/templates (no token)"
 
 # Test 11: JWT Token Validation - Invalid Token
 log_info "Test 11: Access protected endpoint with invalid token"
-response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer invalid.token.here\"")
+response=$(http_get "${BACKEND_URL}/api/templates" "Authorization: Bearer invalid.token.here\"")
 
 http_code=$(parse_http_code "$response")
-assert_http_code "$http_code" "401" "GET /api/nodes (invalid token)"
+assert_http_code "$http_code" "401" "GET /api/templates (invalid token)"
 
 # Test 12: JWT Token Validation - Malformed Token
 log_info "Test 12: Access protected endpoint with malformed token"
-response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer notavalidtoken\"")
+response=$(http_get "${BACKEND_URL}/api/templates" "Authorization: Bearer notavalidtoken\"")
 
 http_code=$(parse_http_code "$response")
-assert_http_code "$http_code" "401" "GET /api/nodes (malformed token)"
+assert_http_code "$http_code" "401" "GET /api/templates (malformed token)"
 
 # Test 13: Get Current User Info
 log_info "Test 13: Get current user information"

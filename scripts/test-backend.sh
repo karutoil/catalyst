@@ -45,13 +45,13 @@ test_endpoint "GET" "/health" "" "200"
 test_endpoint "POST" "/api/auth/register" '{
   "email": "test@example.com",
   "username": "testuser",
-  "password": "password123"
+  "password": "password1234"
 }' "200"
 
 # Test login
 test_endpoint "POST" "/api/auth/login" '{
   "email": "test@example.com",
-  "password": "password123"
+  "password": "password1234"
 }' "200"
 
 # Test list templates

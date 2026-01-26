@@ -10,6 +10,7 @@ import DashboardPage from './pages/dashboard/DashboardPage';
 import ServersPage from './pages/servers/ServersPage';
 import ServerDetailsPage from './pages/servers/ServerDetailsPage';
 import NodesPage from './pages/nodes/NodesPage';
+import NodeDetailsPage from './pages/nodes/NodeDetailsPage';
 import TemplatesPage from './pages/templates/TemplatesPage';
 import TasksPage from './pages/tasks/TasksPage';
 import AlertsPage from './pages/alerts/AlertsPage';
@@ -39,6 +40,7 @@ function App() {
           <Route path="servers" element={<ServersPage />} />
           <Route path="servers/:serverId/:tab?" element={<ServerDetailsPage />} />
           <Route path="nodes" element={<NodesPage />} />
+          <Route path="nodes/:nodeId" element={<NodeDetailsPage />} />
           <Route path="templates" element={<TemplatesPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="alerts" element={<AlertsPage />} />

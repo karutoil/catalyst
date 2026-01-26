@@ -114,12 +114,13 @@ export interface Node {
 }
 
 export interface NodeHealth {
-  cpuUsagePercent: number;
+  cpuPercent: number;
   memoryUsageMb: number;
   memoryTotalMb: number;
   uptime: number;
   containerCount: number;
-  diskUsagePercent: number;
+  diskUsageMb: number;
+  diskTotalMb: number;
 }
 
 // ============================================================================

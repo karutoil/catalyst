@@ -46,7 +46,7 @@ Create a new user account.
 }
 ```
 
-**Response:** `201 Created`
+**Response:** `200 OK`
 ```json
 {
   "success": true,
@@ -271,9 +271,7 @@ Nodes represent physical or virtual machines that run the Aero agent and host ga
   "data": {
     "id": "newnode123",
     "name": "production-2",
-    "secret": "auto-generated-secret-key",
-    "deployCommand": "curl -sSL https://aero.example.com/install.sh | bash -s -- newnode123 auto-generated-secret-key",
-    ...
+    "secret": "auto-generated-secret-key"
   }
 }
 ```
@@ -305,8 +303,7 @@ Nodes represent physical or virtual machines that run the Aero agent and host ga
 **Response:** `200 OK`
 ```json
 {
-  "success": true,
-  "message": "Node deleted successfully"
+  "success": true
 }
 ```
 
@@ -315,9 +312,9 @@ Nodes represent physical or virtual machines that run the Aero agent and host ga
 
 ---
 
-### Regenerate Node Token
+### Generate Deployment Token
 
-**Endpoint:** `POST /api/nodes/:nodeId/regenerate-token`  
+**Endpoint:** `POST /api/nodes/:nodeId/deployment-token`  
 **Authentication:** Required (admin permission)
 
 **Response:** `200 OK`
@@ -325,8 +322,10 @@ Nodes represent physical or virtual machines that run the Aero agent and host ga
 {
   "success": true,
   "data": {
+    "deploymentToken": "deployment-token-12345",
     "secret": "new-secret-key-12345",
-    "deployCommand": "curl -sSL https://aero.example.com/install.sh | bash -s -- nodeId new-secret-key-12345"
+    "deployUrl": "http://localhost:3000/api/deploy/deployment-token-12345",
+    "expiresAt": "2026-01-25T02:29:17.413Z"
   }
 }
 ```
@@ -1659,17 +1658,13 @@ Sent every 30 seconds to keep connection alive.
 {
   "type": "health_report",
   "nodeId": "node123",
-  "servers": [
-    {
-      "id": "server123",
-      "status": "running",
-      "cpu": 45.2,
-      "memoryMb": 2048,
-      "networkSent": 1234567,
-      "networkReceived": 7654321,
-      "diskUsageMb": 512
-    }
-  ]
+  "cpuPercent": 45.2,
+  "memoryUsageMb": 2048,
+  "memoryTotalMb": 8192,
+  "diskUsageMb": 512,
+  "diskTotalMb": 10240,
+  "containerCount": 4,
+  "uptimeSeconds": 3600
 }
 ```
 

@@ -210,6 +210,30 @@ export class WebSocketGateway {
             data: { lastSeenAt: new Date() },
           });
         }
+      } else if (message.type === "health_report") {
+        const node = await this.prisma.node.findUnique({
+          where: { id: nodeId },
+        });
+        if (!node) {
+          return;
+        }
+        await this.prisma.node.update({
+          where: { id: nodeId },
+          data: { isOnline: true, lastSeenAt: new Date() },
+        });
+        await this.prisma.nodeMetrics.create({
+          data: {
+            nodeId,
+            cpuPercent: Number(message.cpuPercent) || 0,
+            memoryUsageMb: Math.round(Number(message.memoryUsageMb) || 0),
+            memoryTotalMb: Math.round(Number(message.memoryTotalMb) || node.maxMemoryMb),
+            diskUsageMb: Math.round(Number(message.diskUsageMb) || 0),
+            diskTotalMb: Math.round(Number(message.diskTotalMb) || 0),
+            networkRxBytes: BigInt(0),
+            networkTxBytes: BigInt(0),
+            containerCount: Number(message.containerCount) || 0,
+          },
+        });
       } else if (message.type === "console_output") {
         // Route console output to all subscribed clients
         await this.routeToClients(message.serverId, message);

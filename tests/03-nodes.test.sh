@@ -12,12 +12,10 @@ source "$SCRIPT_DIR/lib/utils.sh"
 log_section "Node Management Tests"
 
 # Setup: Create test user
-log_info "Setting up test user..."
-EMAIL=$(random_email)
-USERNAME="user-$(random_string)"
-PASSWORD="TestPassword123!"
-
-response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL\",\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
+log_info "Logging in as admin..."
+EMAIL="admin@example.com"
+PASSWORD="admin123"
+response=$(http_post "${BACKEND_URL}/api/auth/login" "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")
 TOKEN=$(echo "$response" | head -n-1 | jq -r '.data.token')
 
 # Create a location first (or use existing)

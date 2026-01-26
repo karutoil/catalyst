@@ -9,6 +9,18 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 export async function authRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
 
+  const loadUserPermissions = async (userId: string) => {
+    const roles = await prisma.role.findMany({
+      where: {
+        users: {
+          some: { id: userId },
+        },
+      },
+      select: { permissions: true },
+    });
+    return roles.flatMap((role) => role.permissions);
+  };
+
   // Register user
   app.post(
     "/register",
@@ -53,13 +65,15 @@ export async function authRoutes(app: FastifyInstance) {
         },
       });
 
+      const permissions = await loadUserPermissions(user.id);
+
       // Generate JWT
       const token = app.jwt.sign(
         {
           userId: user.id,
           email: user.email,
           username: user.username,
-          permissions: [],
+          permissions,
         },
         { expiresIn: "24h" }
       );
@@ -70,6 +84,7 @@ export async function authRoutes(app: FastifyInstance) {
           userId: user.id,
           email: user.email,
           username: user.username,
+          permissions,
           token,
         },
       });
@@ -109,12 +124,14 @@ export async function authRoutes(app: FastifyInstance) {
       // Log successful login
       await logAuthAttempt(email, true, request.ip, request.headers['user-agent']);
 
+      const permissions = await loadUserPermissions(user.id);
+
       const token = app.jwt.sign(
         {
           userId: user.id,
           email: user.email,
           username: user.username,
-          permissions: [],
+          permissions,
         },
         { expiresIn: "24h" }
       );
@@ -125,6 +142,7 @@ export async function authRoutes(app: FastifyInstance) {
           userId: user.id,
           email: user.email,
           username: user.username,
+          permissions,
           token,
         },
       });
@@ -142,11 +160,31 @@ export async function authRoutes(app: FastifyInstance) {
           id: true,
           email: true,
           username: true,
+          roles: {
+            select: {
+              permissions: true,
+            },
+          },
           createdAt: true,
         },
       });
 
-      reply.send({ success: true, data: user });
+      if (!user) {
+        return reply.status(404).send({ error: "User not found" });
+      }
+
+      const permissions = user.roles.flatMap((role) => role.permissions);
+
+      reply.send({
+        success: true,
+        data: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          permissions,
+          createdAt: user.createdAt,
+        },
+      });
     }
   );
 }

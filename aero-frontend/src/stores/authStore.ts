@@ -76,12 +76,12 @@ export const useAuthStore = create<AuthState>()(
           throw error;
         }
       },
-      init: async () => {
-        if (!get().token) {
-          set({ isReady: true });
-          return;
-        }
-        await get().refresh();
+       init: async () => {
+         if (!get().token) {
+           set({ isReady: true });
+           return;
+         }
+         await get().refresh();
       },
       logout: () => {
         set({ user: null, token: null, isAuthenticated: false, isReady: true });

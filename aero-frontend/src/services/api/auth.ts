@@ -5,7 +5,7 @@ import type { User } from '../../types/user';
 export const authApi = {
   async login(values: LoginSchema): Promise<{ token: string; user: User }> {
     const { data } = await apiClient.post<any>('/api/auth/login', values);
-    // Backend returns { success: true, data: { token, userId, email, username } }
+    // Backend returns { success: true, data: { token, userId, email, username, permissions } }
     if (!data.success || !data.data) {
       throw new Error(data.error || 'Login failed');
     }
@@ -15,6 +15,7 @@ export const authApi = {
         id: data.data.userId,
         email: data.data.email,
         role: 'user',
+        permissions: data.data.permissions ?? [],
       },
     };
   },
@@ -30,6 +31,7 @@ export const authApi = {
         id: data.data.userId,
         email: data.data.email,
         role: 'user',
+        permissions: data.data.permissions ?? [],
       },
     };
   },
@@ -46,6 +48,7 @@ export const authApi = {
         id: data.data.id,
         email: data.data.email,
         role: 'user',
+        permissions: data.data.permissions ?? [],
       },
     };
   },

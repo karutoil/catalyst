@@ -13,12 +13,8 @@ log_section "Server CRUD Tests"
 
 # Setup: Create test user and prerequisites
 log_info "Setting up test environment..."
-EMAIL=$(random_email)
-USERNAME="user-$(random_string)"
-PASSWORD="TestPassword123!"
-
-response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL\",\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
-TOKEN=$(echo "$response" | head -n-1 | jq -r '.data.token')
+ADMIN_LOGIN=$(http_post "${BACKEND_URL}/api/auth/login" "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}")
+TOKEN=$(echo "$ADMIN_LOGIN" | head -n-1 | jq -r '.data.token')
 
 # Get existing location from seeded data
 response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $TOKEN")

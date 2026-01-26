@@ -4,6 +4,24 @@ import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
 import { listAvailableIps } from "../utils/ipam";
 
+const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyReply) => {
+  const roles = await prisma.role.findMany({
+    where: {
+      users: {
+        some: { id: userId },
+      },
+    },
+  });
+  const permissions = roles.flatMap((role) => role.permissions);
+  const isAdmin = permissions.includes("*") || permissions.includes("admin.read");
+  const hasRole = roles.some((role) => role.name.toLowerCase() === "administrator");
+  if (!isAdmin && !hasRole) {
+    reply.status(403).send({ error: "Admin access required" });
+    return false;
+  }
+  return true;
+};
+
 export async function nodeRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
 
@@ -12,6 +30,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
       const { name, description, locationId, hostname, publicAddress, maxMemoryMb, maxCpuCores } =
         request.body as {
           name: string;
@@ -124,6 +144,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/deployment-token",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
 
       const node = await prisma.node.findUnique({
@@ -166,6 +188,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
       const { name, description, hostname, publicAddress, maxMemoryMb, maxCpuCores } =
         request.body as {
@@ -306,9 +330,11 @@ export async function nodeRoutes(app: FastifyInstance) {
       const { secret, health } = request.body as {
         secret: string;
         health: {
-          cpuUsagePercent: number;
+          cpuPercent: number;
           memoryUsageMb: number;
-          diskUsagePercent: number;
+          memoryTotalMb?: number;
+          diskUsageMb?: number;
+          diskTotalMb?: number;
           containerCount: number;
         };
       };
@@ -329,8 +355,22 @@ export async function nodeRoutes(app: FastifyInstance) {
         },
       });
 
-      // Store health metrics (would typically go to InfluxDB/Prometheus)
-      // For now, just acknowledge
+      await prisma.nodeMetrics.create({
+        data: {
+          nodeId,
+          cpuPercent: Number(health?.cpuPercent) || 0,
+          memoryUsageMb: Math.round(Number(health?.memoryUsageMb) || 0),
+          memoryTotalMb: Math.round(
+            Number(health?.memoryTotalMb) || node.maxMemoryMb
+          ),
+          diskUsageMb: Math.round(Number(health?.diskUsageMb) || 0),
+          diskTotalMb: Math.round(Number(health?.diskTotalMb) || 0),
+          networkRxBytes: BigInt(0),
+          networkTxBytes: BigInt(0),
+          containerCount: Number(health?.containerCount) || 0,
+        },
+      });
+
       reply.send({ success: true });
     }
   );
@@ -340,6 +380,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
 
       const node = await prisma.node.findUnique({

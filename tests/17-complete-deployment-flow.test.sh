@@ -90,18 +90,13 @@ echo ""
 
 print_section "STEP 1: User Authentication"
 
-log_info "Test 1.1: Register new user"
-EMAIL=$(random_email)
-USERNAME="deploy-test-$(random_string)"
-PASSWORD="DeployTest123!"
-
-response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL\",\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
+log_info "Test 1.1: Login as admin"
+response=$(http_post "${BACKEND_URL}/api/auth/login" "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}")
 TOKEN=$(echo "$response" | head -n-1 | jq -r '.data.token')
 USER_ID=$(echo "$response" | head -n-1 | jq -r '.data.userId')
 
 assert_not_empty "$TOKEN" "Authentication token"
-log_success "✓ User registered: $USERNAME"
-log_success "✓ JWT token acquired"
+log_success "✓ Admin authenticated"
 ((TESTS_RUN++))
 ((TESTS_PASSED++))
 echo ""

@@ -29,28 +29,31 @@ cleanup() {
 }
 setup_cleanup_trap cleanup
 
-# Step 1: User Registration
-log_section "Step 1: User Registration"
-TEST_EMAIL=$(random_email)
-TEST_USERNAME="e2e-user-$(random_string)"
-TEST_PASSWORD="E2ETest123!"
-
-response=$(http_post "${BACKEND_URL}/api/auth/register" "{
-    \"email\": \"$TEST_EMAIL\",
-    \"username\": \"$TEST_USERNAME\",
-    \"password\": \"$TEST_PASSWORD\"
+# Step 1: Admin Login
+log_section "Step 1: Admin Login"
+response=$(http_post "${BACKEND_URL}/api/auth/login" "{
+    \"email\": \"admin@example.com\",
+    \"password\": \"admin123\"
 }")
 
 http_code=$(parse_http_code "$response")
 body=$(parse_response "$response")
 
-assert_http_code "$http_code" "200" "User registration"
+assert_http_code "$http_code" "200" "Admin login"
 TOKEN=$(echo "$body" | jq -r '.data.token')
 USER_ID=$(echo "$body" | jq -r '.data.userId')
 assert_not_empty "$TOKEN" "JWT token received"
 
-# Step 2: Get Location
-log_section "Step 2: Get Existing Location"
+# Step 2: Verify authentication
+log_section "Step 2: Verify authentication"
+response=$(http_get "${BACKEND_URL}/api/auth/me" "Authorization: Bearer $TOKEN")
+http_code=$(parse_http_code "$response")
+body=$(parse_response "$response")
+assert_http_code "$http_code" "200" "GET /api/auth/me"
+assert_json_field "$body" "data.email" "admin@example.com" "Email should match"
+
+# Step 3: Get Location
+log_section "Step 3: Get Existing Location"
 # Get existing location from seeded data instead of creating
 response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $TOKEN")
 body=$(parse_response "$response")
@@ -63,8 +66,8 @@ fi
 assert_not_empty "$LOCATION_ID" "Location ID retrieved"
 log_info "Using location: $LOCATION_ID"
 
-# Step 3: Create Node
-log_section "Step 3: Create Node"
+# Step 4: Create Node
+log_section "Step 4: Create Node"
 NODE_NAME="e2e-node-${TEST_ID}"
 
 response=$(http_post "${BACKEND_URL}/api/nodes" "{
@@ -84,8 +87,8 @@ NODE_ID=$(echo "$body" | jq -r '.data.id')
 NODE_SECRET=$(echo "$body" | jq -r '.data.secret')
 assert_not_empty "$NODE_SECRET" "Node secret generated"
 
-# Step 4: Verify Agent Binary Exists
-log_section "Step 4: Verify Agent Binary"
+# Step 5: Verify Agent Binary Exists
+log_section "Step 5: Verify Agent Binary"
 if [ ! -f /root/catalyst3/aero-agent/target/release/aero-agent ]; then
     log_error "Agent binary not found, building..."
     cd /root/catalyst3/aero-agent
@@ -93,8 +96,8 @@ if [ ! -f /root/catalyst3/aero-agent/target/release/aero-agent ]; then
 fi
 assert_equals "$?" "0" "Agent binary available"
 
-# Step 5: Start Agent and Connect to Backend
-log_section "Step 5: Start Agent"
+# Step 6: Start Agent and Connect to Backend
+log_section "Step 6: Start Agent"
 start_agent_test_mode "$NODE_ID" "$NODE_SECRET"
 
 # Wait for agent to connect
@@ -107,8 +110,8 @@ is_online=$(echo "$body" | jq -r '.data.isOnline')
 
 assert_equals "$is_online" "true" "Agent connected and node online"
 
-# Step 6: Get Available Templates
-log_section "Step 6: Get Server Templates"
+# Step 7: Get Available Templates
+log_section "Step 7: Get Server Templates"
 response=$(http_get "${BACKEND_URL}/api/templates")
 body=$(parse_response "$response")
 
@@ -131,8 +134,8 @@ fi
 
 assert_not_empty "$TEMPLATE_ID" "Template available"
 
-# Step 7: Create Server
-log_section "Step 7: Create Game Server"
+# Step 8: Create Server
+log_section "Step 8: Create Game Server"
 SERVER_NAME="e2e-server-${TEST_ID}"
 SERVER_PORT=$(random_port)
 

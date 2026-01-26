@@ -466,15 +466,15 @@ aero-frontend/
 - [x] Integrate backups into server details
 
 ### Phase 9: Node Management (Week 5-6)
-- [ ] Create node API service
-- [ ] Build node list page
-- [ ] Create node card component
-- [ ] Add create node modal
-- [ ] Implement node details view
-- [ ] Add update node functionality
-- [ ] Create delete node confirmation
-- [ ] Add node status indicators
-- [ ] Display node resource usage
+- [x] Create node API service
+- [x] Build node list page
+- [x] Create node card component
+- [x] Add create node modal
+- [x] Implement node details view
+- [x] Add update node functionality
+- [x] Create delete node confirmation
+- [x] Add node status indicators
+- [x] Display node resource usage
 
 ### Phase 10: Template Management (Week 6)
 - [ ] Create template API service

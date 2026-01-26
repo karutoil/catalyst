@@ -27,7 +27,7 @@ REGISTER_RESPONSE=$(curl -s -X POST ${BASE_URL}/api/auth/register \
     -d '{
         "email": "test@example.com",
         "username": "testuser",
-        "password": "testpass123"
+        "password": "testpass1234"
     }')
 
 if echo "$REGISTER_RESPONSE" | grep -q "success"; then
@@ -43,7 +43,7 @@ LOGIN_RESPONSE=$(curl -s -X POST ${BASE_URL}/api/auth/login \
     -H "Content-Type: application/json" \
     -d '{
         "email": "test@example.com",
-        "password": "testpass123"
+        "password": "testpass1234"
     }')
 
 TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"token":"[^"]*' | cut -d'"' -f4)

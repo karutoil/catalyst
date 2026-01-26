@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -96,16 +95,16 @@ impl AeroAgent {
             interval.tick().await;
 
             // Collect health metrics
-            if *self.backend_connected.read().await {
-                self.ws_handler.send_health_report().await;
+            if let Err(err) = self.ws_handler.send_health_report().await {
+                warn!("Failed to send health report: {}", err);
             }
         }
     }
 
     async fn start_http_server(&self) -> AgentResult<()> {
         use axum::{
-            routing::{get, post},
-            Json, Router,
+            routing::get,
+            Router,
         };
 
         let app = Router::new()

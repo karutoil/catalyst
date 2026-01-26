@@ -51,12 +51,12 @@ cargo build --release
 
 2. **Deploy Agent**
 ```bash
-# Generate deployment token from backend
+# Generate deployment token from backend (admin-only)
 curl -X POST http://localhost:3000/api/nodes/node-1/deployment-token \
-  -H "Authorization: Bearer <jwt-token>"
+  -H "Authorization: Bearer <admin-token>"
 
 # Run deployment script
-bash <(curl -s http://localhost:3000/api/deploy/deployment-token)
+bash <(curl -s http://localhost:3000/api/deploy/<deployment-token>)
 ```
 
 3. **Configure Agent**
@@ -87,10 +87,10 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 ### Nodes
 
-#### Create Node
+#### Create Node (admin-only)
 ```bash
 curl -X POST http://localhost:3000/api/nodes \
-  -H "Authorization: Bearer <token>" \
+  -H "Authorization: Bearer <admin-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "production-1",
@@ -108,10 +108,10 @@ curl http://localhost:3000/api/nodes \
   -H "Authorization: Bearer <token>"
 ```
 
-#### Generate Deployment Token
+#### Generate Deployment Token (admin-only)
 ```bash
 curl -X POST http://localhost:3000/api/nodes/node-id/deployment-token \
-  -H "Authorization: Bearer <token>"
+  -H "Authorization: Bearer <admin-token>"
 ```
 
 ### Servers
@@ -235,10 +235,13 @@ curl -X POST http://localhost:3000/api/templates \
 {
   "type": "health_report",
   "nodeId": "node-uuid",
-  "cpuUsagePercent": 35,
+  "cpuPercent": 35,
   "memoryUsageMb": 8192,
-  "diskUsagePercent": 45,
-  "containerCount": 5
+  "memoryTotalMb": 16384,
+  "diskUsageMb": 512,
+  "diskTotalMb": 10240,
+  "containerCount": 5,
+  "uptimeSeconds": 3600
 }
 ```
 

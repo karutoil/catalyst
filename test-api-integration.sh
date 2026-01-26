@@ -45,24 +45,24 @@ test_health() {
 test_auth() {
     log "Testing authentication..."
     
-    # Register
+    # Register (ignore failure if user already exists)
     REGISTER=$(curl -s -X POST "$BASE_URL/api/auth/register" \
         -H "Content-Type: application/json" \
         -d '{
             "email": "test@example.com",
-            "password": "TestPassword123!",
-            "name": "Test User"
-        }')
-    
-    # Login
-    LOGIN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-        -H "Content-Type: application/json" \
-        -d '{
-            "email": "test@example.com",
+            "username": "testuser",
             "password": "TestPassword123!"
         }')
     
-    TOKEN=$(echo "$LOGIN" | jq -r '.token')
+    # Login as admin for node creation
+    LOGIN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "email": "admin@example.com",
+            "password": "admin123"
+        }')
+    
+    TOKEN=$(echo "$LOGIN" | jq -r '.data.token')
     if [ "$TOKEN" != "null" ] && [ -n "$TOKEN" ]; then
         log "✓ Authentication successful, token obtained"
     else
@@ -79,14 +79,14 @@ test_create_node() {
         -H "Authorization: Bearer $TOKEN" \
         -d '{
             "name": "Test Node",
-            "fqdn": "testnode.local",
-            "publicIp": "127.0.0.1",
-            "memoryMb": 16384,
-            "diskMb": 102400,
-            "cpuCores": 8
+            "locationId": "cmkspe7nq0000sw3ctcc39e8z",
+            "hostname": "testnode.local",
+            "publicAddress": "127.0.0.1",
+            "maxMemoryMb": 16384,
+            "maxCpuCores": 8
         }')
     
-    NODE_ID=$(echo "$NODE" | jq -r '.id')
+    NODE_ID=$(echo "$NODE" | jq -r '.data.id')
     if [ "$NODE_ID" != "null" ] && [ -n "$NODE_ID" ]; then
         log "✓ Node created: $NODE_ID"
     else
@@ -104,16 +104,19 @@ test_create_template() {
         -d '{
             "name": "Test Template",
             "description": "Test server template",
-            "dockerImage": "ubuntu:latest",
-            "startupCommand": "tail -f /dev/null",
-            "defaultMemoryMb": 512,
-            "defaultCpuCores": 1,
-            "defaultDiskMb": 1024,
-            "defaultPort": 25565,
-            "environmentVariables": {}
+            "author": "integration-tests",
+            "version": "1.0.0",
+            "image": "ubuntu:latest",
+            "startup": "tail -f /dev/null",
+            "stopCommand": "kill 1",
+            "sendSignalTo": "stop",
+            "variables": [],
+            "supportedPorts": [25565],
+            "allocatedMemoryMb": 512,
+            "allocatedCpuCores": 1
         }')
     
-    TEMPLATE_ID=$(echo "$TEMPLATE" | jq -r '.id')
+    TEMPLATE_ID=$(echo "$TEMPLATE" | jq -r '.data.id')
     if [ "$TEMPLATE_ID" != "null" ] && [ -n "$TEMPLATE_ID" ]; then
         log "✓ Template created: $TEMPLATE_ID"
     else
@@ -130,15 +133,19 @@ test_create_server() {
         -H "Authorization: Bearer $TOKEN" \
         -d "{
             \"name\": \"Test Server\",
-            \"nodeId\": \"$NODE_ID\",
             \"templateId\": \"$TEMPLATE_ID\",
-            \"memoryMb\": 512,
-            \"cpuCores\": 1,
-            \"diskMb\": 1024,
-            \"port\": 25565
+            \"nodeId\": \"$NODE_ID\",
+            \"locationId\": \"cmkspe7nq0000sw3ctcc39e8z\",
+            \"allocatedMemoryMb\": 512,
+            \"allocatedCpuCores\": 1,
+            \"primaryPort\": 25565,
+            \"networkMode\": \"bridge\",
+            \"environment\": {
+                \"EULA\": \"true\"
+            }
         }")
     
-    SERVER_ID=$(echo "$SERVER" | jq -r '.id')
+    SERVER_ID=$(echo "$SERVER" | jq -r '.data.id')
     if [ "$SERVER_ID" != "null" ] && [ -n "$SERVER_ID" ]; then
         log "✓ Server created: $SERVER_ID"
     else

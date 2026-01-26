@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::path::PathBuf;
 use tokio::sync::RwLock;
+use sysinfo::{Disks, System};
 use tokio::io::AsyncReadExt;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::connect_async;
@@ -23,6 +24,7 @@ pub struct WebSocketHandler {
     config: Arc<AgentConfig>,
     runtime: Arc<ContainerdRuntime>,
     file_manager: Arc<FileManager>,
+    write: Arc<RwLock<Option<Arc<tokio::sync::Mutex<WsWrite>>>>>,
 }
 
 impl Clone for WebSocketHandler {
@@ -31,6 +33,7 @@ impl Clone for WebSocketHandler {
             config: self.config.clone(),
             runtime: self.runtime.clone(),
             file_manager: self.file_manager.clone(),
+            write: self.write.clone(),
         }
     }
 }
@@ -45,6 +48,7 @@ impl WebSocketHandler {
             config,
             runtime,
             file_manager,
+            write: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -78,6 +82,10 @@ impl WebSocketHandler {
 
         let (write, mut read) = ws_stream.split();
         let write = Arc::new(tokio::sync::Mutex::new(write));
+        {
+            let mut guard = self.write.write().await;
+            *guard = Some(write.clone());
+        }
 
         // Send handshake
         let handshake = json!({
@@ -129,6 +137,11 @@ impl WebSocketHandler {
                 }
                 _ => {}
             }
+        }
+
+        {
+            let mut guard = self.write.write().await;
+            *guard = None;
         }
 
         Ok(())
@@ -772,18 +785,47 @@ impl WebSocketHandler {
 
     pub async fn send_health_report(&self) -> AgentResult<()> {
         debug!("Sending health report");
-
         let containers = self.runtime.list_containers().await?;
+        let mut system = System::new();
+        system.refresh_cpu();
+        system.refresh_memory();
+        let cpu_percent = system.global_cpu_info().cpu_usage();
+        let memory_usage_mb = (system.used_memory() / 1024) as u64;
+        let memory_total_mb = (system.total_memory() / 1024) as u64;
+        let mut disks = Disks::new_with_refreshed_list();
+        disks.refresh();
+        let mut disk_usage_mb = 0u64;
+        let mut disk_total_mb = 0u64;
+        for disk in disks.list() {
+            disk_total_mb += disk.total_space() / (1024 * 1024);
+            disk_usage_mb += disk
+                .total_space()
+                .saturating_sub(disk.available_space())
+                / (1024 * 1024);
+        }
 
         let health = json!({
             "type": "health_report",
             "nodeId": self.config.server.node_id,
             "timestamp": chrono::Utc::now().timestamp_millis(),
+            "cpuPercent": cpu_percent,
+            "memoryUsageMb": memory_usage_mb,
+            "memoryTotalMb": memory_total_mb,
+            "diskUsageMb": disk_usage_mb,
+            "diskTotalMb": disk_total_mb,
             "containerCount": containers.len(),
-            "uptime": get_uptime(),
+            "uptimeSeconds": get_uptime(),
         });
 
         debug!("Health report: {}", health);
+
+        let writer = { self.write.read().await.clone() };
+        if let Some(ws) = writer {
+            let mut w = ws.lock().await;
+            w.send(Message::Text(health.to_string()))
+                .await
+                .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+        }
 
         Ok(())
     }

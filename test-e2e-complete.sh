@@ -73,7 +73,7 @@ wait_for_state() {
     
     while [ $attempt -lt $max_attempts ]; do
         local current_state=$(curl -s "$BACKEND_URL/api/servers/$server_id" \
-            -H "Authorization: Bearer $JWT_TOKEN" | jq -r '.status // "unknown"')
+            -H "Authorization: Bearer $JWT_TOKEN" | jq -r '.data.status // "unknown"')
         
         if [ "$current_state" == "$expected_state" ]; then
             print_success "Server reached state: $expected_state"
@@ -209,30 +209,40 @@ test_node_status() {
 setup_test_data() {
     print_header "Setting Up Test Data"
     
-    # Get or create location
-    print_step "Getting location..."
-    LOCATIONS=$(curl -s "$BACKEND_URL/api/locations" \
-        -H "Authorization: Bearer $JWT_TOKEN")
-    
-    LOCATION_ID=$(echo "$LOCATIONS" | jq -r '.[0].id // empty')
+    # Use seeded location (no public create endpoint)
+    print_step "Using seeded location..."
+    LOCATION_ID="cmkspe7nq0000sw3ctcc39e8z"
     
     if [ -z "$LOCATION_ID" ]; then
-        print_error "No location found. Please create one first."
+        print_error "No location found. Please run seed data first."
         exit 1
     fi
     print_success "Using location: $LOCATION_ID"
+
+    print_step "Logging in as admin for node creation..."
+    ADMIN_LOGIN=$(curl -s -X POST "$BACKEND_URL/api/auth/login" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "email": "admin@example.com",
+            "password": "admin123"
+        }')
+    ADMIN_TOKEN=$(echo "$ADMIN_LOGIN" | jq -r '.data.token // empty')
+    if [ -z "$ADMIN_TOKEN" ] || [ "$ADMIN_TOKEN" = "null" ]; then
+        print_error "Failed to login as admin"
+        exit 1
+    fi
     
     # Get or create template
     print_step "Getting template..."
     TEMPLATES=$(curl -s "$BACKEND_URL/api/templates" \
         -H "Authorization: Bearer $JWT_TOKEN")
     
-    TEMPLATE_ID=$(echo "$TEMPLATES" | jq -r '.[0].id // empty')
+    TEMPLATE_ID=$(echo "$TEMPLATES" | jq -r '.data[0].id // empty')
     
     if [ -z "$TEMPLATE_ID" ]; then
         print_info "Creating test template..."
         TEMPLATE_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/templates" \
-            -H "Authorization: Bearer $JWT_TOKEN" \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{
                 "name": "E2E Test Template",
@@ -246,7 +256,7 @@ setup_test_data() {
                 }
             }')
         
-        TEMPLATE_ID=$(echo "$TEMPLATE_RESPONSE" | jq -r '.id')
+        TEMPLATE_ID=$(echo "$TEMPLATE_RESPONSE" | jq -r '.data.id // empty')
         print_success "Template created: $TEMPLATE_ID"
     else
         print_success "Using template: $TEMPLATE_ID"
@@ -279,8 +289,8 @@ test_server_creation() {
             }
         }")
     
-    SERVER_ID=$(echo "$SERVER_RESPONSE" | jq -r '.id')
-    SERVER_UUID=$(echo "$SERVER_RESPONSE" | jq -r '.uuid')
+    SERVER_ID=$(echo "$SERVER_RESPONSE" | jq -r '.data.id // empty')
+    SERVER_UUID=$(echo "$SERVER_RESPONSE" | jq -r '.data.uuid // empty')
     
     if [ "$SERVER_ID" == "null" ] || [ -z "$SERVER_ID" ]; then
         print_error "Failed to create server"

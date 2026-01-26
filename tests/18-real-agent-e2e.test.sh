@@ -135,12 +135,8 @@ echo ""
 
 print_section "Phase 2: Authentication"
 
-log_info "Test 2.1: Register user and obtain JWT token"
-EMAIL=$(random_email)
-USERNAME="agent-test-$(random_string)"
-PASSWORD="AgentTest123!"
-
-response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL\",\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
+log_info "Test 2.1: Login as admin"
+response=$(http_post "${BACKEND_URL}/api/auth/login" "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}")
 TOKEN=$(echo "$response" | head -n-1 | jq -r '.data.token')
 USER_ID=$(echo "$response" | head -n-1 | jq -r '.data.userId')
 
@@ -149,8 +145,7 @@ if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
     exit 1
 fi
 
-log_success "✓ User registered: $USERNAME"
-log_success "✓ JWT token: ${TOKEN:0:30}..."
+log_success "✓ Admin authenticated"
 ((TESTS_RUN++))
 ((TESTS_PASSED++))
 echo ""

@@ -1,6 +1,6 @@
 use crate::errors::{AgentError, AgentResult};
 use std::process::Command;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// Firewall manager for automatically configuring firewall rules
 pub struct FirewallManager;

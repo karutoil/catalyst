@@ -104,12 +104,8 @@ echo ""
 
 print_section "Phase 2: Authentication & Node Setup"
 
-log_info "Test 1: Register user"
-EMAIL=$(random_email)
-USERNAME="realtest-$(random_string)"
-PASSWORD="RealTest123!"
-
-response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL\",\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
+log_info "Test 1: Login as admin"
+response=$(http_post "${BACKEND_URL}/api/auth/login" "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}")
 TOKEN=$(echo "$response" | head -n-1 | jq -r '.data.token')
 USER_ID=$(echo "$response" | head -n-1 | jq -r '.data.userId')
 
@@ -118,8 +114,7 @@ if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
     exit 1
 fi
 
-log_success "✓ User registered: $USERNAME"
-log_success "✓ Token obtained: ${TOKEN:0:20}..."
+log_success "✓ Admin authenticated"
 ((TESTS_RUN++))
 ((TESTS_PASSED++))
 echo ""

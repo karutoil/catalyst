@@ -92,12 +92,13 @@ export interface Node {
     createdAt: Date;
 }
 export interface NodeHealth {
-    cpuUsagePercent: number;
+    cpuPercent: number;
     memoryUsageMb: number;
     memoryTotalMb: number;
     uptime: number;
     containerCount: number;
-    diskUsagePercent: number;
+    diskUsageMb: number;
+    diskTotalMb: number;
 }
 export declare namespace WsEvent {
     interface ServerControl {

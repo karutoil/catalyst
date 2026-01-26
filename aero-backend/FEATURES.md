@@ -37,7 +37,7 @@ All planned features have been implemented and tested. The backend is ready for 
 - `GET /api/nodes/:id` - Get node details
 - `PUT /api/nodes/:id` - Update node
 - `DELETE /api/nodes/:id` - Delete node
-- `POST /api/nodes/:id/regenerate-token` - Generate new deployment token
+- `POST /api/nodes/:id/deployment-token` - Generate new deployment token
 
 ---
 
