@@ -58,6 +58,7 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"locationId\": \"$LOCATION_ID\",
     \"allocatedMemoryMb\": 1024,
     \"allocatedCpuCores\": 1,
+    \"allocatedDiskMb\": 10240,
     \"primaryPort\": $(random_port),
     \"networkMode\": \"bridge\"
 }" "Authorization: Bearer $OWNER_TOKEN")

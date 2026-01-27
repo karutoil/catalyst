@@ -146,6 +146,7 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"locationId\": \"$LOCATION_ID\",
     \"allocatedMemoryMb\": 512,
     \"allocatedCpuCores\": 1,
+    \"allocatedDiskMb\": 10240,
     \"primaryPort\": $SERVER_PORT,
     \"networkMode\": \"bridge\",
     \"environment\": {

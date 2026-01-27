@@ -82,6 +82,7 @@ export async function serverRoutes(app: FastifyInstance) {
         locationId,
         allocatedMemoryMb,
         allocatedCpuCores,
+        allocatedDiskMb,
         primaryPort,
         networkMode,
         environment,
@@ -93,6 +94,7 @@ export async function serverRoutes(app: FastifyInstance) {
         locationId: string;
         allocatedMemoryMb: number;
         allocatedCpuCores: number;
+        allocatedDiskMb: number;
         primaryPort: number;
         networkMode?: string;
         environment: Record<string, string>;
@@ -101,7 +103,16 @@ export async function serverRoutes(app: FastifyInstance) {
       const userId = request.user.userId;
 
       // Validate required fields
-      if (!name || !templateId || !nodeId || !locationId || !allocatedMemoryMb || !allocatedCpuCores || !primaryPort) {
+      if (
+        !name ||
+        !templateId ||
+        !nodeId ||
+        !locationId ||
+        allocatedMemoryMb === undefined ||
+        allocatedCpuCores === undefined ||
+        allocatedDiskMb === undefined ||
+        primaryPort === undefined
+      ) {
         return reply.status(400).send({ error: "Missing required fields" });
       }
 
@@ -241,6 +252,7 @@ export async function serverRoutes(app: FastifyInstance) {
               ownerId: userId,
               allocatedMemoryMb,
               allocatedCpuCores,
+              allocatedDiskMb,
               primaryPort,
               networkMode: desiredNetworkMode,
               environment: resolvedEnvironment,
@@ -403,23 +415,40 @@ export async function serverRoutes(app: FastifyInstance) {
         }
       }
 
-      const { name, description, environment, allocatedMemoryMb, allocatedCpuCores } = request.body as {
+      const {
+        name,
+        description,
+        environment,
+        allocatedMemoryMb,
+        allocatedCpuCores,
+        allocatedDiskMb,
+      } = request.body as {
         name?: string;
         description?: string;
         environment?: Record<string, string>;
         allocatedMemoryMb?: number;
         allocatedCpuCores?: number;
+        allocatedDiskMb?: number;
       };
 
       // Can only update resources if server is stopped
-      if ((allocatedMemoryMb || allocatedCpuCores) && server.status !== "stopped") {
+      if (
+        (allocatedMemoryMb !== undefined ||
+          allocatedCpuCores !== undefined ||
+          allocatedDiskMb !== undefined) &&
+        server.status !== "stopped"
+      ) {
         return reply.status(409).send({
           error: "Server must be stopped to update resource allocation",
         });
       }
 
       // Validate resource changes if provided
-      if (allocatedMemoryMb || allocatedCpuCores) {
+      if (
+        allocatedMemoryMb !== undefined ||
+        allocatedCpuCores !== undefined ||
+        allocatedDiskMb !== undefined
+      ) {
         const node = server.node;
         const otherServers = await prisma.server.findMany({
           where: {
@@ -429,6 +458,7 @@ export async function serverRoutes(app: FastifyInstance) {
           select: {
             allocatedMemoryMb: true,
             allocatedCpuCores: true,
+            allocatedDiskMb: true,
           },
         });
 
@@ -440,9 +470,14 @@ export async function serverRoutes(app: FastifyInstance) {
           (sum, s) => sum + (s.allocatedCpuCores || 0),
           0
         );
+        const totalOtherDisk = otherServers.reduce(
+          (sum, s) => sum + (s.allocatedDiskMb || 0),
+          0
+        );
 
-        const newMemory = allocatedMemoryMb || server.allocatedMemoryMb;
-        const newCpu = allocatedCpuCores || server.allocatedCpuCores;
+        const newMemory = allocatedMemoryMb ?? server.allocatedMemoryMb;
+        const newCpu = allocatedCpuCores ?? server.allocatedCpuCores;
+        const newDisk = allocatedDiskMb ?? server.allocatedDiskMb;
 
         if (totalOtherMemory + newMemory > node.maxMemoryMb) {
           return reply.status(400).send({
@@ -455,6 +490,15 @@ export async function serverRoutes(app: FastifyInstance) {
             error: `Insufficient CPU. Available: ${node.maxCpuCores - totalOtherCpu} cores`,
           });
         }
+
+        if (process.env.MAX_DISK_MB) {
+          const maxDisk = Number(process.env.MAX_DISK_MB);
+          if (Number.isFinite(maxDisk) && maxDisk > 0 && totalOtherDisk + newDisk > maxDisk) {
+            return reply.status(400).send({
+              error: `Insufficient disk. Available: ${maxDisk - totalOtherDisk}MB`,
+            });
+          }
+        }
       }
 
       const updated = await prisma.server.update({
@@ -463,12 +507,84 @@ export async function serverRoutes(app: FastifyInstance) {
           name: name || server.name,
           description: description !== undefined ? description : server.description,
           environment: environment || server.environment,
-          allocatedMemoryMb: allocatedMemoryMb || server.allocatedMemoryMb,
-          allocatedCpuCores: allocatedCpuCores || server.allocatedCpuCores,
+          allocatedMemoryMb: allocatedMemoryMb ?? server.allocatedMemoryMb,
+          allocatedCpuCores: allocatedCpuCores ?? server.allocatedCpuCores,
+          allocatedDiskMb: allocatedDiskMb ?? server.allocatedDiskMb,
         },
       });
 
       reply.send({ success: true, data: updated });
+    }
+  );
+
+  // Resize server storage (grow online, shrink requires stop)
+  app.post(
+    "/:serverId/storage/resize",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { allocatedDiskMb } = request.body as { allocatedDiskMb?: number };
+      const userId = request.user.userId;
+
+      if (!allocatedDiskMb || allocatedDiskMb <= 0) {
+        return reply.status(400).send({ error: "Invalid disk size" });
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { node: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (server.ownerId !== userId) {
+        const access = await prisma.serverAccess.findUnique({
+          where: { userId_serverId: { userId, serverId } },
+        });
+        if (!access) {
+          return reply.status(403).send({ error: "Forbidden" });
+        }
+      }
+
+      const isShrink = allocatedDiskMb < server.allocatedDiskMb;
+      if (isShrink && server.status !== "stopped") {
+        return reply.status(409).send({ error: "Server must be stopped to shrink disk" });
+      }
+
+      const gateway = (app as any).wsGateway;
+      if (!gateway) {
+        return reply.status(500).send({ error: "WebSocket gateway not available" });
+      }
+
+      const success = await gateway.sendToAgent(server.nodeId, {
+        type: "resize_storage",
+        serverId: server.id,
+        serverUuid: server.uuid,
+        allocatedDiskMb,
+      });
+
+      if (!success) {
+        return reply.status(503).send({ error: "Failed to send resize command to agent" });
+      }
+
+      await prisma.server.update({
+        where: { id: serverId },
+        data: { allocatedDiskMb },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "server.storage.resize",
+          resource: "server",
+          resourceId: serverId,
+          details: { allocatedDiskMb, previousDiskMb: server.allocatedDiskMb },
+        },
+      });
+
+      reply.send({ success: true, message: "Resize initiated" });
     }
   );
 
@@ -1251,6 +1367,7 @@ export async function serverRoutes(app: FastifyInstance) {
         environment: environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,
+        allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
       });
 
@@ -1355,6 +1472,7 @@ export async function serverRoutes(app: FastifyInstance) {
         environment: environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,
+        allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
         networkMode: server.networkMode,
       });
@@ -1533,6 +1651,7 @@ export async function serverRoutes(app: FastifyInstance) {
         environment: environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,
+        allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
         networkMode: server.networkMode,
       });

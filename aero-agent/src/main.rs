@@ -8,6 +8,7 @@ mod file_manager;
 mod firewall_manager;
 mod runtime_manager;
 mod system_setup;
+mod storage_manager;
 mod websocket_handler;
 
 pub use config::AgentConfig;
@@ -16,6 +17,7 @@ pub use file_manager::FileManager;
 pub use firewall_manager::FirewallManager;
 pub use runtime_manager::ContainerdRuntime;
 pub use system_setup::SystemSetup;
+pub use storage_manager::StorageManager;
 pub use websocket_handler::WebSocketHandler;
 
 /// Aero Agent - Main application state
@@ -24,6 +26,7 @@ pub struct AeroAgent {
     pub runtime: Arc<ContainerdRuntime>,
     pub ws_handler: Arc<WebSocketHandler>,
     pub file_manager: Arc<FileManager>,
+    pub storage_manager: Arc<StorageManager>,
     pub backend_connected: Arc<RwLock<bool>>,
 }
 
@@ -38,11 +41,13 @@ impl AeroAgent {
         ));
 
         let file_manager = Arc::new(FileManager::new(config.server.data_dir.clone()));
+        let storage_manager = Arc::new(StorageManager::new(config.server.data_dir.clone()));
 
         let ws_handler = Arc::new(WebSocketHandler::new(
             config.clone(),
             runtime.clone(),
             file_manager.clone(),
+            storage_manager.clone(),
         ));
 
         Ok(Self {
@@ -50,6 +55,7 @@ impl AeroAgent {
             runtime,
             ws_handler,
             file_manager,
+            storage_manager,
             backend_connected: Arc::new(RwLock::new(false)),
         })
     }
@@ -132,6 +138,7 @@ impl AeroAgent {
             runtime: self.runtime.clone(),
             ws_handler: self.ws_handler.clone(),
             file_manager: self.file_manager.clone(),
+            storage_manager: self.storage_manager.clone(),
             backend_connected: self.backend_connected.clone(),
         }
     }

@@ -362,6 +362,8 @@ export class WebSocketGateway {
         await this.routeToClients(message.serverId, message);
       } else if (message.type === "backup_delete_complete") {
         await this.routeToClients(message.serverId, message);
+      } else if (message.type === "storage_resize_complete") {
+        await this.routeToClients(message.serverId, message);
       }
     } catch (err) {
       this.logger.error(err, `Error handling agent message from ${nodeId}`);

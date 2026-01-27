@@ -128,6 +128,7 @@ curl -X POST http://localhost:3000/api/servers \
     "locationId": "loc-us-east",
     "allocatedMemoryMb": 2048,
     "allocatedCpuCores": 2,
+    "allocatedDiskMb": 10240,
     "primaryPort": 25565,
     "networkMode": "bridge",
     "environment": {

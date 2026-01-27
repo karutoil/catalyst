@@ -129,6 +129,7 @@ SERVER_DATA=$(cat <<SERVEREOF
   "locationId": "$LOCATION_ID",
   "allocatedMemoryMb": 2048,
   "allocatedCpuCores": 2,
+  "allocatedDiskMb": 10240,
   "primaryPort": $SERVER_PORT,
   "networkMode": "mc-lan-static",
   "environment": {

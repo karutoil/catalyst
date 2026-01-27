@@ -29,6 +29,8 @@ function XtermConsole({ entries }: XtermConsoleProps) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastEntryCount = useRef(0);
+  const openRafRef = useRef<number | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -50,18 +52,33 @@ function XtermConsole({ entries }: XtermConsoleProps) {
     const linkAddon = new WebLinksAddon();
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(linkAddon);
-    terminal.open(containerRef.current);
-    fitAddon.fit();
-    terminal.focus();
+
+    openRafRef.current = window.requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+      terminal.open(containerRef.current);
+      fitAddon.fit();
+      terminal.focus();
+    });
 
     const resize = () => fitAddon.fit();
     window.addEventListener('resize', resize);
+
+    if (containerRef.current && 'ResizeObserver' in window) {
+      resizeObserverRef.current = new ResizeObserver(() => fitAddon.fit());
+      resizeObserverRef.current.observe(containerRef.current);
+    }
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
     return () => {
       window.removeEventListener('resize', resize);
+      if (openRafRef.current !== null) {
+        window.cancelAnimationFrame(openRafRef.current);
+        openRafRef.current = null;
+      }
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -95,18 +112,6 @@ function XtermConsole({ entries }: XtermConsoleProps) {
     }
     lastEntryCount.current = entries.length;
   }, [entries]);
-
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    if (!terminal) return;
-    terminal.reset();
-    lastEntryCount.current = 0;
-    entries.forEach((entry) => writeEntry(terminal, entry));
-    if (entries.length) {
-      terminal.scrollToBottom();
-    }
-    lastEntryCount.current = entries.length;
-  }, [entries, containerRef]);
 
   const containerClass = useMemo(
     () => 'h-[60vh] w-full rounded-lg border border-slate-800 bg-slate-950',

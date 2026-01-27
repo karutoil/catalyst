@@ -62,6 +62,7 @@ SERVER_RESPONSE=$(curl -s -X POST "http://localhost:3000/api/servers" \
     \"locationId\": \"$LOCATION_ID\",
     \"allocatedMemoryMb\": 512,
     \"allocatedCpuCores\": 1,
+    \"allocatedDiskMb\": 10240,
     \"primaryPort\": 25565,
     \"networkMode\": \"bridge\",
     \"environment\": {

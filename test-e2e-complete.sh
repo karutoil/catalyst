@@ -282,6 +282,7 @@ test_server_creation() {
             \"locationId\": \"$LOCATION_ID\",
             \"allocatedMemoryMb\": 512,
             \"allocatedCpuCores\": 1,
+            \"allocatedDiskMb\": 10240,
             \"primaryPort\": 25565,
             \"networkMode\": \"bridge\",
             \"environment\": {

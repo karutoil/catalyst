@@ -54,6 +54,7 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"locationId\": \"$LOCATION_ID\",
     \"allocatedMemoryMb\": 2048,
     \"allocatedCpuCores\": 2,
+    \"allocatedDiskMb\": 10240,
     \"primaryPort\": $SERVER_PORT,
     \"networkMode\": \"bridge\",
     \"environment\": {
@@ -121,6 +122,7 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"locationId\": \"$LOCATION_ID\",
     \"allocatedMemoryMb\": 1024,
     \"allocatedCpuCores\": 1,
+    \"allocatedDiskMb\": 10240,
     \"primaryPort\": $SERVER_PORT,
     \"networkMode\": \"bridge\"
 }" "Authorization: Bearer $TOKEN")
@@ -137,6 +139,7 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"locationId\": \"$LOCATION_ID\",
     \"allocatedMemoryMb\": 999999,
     \"allocatedCpuCores\": 100,
+    \"allocatedDiskMb\": 10240,
     \"primaryPort\": $(random_port),
     \"networkMode\": \"bridge\"
 }" "Authorization: Bearer $TOKEN")

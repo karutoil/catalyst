@@ -138,6 +138,7 @@ test_create_server() {
             \"locationId\": \"cmkspe7nq0000sw3ctcc39e8z\",
             \"allocatedMemoryMb\": 512,
             \"allocatedCpuCores\": 1,
+            \"allocatedDiskMb\": 10240,
             \"primaryPort\": 25565,
             \"networkMode\": \"bridge\",
             \"environment\": {

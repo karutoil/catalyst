@@ -15,7 +15,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::time::Duration;
 
-use crate::{AgentConfig, ContainerdRuntime, FileManager, AgentError, AgentResult};
+use crate::{AgentConfig, ContainerdRuntime, FileManager, StorageManager, AgentError, AgentResult};
 
 type WsStream = tokio_tungstenite::WebSocketStream<
     tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
@@ -26,6 +26,7 @@ pub struct WebSocketHandler {
     config: Arc<AgentConfig>,
     runtime: Arc<ContainerdRuntime>,
     file_manager: Arc<FileManager>,
+    storage_manager: Arc<StorageManager>,
     write: Arc<RwLock<Option<Arc<tokio::sync::Mutex<WsWrite>>>>>,
 }
 
@@ -35,6 +36,7 @@ impl Clone for WebSocketHandler {
             config: self.config.clone(),
             runtime: self.runtime.clone(),
             file_manager: self.file_manager.clone(),
+            storage_manager: self.storage_manager.clone(),
             write: self.write.clone(),
         }
     }
@@ -45,11 +47,13 @@ impl WebSocketHandler {
         config: Arc<AgentConfig>,
         runtime: Arc<ContainerdRuntime>,
         file_manager: Arc<FileManager>,
+        storage_manager: Arc<StorageManager>,
     ) -> Self {
         Self {
             config,
             runtime,
             file_manager,
+            storage_manager,
             write: Arc::new(RwLock::new(None)),
         }
     }
@@ -183,6 +187,7 @@ impl WebSocketHandler {
             Some("restore_backup") => self.handle_restore_backup(&msg, write).await?,
             Some("delete_backup") => self.handle_delete_backup(&msg, write).await?,
             Some("download_backup") => self.handle_download_backup(&msg, write).await?,
+            Some("resize_storage") => self.handle_resize_storage(&msg, write).await?,
             Some("node_handshake_response") => {
                 info!("Handshake accepted by backend");
             }
@@ -260,6 +265,12 @@ impl WebSocketHandler {
                 // Fallback: create based on UUID
                 format!("/tmp/aero-servers/{}", server_uuid)
             });
+
+        let disk_mb = msg["allocatedDiskMb"].as_u64().unwrap_or(10240);
+        let server_dir_path = PathBuf::from(&server_dir);
+        self.storage_manager
+            .ensure_mounted(server_uuid, &server_dir_path, disk_mb)
+            .await?;
         
         let server_dir_path = std::path::PathBuf::from(&server_dir);
         
@@ -486,6 +497,8 @@ impl WebSocketHandler {
                 AgentError::InvalidRequest("Missing allocatedCpuCores".to_string())
             })?;
 
+            let disk_mb = msg["allocatedDiskMb"].as_u64().unwrap_or(10240);
+
             let primary_port = msg["primaryPort"].as_u64().ok_or_else(|| {
                 AgentError::InvalidRequest("Missing primaryPort".to_string())
             })? as u16;
@@ -512,6 +525,11 @@ impl WebSocketHandler {
                 .unwrap_or_else(|| {
                     format!("/tmp/aero-servers/{}", server_uuid)
                 });
+
+            let server_dir_path = PathBuf::from(&server_dir);
+            self.storage_manager
+                .ensure_mounted(server_uuid, &server_dir_path, disk_mb)
+                .await?;
 
             info!("Starting server: {} (UUID: {})", server_id, server_uuid);
             info!("Image: {}, Port: {}, Memory: {}MB, CPU: {}",
@@ -1002,6 +1020,59 @@ impl WebSocketHandler {
             w.send(Message::Text(event.to_string()))
                 .await
                 .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_resize_storage(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let server_id = msg["serverId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverId".to_string())
+        })?;
+        let server_uuid = msg["serverUuid"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverUuid".to_string())
+        })?;
+        let allocated_disk_mb = msg["allocatedDiskMb"].as_u64().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing allocatedDiskMb".to_string())
+        })?;
+
+        let server_dir = PathBuf::from(self.config.server.data_dir.as_path()).join(server_uuid);
+        let allow_online_grow = true;
+
+        let result = self
+            .storage_manager
+            .resize(server_uuid, &server_dir, allocated_disk_mb, allow_online_grow)
+            .await;
+
+        let event = match &result {
+            Ok(_) => json!({
+                "type": "storage_resize_complete",
+                "serverId": server_id,
+                "serverUuid": server_uuid,
+                "allocatedDiskMb": allocated_disk_mb,
+                "success": true,
+            }),
+            Err(err) => json!({
+                "type": "storage_resize_complete",
+                "serverId": server_id,
+                "serverUuid": server_uuid,
+                "allocatedDiskMb": allocated_disk_mb,
+                "success": false,
+                "error": err.to_string(),
+            }),
+        };
+
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+
+        if let Err(err) = result {
+            return Err(err);
         }
 
         Ok(())

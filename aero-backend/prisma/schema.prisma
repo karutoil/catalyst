@@ -191,6 +191,7 @@ model Server {
   status         String   @default("stopped")
   allocatedMemoryMb Int
   allocatedCpuCores Int
+  allocatedDiskMb  Int     @default(10240)
   
   // Container info
   containerId    String?

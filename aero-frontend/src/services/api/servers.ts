@@ -32,6 +32,12 @@ export const serversApi = {
     const { data } = await apiClient.put<ApiResponse<Server>>(`/api/servers/${id}`, payload);
     return data.data;
   },
+  resizeStorage: async (id: string, allocatedDiskMb: number) => {
+    const { data } = await apiClient.post<ApiResponse<void>>(`/api/servers/${id}/storage/resize`, {
+      allocatedDiskMb,
+    });
+    return data;
+  },
   transfer: async (id: string, payload: TransferServerPayload) => {
     const { data } = await apiClient.post<ApiResponse<void>>(`/api/servers/${id}/transfer`, payload);
     return data;

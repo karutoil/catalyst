@@ -31,6 +31,7 @@ export interface Server {
   memoryPercent?: number;
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
+  allocatedDiskMb?: number;
 }
 
 export interface ServerListParams {
@@ -46,6 +47,7 @@ export interface CreateServerPayload {
   locationId: string;
   allocatedMemoryMb: number;
   allocatedCpuCores: number;
+  allocatedDiskMb: number;
   primaryPort: number;
   networkMode?: string;
   environment: Record<string, string>;
@@ -55,6 +57,7 @@ export interface UpdateServerPayload {
   name?: string;
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
+  allocatedDiskMb?: number;
 }
 
 export interface TransferServerPayload {

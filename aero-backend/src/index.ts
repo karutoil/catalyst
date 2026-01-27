@@ -109,6 +109,7 @@ taskScheduler.setTaskExecutor({
         environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,
+        allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
         networkMode: server.networkMode,
       });
@@ -124,6 +125,7 @@ taskScheduler.setTaskExecutor({
         environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,
+        allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
         networkMode: server.networkMode,
       });

@@ -57,7 +57,7 @@ function ServerDetailsPage() {
     clear: clearConsole,
   } = useConsole(serverId);
   const [command, setCommand] = useState('');
-  const canSend = isConnected && Boolean(serverId);
+  const canSend = isConnected && Boolean(serverId) && server?.status === 'running';
   const pauseMutation = useMutation({
     mutationFn: (task: { id: string; enabled: boolean }) =>
       tasksApi.update(server.id, task.id, { enabled: !task.enabled }),

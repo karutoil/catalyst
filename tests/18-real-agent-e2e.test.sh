@@ -281,6 +281,7 @@ SERVER_DATA=$(cat <<EOF
   "locationId": "cmkspe7nq0000sw3ctcc39e8z",
   "allocatedMemoryMb": 2048,
   "allocatedCpuCores": 2,
+  "allocatedDiskMb": 10240,
   "primaryPort": $SERVER_PORT,
   "networkMode": "bridge",
   "environment": {

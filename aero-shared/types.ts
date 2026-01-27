@@ -79,6 +79,7 @@ export interface ServerInstance {
   status: ServerState;
   allocatedMemoryMb: number;
   allocatedCpuCores: number;
+  allocatedDiskMb: number;
   container: {
     id: string;
     name: string;

@@ -20,7 +20,7 @@ function ServerConsolePage() {
   const outputRef = useRef<HTMLDivElement | null>(null);
 
   const title = server?.name ?? serverId ?? 'Unknown server';
-  const canSend = Boolean(serverId) && isConnected;
+  const canSend = Boolean(serverId) && isConnected && server?.status === 'running';
 
   useEffect(() => {
     if (!outputRef.current || !autoScroll) return;

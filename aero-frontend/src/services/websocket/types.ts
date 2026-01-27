@@ -38,4 +38,12 @@ export type WebSocketMessage =
       sizeMb?: number;
       checksum?: string | null;
       backupId?: string;
+    }
+  | {
+      type: 'storage_resize_complete';
+      serverId: string;
+      serverUuid?: string;
+      allocatedDiskMb?: number;
+      success: boolean;
+      error?: string;
     };

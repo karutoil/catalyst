@@ -15,6 +15,7 @@ function CreateServerModal() {
   const [nodeId, setNodeId] = useState('');
   const [memory, setMemory] = useState('1024');
   const [cpu, setCpu] = useState('1');
+  const [disk, setDisk] = useState('10240');
   const [port, setPort] = useState('25565');
   const [environment, setEnvironment] = useState<Record<string, string>>({});
   const [networkMode, setNetworkMode] = useState<'bridge' | 'mc-lan' | 'mc-lan-static'>(
@@ -86,6 +87,7 @@ function CreateServerModal() {
         locationId,
         allocatedMemoryMb: Number(memory),
         allocatedCpuCores: Number(cpu),
+        allocatedDiskMb: Number(disk),
         primaryPort: Number(port),
         networkMode,
         environment: {
@@ -218,17 +220,28 @@ function CreateServerModal() {
                     min={256}
                   />
                 </label>
-                <label className="block space-y-1">
-                  <span className="text-slate-300">CPU cores</span>
-                  <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
-                    value={cpu}
-                    onChange={(e) => setCpu(e.target.value)}
-                    type="number"
-                    min={1}
-                    step={1}
-                  />
-                </label>
+              <label className="block space-y-1">
+                <span className="text-slate-300">CPU cores</span>
+                <input
+                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={cpu}
+                  onChange={(e) => setCpu(e.target.value)}
+                  type="number"
+                  min={1}
+                  step={1}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-300">Disk (MB)</span>
+                <input
+                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={disk}
+                  onChange={(e) => setDisk(e.target.value)}
+                  type="number"
+                  min={1024}
+                  step={1024}
+                />
+              </label>
               </div>
               <label className="block space-y-1">
                 <span className="text-slate-300">Primary Port</span>

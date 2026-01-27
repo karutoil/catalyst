@@ -16,16 +16,17 @@ declare module "fastify" {
 
 declare global {
   namespace NodeJS {
-    interface ProcessEnv {
-      DATABASE_URL: string;
-      JWT_SECRET: string;
-      PORT?: string;
-      CORS_ORIGIN?: string;
-      BACKEND_EXTERNAL_ADDRESS?: string;
-      NODE_ENV?: "development" | "production";
-      LOG_LEVEL?: string;
-    }
+  interface ProcessEnv {
+    DATABASE_URL: string;
+    JWT_SECRET: string;
+    PORT?: string;
+    CORS_ORIGIN?: string;
+    BACKEND_EXTERNAL_ADDRESS?: string;
+    NODE_ENV?: "development" | "production";
+    LOG_LEVEL?: string;
+    MAX_DISK_MB?: string;
   }
+}
 }
 
 export {};

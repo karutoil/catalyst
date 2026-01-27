@@ -190,6 +190,7 @@ SERVER_DATA=$(cat <<EOF
   "locationId": "$LOCATION_ID",
   "allocatedMemoryMb": $TEMPLATE_MEMORY,
   "allocatedCpuCores": $TEMPLATE_CPU,
+  "allocatedDiskMb": 10240,
   "primaryPort": $SERVER_PORT,
   "networkMode": "bridge",
   "environment": {

@@ -101,6 +101,7 @@ SERVER_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/servers" \
     "locationId": "'$LOCATION_ID'",
     "allocatedMemoryMb": 1024,
     "allocatedCpuCores": 1,
+    "allocatedDiskMb": 10240,
     "primaryPort": 25565,
     "networkMode": "bridge",
     "environment": {

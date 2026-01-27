@@ -435,6 +435,7 @@ Core server management endpoints.
       "status": "running",
       "allocatedMemoryMb": 4096,
       "allocatedCpuCores": 2,
+      "allocatedDiskMb": 10240,
       "primaryPort": 25565,
       "networkMode": "bridge",
       "containerName": "aero-8fec71a3",
@@ -485,6 +486,7 @@ Core server management endpoints.
     "status": "running",
     "allocatedMemoryMb": 4096,
     "allocatedCpuCores": 2,
+    "allocatedDiskMb": 10240,
     "primaryPort": 25565,
     "networkMode": "bridge",
     "environment": {
@@ -523,9 +525,10 @@ Core server management endpoints.
   "templateId": "template123",
   "nodeId": "node123",
   "locationId": "location123",
-  "allocatedMemoryMb": 4096,
-  "allocatedCpuCores": 2,
-  "primaryPort": 25565,
+    "allocatedMemoryMb": 4096,
+    "allocatedCpuCores": 2,
+    "allocatedDiskMb": 10240,
+    "primaryPort": 25565,
   "networkMode": "bridge",
   "environment": {
     "EULA": "TRUE",
@@ -1704,6 +1707,7 @@ Sent every 30 seconds.
   },
   "allocatedMemoryMb": 4096,
   "allocatedCpuCores": 2,
+  "allocatedDiskMb": 10240,
   "primaryPort": 25565,
   "networkMode": "bridge"
 }
@@ -1721,7 +1725,11 @@ Sent every 30 seconds.
     "startCommand": "java -jar server.jar"
   },
   "environment": {...},
-  "allocatedMemoryMb": 4096
+  "allocatedMemoryMb": 4096,
+  "allocatedCpuCores": 2,
+  "allocatedDiskMb": 10240,
+  "primaryPort": 25565,
+  "networkMode": "bridge"
 }
 ```
 
