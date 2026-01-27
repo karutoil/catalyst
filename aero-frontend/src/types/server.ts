@@ -71,6 +71,26 @@ export interface ServerMetrics {
   timestamp: string;
 }
 
+export interface ServerMetricsPoint {
+  cpuPercent: number;
+  memoryUsageMb: number;
+  diskUsageMb: number;
+  networkRxBytes: string;
+  networkTxBytes: string;
+  timestamp: string;
+}
+
+export interface ServerMetricsResponse {
+  latest: ServerMetricsPoint | null;
+  averages: {
+    cpuPercent: number;
+    memoryUsageMb: number;
+    diskUsageMb: number;
+  } | null;
+  history: ServerMetricsPoint[];
+  count: number;
+}
+
 export interface ServerLogEntry {
   stream: string;
   data: string;

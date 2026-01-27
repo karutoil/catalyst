@@ -27,10 +27,21 @@ export const backupsApi = {
     );
     return data;
   },
-  download: async (serverId: string, backupId: string) => {
+  download: async (
+    serverId: string,
+    backupId: string,
+    onProgress?: (progress: { loaded: number; total?: number }) => void,
+  ) => {
     const response = await apiClient.get<Blob>(
       `/api/servers/${serverId}/backups/${backupId}/download`,
-      { responseType: 'blob' },
+      {
+        responseType: 'blob',
+        onDownloadProgress: (event) => {
+          if (!onProgress) return;
+          const total = Number.isFinite(event.total) && event.total && event.total > 0 ? event.total : undefined;
+          onProgress({ loaded: event.loaded, total });
+        },
+      },
     );
     return response.data;
   },

@@ -28,6 +28,7 @@ type PendingAgentRequest = {
   timeout: NodeJS.Timeout;
   kind: "json" | "binary";
   chunks?: Buffer[];
+  onChunk?: (chunk: Buffer) => void;
 };
 
 export class WebSocketGateway {
@@ -190,12 +191,26 @@ export class WebSocketGateway {
         }
         if (message.data) {
           const buffer = Buffer.from(message.data, "base64");
+          if (pending.onChunk) {
+            try {
+              pending.onChunk(buffer);
+            } catch (error) {
+              this.logger.error(
+                { requestId: message.requestId, err: error },
+                "Failed to handle backup download chunk",
+              );
+            }
+          }
           pending.chunks?.push(buffer);
         }
         if (message.done) {
           clearTimeout(pending.timeout);
-          const payload = Buffer.concat(pending.chunks ?? []);
-          pending.resolve(payload);
+          if (pending.chunks) {
+            const payload = Buffer.concat(pending.chunks);
+            pending.resolve(payload);
+          } else {
+            pending.resolve(undefined);
+          }
           this.pendingAgentRequests.delete(message.requestId);
         }
         return;
@@ -233,6 +248,47 @@ export class WebSocketGateway {
             networkTxBytes: BigInt(0),
             containerCount: Number(message.containerCount) || 0,
           },
+        });
+      } else if (message.type === "resource_stats") {
+        const serverUuid = message.serverUuid;
+        if (!serverUuid) {
+          this.logger.warn("resource_stats missing serverUuid");
+          return;
+        }
+        const server = await this.prisma.server.findUnique({
+          where: { uuid: serverUuid },
+        });
+        if (!server) {
+          this.logger.warn({ serverUuid }, "resource_stats for unknown server");
+          return;
+        }
+
+        const cpuPercent = Number(message.cpuPercent);
+        const memoryUsageMb = Number(message.memoryUsageMb);
+        const diskUsageMb = Number(message.diskUsageMb ?? 0);
+        const networkRxBytes = BigInt(Math.max(0, Number(message.networkRxBytes ?? 0)));
+        const networkTxBytes = BigInt(Math.max(0, Number(message.networkTxBytes ?? 0)));
+
+        await this.prisma.serverMetrics.create({
+          data: {
+            serverId: server.id,
+            cpuPercent: Number.isFinite(cpuPercent) ? cpuPercent : 0,
+            memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? memoryUsageMb : 0),
+            networkRxBytes,
+            networkTxBytes,
+            diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? diskUsageMb : 0),
+          },
+        });
+
+        await this.routeToClients(server.id, {
+          type: "resource_stats",
+          serverId: server.id,
+          cpuPercent: Number.isFinite(cpuPercent) ? cpuPercent : 0,
+          memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? memoryUsageMb : 0),
+          networkRxBytes: networkRxBytes.toString(),
+          networkTxBytes: networkTxBytes.toString(),
+          diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? diskUsageMb : 0),
+          timestamp: Date.now(),
         });
       } else if (message.type === "console_output") {
         if (message.serverId && message.data) {
@@ -522,5 +578,37 @@ export class WebSocketGateway {
 
     agent.socket.socket.send(JSON.stringify(payload));
     return response;
+  }
+
+  async streamBinaryFromAgent(
+    nodeId: string,
+    message: any,
+    onChunk: (chunk: Buffer) => void,
+    timeoutMs = 60000,
+  ): Promise<void> {
+    const agent = this.agents.get(nodeId);
+    if (!agent || !agent.authenticated || agent.socket.socket.readyState !== 1) {
+      throw new Error(`Agent ${nodeId} not connected`);
+    }
+
+    const requestId = crypto.randomUUID();
+    const payload = { ...message, requestId };
+
+    const response = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingAgentRequests.delete(requestId);
+        reject(new Error("Agent request timed out"));
+      }, timeoutMs);
+      this.pendingAgentRequests.set(requestId, {
+        resolve,
+        reject,
+        timeout,
+        kind: "binary",
+        onChunk,
+      });
+    });
+
+    agent.socket.socket.send(JSON.stringify(payload));
+    await response;
   }
 }

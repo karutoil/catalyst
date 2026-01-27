@@ -93,16 +93,24 @@ export class TaskScheduler {
       this.scheduledJobs.get(task.id)?.stop();
     }
 
-    // Create new scheduled job
-    const job = cron.schedule(
-      task.schedule,
-      async () => {
-        await this.executeTask(task);
-      },
-      {
-        timezone: process.env.TZ || 'UTC',
-      }
-    );
+    let job;
+    try {
+      // Create new scheduled job
+      job = cron.schedule(
+        task.schedule,
+        async () => {
+          await this.executeTask(task);
+        },
+        {
+          timezone: process.env.TZ || 'UTC',
+          scheduled: true,
+        }
+      );
+      job.start();
+    } catch (error) {
+      this.logger.error(error, `Failed to schedule task ${task.id}`);
+      return;
+    }
 
     this.scheduledJobs.set(task.id, job);
 

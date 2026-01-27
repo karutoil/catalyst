@@ -68,4 +68,8 @@ export const serversApi = {
     );
     return data.data?.logs || [];
   },
+  metrics: async (id: string, params?: { hours?: number; limit?: number }) => {
+    const { data } = await apiClient.get<ApiResponse<any>>(`/api/servers/${id}/metrics`, { params });
+    return data.data;
+  },
 };

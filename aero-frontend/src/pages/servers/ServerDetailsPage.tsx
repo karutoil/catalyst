@@ -2,22 +2,27 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useServer } from '../../hooks/useServer';
 import { useServerMetrics } from '../../hooks/useServerMetrics';
-import { useServerEvents } from '../../hooks/useServerEvents';
+import { useServerMetricsHistory } from '../../hooks/useServerMetricsHistory';
+import { formatBytes } from '../../utils/formatters';
 import { useWebSocketStore } from '../../stores/websocketStore';
 import ServerControls from '../../components/servers/ServerControls';
 import ServerStatusBadge from '../../components/servers/ServerStatusBadge';
 import ServerMetrics from '../../components/servers/ServerMetrics';
+import ServerMetricsTrends from '../../components/servers/ServerMetricsTrends';
 import UpdateServerModal from '../../components/servers/UpdateServerModal';
 import TransferServerModal from '../../components/servers/TransferServerModal';
 import DeleteServerDialog from '../../components/servers/DeleteServerDialog';
 import FileManager from '../../components/files/FileManager';
 import BackupSection from '../../components/backups/BackupSection';
 import CreateTaskModal from '../../components/tasks/CreateTaskModal';
+import EditTaskModal from '../../components/tasks/EditTaskModal';
 import XtermConsole from '../../components/console/XtermConsole';
 import { useConsole } from '../../hooks/useConsole';
 import { useTasks } from '../../hooks/useTasks';
 import { serversApi } from '../../services/api/servers';
 import { notifyError, notifySuccess } from '../../utils/notify';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { tasksApi } from '../../services/api/tasks';
 
 const tabLabels = {
   console: 'Console',
@@ -34,9 +39,10 @@ function ServerDetailsPage() {
   const navigate = useNavigate();
   const { data: server, isLoading, isError } = useServer(serverId);
   const liveMetrics = useServerMetrics(serverId, server?.allocatedMemoryMb);
-  const events = useServerEvents(serverId);
+  const { data: metricsHistory } = useServerMetricsHistory(serverId);
   const { data: tasks = [], isLoading: tasksLoading } = useTasks(serverId);
   const { isConnected } = useWebSocketStore();
+  const queryClient = useQueryClient();
   const activeTab = useMemo(() => {
     const key = tab ?? 'console';
     return key in tabLabels ? (key as keyof typeof tabLabels) : 'console';
@@ -52,6 +58,30 @@ function ServerDetailsPage() {
   } = useConsole(serverId);
   const [command, setCommand] = useState('');
   const canSend = isConnected && Boolean(serverId);
+  const pauseMutation = useMutation({
+    mutationFn: (task: { id: string; enabled: boolean }) =>
+      tasksApi.update(server.id, task.id, { enabled: !task.enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', server.id] });
+      notifySuccess('Task updated');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to update task';
+      notifyError(message);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (taskId: string) => tasksApi.remove(server.id, taskId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', server.id] });
+      notifySuccess('Task deleted');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to delete task';
+      notifyError(message);
+    },
+  });
 
   const handleSend = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -236,6 +266,29 @@ function ServerDetailsPage() {
                       {task.description || 'No description'}
                     </div>
                     <div className="mt-2 text-xs text-slate-500">Schedule: {task.schedule}</div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      <EditTaskModal serverId={server.id} task={task} />
+                      <button
+                        type="button"
+                        className={`rounded-md border px-3 py-1 font-semibold ${
+                          task.enabled === false
+                            ? 'border-emerald-600 text-emerald-200 hover:border-emerald-500'
+                            : 'border-amber-600 text-amber-200 hover:border-amber-500'
+                        }`}
+                        onClick={() => pauseMutation.mutate(task as { id: string; enabled: boolean })}
+                        disabled={pauseMutation.isPending}
+                      >
+                        {task.enabled === false ? 'Resume' : 'Pause'}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-rose-700 px-3 py-1 font-semibold text-rose-200 hover:border-rose-500"
+                        onClick={() => deleteMutation.mutate(task.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -244,49 +297,56 @@ function ServerDetailsPage() {
         </div>
       ) : null}
 
-      {activeTab === 'metrics' ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <ServerMetrics
-            cpu={liveMetrics?.cpuPercent ?? server?.cpuPercent ?? 0}
-            memory={liveMetrics?.memoryPercent ?? server?.memoryPercent ?? 0}
-          />
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 lg:col-span-2">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-100">Recent events</div>
-              <div
-                className={`flex items-center gap-1 text-xs ${isConnected ? 'text-emerald-400' : 'text-slate-400'}`}
-              >
-                <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                {isConnected ? 'Live' : 'Offline'}
-              </div>
-            </div>
-            <ul className="space-y-2 text-sm text-slate-300">
-              {events.length > 0 ? (
-                events.map((event) => (
-                  <li key={event.id} className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                      <span className="uppercase tracking-wide">{event.stream ?? 'event'}</span>
-                      <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                    <div className="mt-1 text-sm text-slate-100">{event.message}</div>
-                  </li>
-                ))
-              ) : (
-                <>
-                  <li className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                    {isConnected
-                      ? 'Connected to WebSocket - ready for real-time updates.'
-                      : 'Connecting to real-time updates...'}
-                  </li>
-                  <li className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                    {liveMetrics ? 'Receiving live metrics updates.' : 'Waiting for metrics stream...'}
-                  </li>
-                </>
-              )}
-            </ul>
-          </div>
-        </div>
-      ) : null}
+       {activeTab === 'metrics' ? (
+         <div className="space-y-4">
+           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+             <ServerMetrics
+               cpu={liveMetrics?.cpuPercent ?? server?.cpuPercent ?? 0}
+               memory={liveMetrics?.memoryPercent ?? server?.memoryPercent ?? 0}
+             />
+             <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 lg:col-span-2">
+               <div className="mb-3 flex items-center justify-between">
+                 <div className="text-sm font-semibold text-slate-100">Live snapshot</div>
+                 <div className={`flex items-center gap-2 text-xs ${isConnected ? 'text-emerald-300' : 'text-slate-400'}`}>
+                   <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                   {isConnected ? 'Live' : 'Offline'}
+                 </div>
+               </div>
+               <div className="grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                   <div className="text-slate-400">Memory used</div>
+                   <div className="text-sm font-semibold text-slate-100">
+                     {liveMetrics?.memoryUsageMb ? `${liveMetrics.memoryUsageMb} MB` : 'n/a'}
+                   </div>
+                 </div>
+                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                   <div className="text-slate-400">Disk IO (last tick)</div>
+                   <div className="text-sm font-semibold text-slate-100">
+                     {metricsHistory?.latest?.diskUsageMb ?? 0} MB
+                   </div>
+                 </div>
+                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                   <div className="text-slate-400">Network RX</div>
+                   <div className="text-sm font-semibold text-slate-100">
+                     {formatBytes(Number(metricsHistory?.latest?.networkRxBytes ?? 0))}
+                   </div>
+                 </div>
+                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                   <div className="text-slate-400">Network TX</div>
+                   <div className="text-sm font-semibold text-slate-100">
+                     {formatBytes(Number(metricsHistory?.latest?.networkTxBytes ?? 0))}
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
+           <ServerMetricsTrends
+             history={metricsHistory?.history ?? []}
+             latest={metricsHistory?.latest ?? null}
+             allocatedMemoryMb={server.allocatedMemoryMb ?? 0}
+           />
+         </div>
+       ) : null}
 
       {activeTab === 'configuration' ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

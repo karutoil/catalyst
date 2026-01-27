@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import * as fs from "fs/promises";
+import { PassThrough } from "stream";
 
 export async function backupRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
@@ -305,9 +306,11 @@ export async function backupRoutes(app: FastifyInstance) {
       // Check if backup file exists locally; otherwise request from agent.
       try {
         await fs.access(backup.path);
+        const stats = await fs.stat(backup.path);
         const stream = require("fs").createReadStream(backup.path);
 
         reply.header("Content-Type", "application/gzip");
+        reply.header("Content-Length", stats.size.toString());
         reply.header(
           "Content-Disposition",
           `attachment; filename="${backup.name}.tar.gz"`
@@ -325,26 +328,49 @@ export async function backupRoutes(app: FastifyInstance) {
         }
 
         const gateway = (app as any).wsGateway;
-        try {
-          const buffer = await gateway.requestBinaryFromAgent(server.nodeId, {
-            type: "download_backup",
-            serverId: server.id,
-            backupPath: backup.path,
-          });
-
-          if (!buffer?.length) {
-            return reply.status(404).send({ error: "Backup file not found on node" });
+        const stream = new PassThrough();
+        let bytesWritten = 0;
+        const finalize = (error?: Error) => {
+          if (error) {
+            request.log.error({ err: error, serverId, backupId }, "Backup download failed");
           }
+          if (!reply.raw.writableEnded) {
+            stream.end();
+          }
+        };
+        request.raw.on("close", () => finalize());
 
-          reply.header("Content-Type", "application/gzip");
-          reply.header(
-            "Content-Disposition",
-            `attachment; filename="${backup.name}.tar.gz"`
+        reply.header("Content-Type", "application/gzip");
+        reply.header(
+          "Content-Disposition",
+          `attachment; filename="${backup.name}.tar.gz"`
+        );
+        reply.send(stream);
+
+        try {
+          await gateway.streamBinaryFromAgent(
+            server.nodeId,
+            {
+              type: "download_backup",
+              serverId: server.id,
+              backupPath: backup.path,
+            },
+            (chunk: Buffer) => {
+              bytesWritten += chunk.length;
+              stream.write(chunk);
+            },
           );
-          return reply.send(buffer);
+          if (bytesWritten === 0) {
+            stream.end();
+            return;
+          }
+          stream.end();
+          return;
         } catch (error: any) {
-          request.log.error({ err: error, serverId, backupId }, "Backup download failed");
-          return reply.status(500).send({ error: error?.message || "Failed to download backup" });
+          finalize(error);
+          if (bytesWritten === 0 && !reply.raw.headersSent) {
+            return reply.status(500).send({ error: error?.message || "Failed to download backup" });
+          }
         }
       }
     }

@@ -1,18 +1,36 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useBackups } from '../../hooks/useBackups';
 import { notifyError, notifyInfo } from '../../utils/notify';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import BackupList from './BackupList';
 import CreateBackupModal from './CreateBackupModal';
 import { backupsApi } from '../../services/api/backups';
+import { formatBytes, formatPercent } from '../../utils/formatters';
+import { useBackupDownloadStore } from '../../stores/backupDownloadStore';
+
+const formatProgress = (progress?: { loaded: number; total?: number }) => {
+  if (!progress) return undefined;
+  if (progress.total) {
+    const percent = (progress.loaded / progress.total) * 100;
+    return `${formatPercent(Math.min(100, percent))} (${formatBytes(progress.loaded)}/${formatBytes(
+      progress.total,
+    )})`;
+  }
+  return `Downloading ${formatBytes(progress.loaded)}`;
+};
 
 function BackupSection({ serverId, serverStatus }: { serverId: string; serverStatus: string }) {
   const [page, setPage] = useState(1);
+  const { progressByBackup, setProgress, clearProgress } = useBackupDownloadStore();
   const { data, isLoading, isError } = useBackups(serverId, { page, limit: 10 });
+  const progressKeyPrefix = useMemo(() => `server:${serverId}:backup:`, [serverId]);
 
   const handleDownload = async (backupId: string, name: string) => {
     try {
-      const blob = await backupsApi.download(serverId, backupId);
+      setProgress(`${progressKeyPrefix}${backupId}`, { loaded: 0 });
+      const blob = await backupsApi.download(serverId, backupId, (progress) => {
+        setProgress(`${progressKeyPrefix}${backupId}`, progress);
+      });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -21,8 +39,10 @@ function BackupSection({ serverId, serverStatus }: { serverId: string; serverSta
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+      clearProgress(`${progressKeyPrefix}${backupId}`);
       notifyInfo('Backup download started');
     } catch (error: any) {
+      clearProgress(`${progressKeyPrefix}${backupId}`);
       const message = error?.response?.data?.error || 'Failed to download backup';
       notifyError(message);
     }
@@ -76,6 +96,7 @@ function BackupSection({ serverId, serverStatus }: { serverId: string; serverSta
             backups={backups.map((backup) => ({
               ...backup,
               download: () => handleDownload(backup.id, backup.name),
+              downloadProgress: formatProgress(progressByBackup[`${progressKeyPrefix}${backup.id}`]),
             }))}
             serverStatus={serverStatus}
           />

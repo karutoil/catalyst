@@ -98,6 +98,11 @@ impl AeroAgent {
             if let Err(err) = self.ws_handler.send_health_report().await {
                 warn!("Failed to send health report: {}", err);
             }
+
+            // Collect per-server resource stats
+            if let Err(err) = self.ws_handler.send_resource_stats().await {
+                warn!("Failed to send resource stats: {}", err);
+            }
         }
     }
 

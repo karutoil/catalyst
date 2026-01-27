@@ -11,6 +11,7 @@ use futures::stream::SplitSink;
 use sha2::{Digest, Sha256};
 use base64::Engine;
 use tracing::{info, error, warn, debug};
+use regex::Regex;
 use serde_json::{json, Value};
 use std::time::Duration;
 
@@ -1104,6 +1105,62 @@ impl WebSocketHandler {
         Ok(())
     }
 
+    pub async fn send_resource_stats(&self) -> AgentResult<()> {
+        let containers = self.runtime.list_containers().await?;
+        if containers.is_empty() {
+            return Ok(());
+        }
+
+        let writer = { self.write.read().await.clone() };
+        let Some(ws) = writer else {
+            return Ok(());
+        };
+
+        for container in containers {
+            if !container.status.contains("Up") {
+                continue;
+            }
+
+            let server_uuid = normalize_container_name(&container.names);
+            if server_uuid.is_empty() {
+                continue;
+            }
+
+            let stats = match self.runtime.get_stats(&container.id).await {
+                Ok(stats) => stats,
+                Err(err) => {
+                    warn!("Failed to fetch stats for container {}: {}", container.id, err);
+                    continue;
+                }
+            };
+
+            let cpu_percent = parse_percent(&stats.cpu_percent).unwrap_or(0.0);
+            let memory_usage_mb = parse_memory_usage_mb(&stats.memory_usage).unwrap_or(0);
+            let (network_rx_bytes, network_tx_bytes) = parse_io_pair_bytes(&stats.net_io).unwrap_or((0, 0));
+            let (disk_read_bytes, disk_write_bytes) = parse_io_pair_bytes(&stats.block_io).unwrap_or((0, 0));
+            let disk_usage_mb = ((disk_read_bytes + disk_write_bytes) / (1024 * 1024)) as u64;
+
+            let payload = json!({
+                "type": "resource_stats",
+                "serverUuid": server_uuid,
+                "cpuPercent": cpu_percent,
+                "memoryUsageMb": memory_usage_mb,
+                "networkRxBytes": network_rx_bytes,
+                "networkTxBytes": network_tx_bytes,
+                "diskUsageMb": disk_usage_mb,
+                "timestamp": chrono::Utc::now().timestamp_millis(),
+            });
+
+            let mut w = ws.lock().await;
+            if let Err(err) = w.send(Message::Text(payload.to_string())).await {
+                warn!("Failed to send resource stats: {}", err);
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn heartbeat_loop(&self) {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
 
@@ -1132,4 +1189,56 @@ fn get_uptime() -> u64 {
        .flatten()
        .map(|u| u as u64)
        .unwrap_or(0)
+}
+
+fn normalize_container_name(name: &str) -> String {
+    name.split(|c: char| c == ',' || c.is_whitespace())
+        .find(|part| !part.trim().is_empty())
+        .unwrap_or("")
+        .trim()
+        .trim_start_matches('/')
+        .to_string()
+}
+
+fn parse_percent(value: &str) -> Option<f64> {
+    let trimmed = value.trim().trim_end_matches('%').trim();
+    trimmed.parse::<f64>().ok()
+}
+
+fn parse_memory_usage_mb(value: &str) -> Option<u64> {
+    let first = value.split('/').next()?.trim();
+    parse_size_to_bytes(first).map(|bytes| (bytes / (1024 * 1024)) as u64)
+}
+
+fn parse_io_pair_bytes(value: &str) -> Option<(u64, u64)> {
+    let mut parts = value.split('/');
+    let left = parts.next()?.trim();
+    let right = parts.next()?.trim();
+    let left_bytes = parse_size_to_bytes(left)?;
+    let right_bytes = parse_size_to_bytes(right)?;
+    Some((left_bytes, right_bytes))
+}
+
+fn parse_size_to_bytes(value: &str) -> Option<u64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let re = Regex::new(r"(?i)^\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgtp]?i?b?)?\s*$").ok()?;
+    let caps = re.captures(trimmed)?;
+    let number = caps.get(1)?.as_str().parse::<f64>().ok()?;
+    let unit = caps.get(2).map(|m| m.as_str().to_lowercase()).unwrap_or_default();
+    let multiplier = match unit.as_str() {
+        "" | "b" => 1f64,
+        "k" | "kb" => 1_000f64,
+        "ki" | "kib" => 1_024f64,
+        "m" | "mb" => 1_000_000f64,
+        "mi" | "mib" => 1_048_576f64,
+        "g" | "gb" => 1_000_000_000f64,
+        "gi" | "gib" => 1_073_741_824f64,
+        "t" | "tb" => 1_000_000_000_000f64,
+        "ti" | "tib" => 1_099_511_627_776f64,
+        _ => return None,
+    };
+    Some((number * multiplier).round() as u64)
 }

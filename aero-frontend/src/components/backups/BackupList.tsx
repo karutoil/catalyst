@@ -12,7 +12,7 @@ const toNumber = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-type BackupWithDownload = Backup & { download?: () => void };
+type BackupWithDownload = Backup & { download?: () => void; downloadProgress?: string };
 
 function BackupList({
   serverId,
@@ -60,10 +60,11 @@ function BackupList({
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 {backup.download ? (
                   <button
-                    className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
+                    className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700 disabled:opacity-60"
                     onClick={backup.download}
+                    disabled={Boolean(backup.downloadProgress)}
                   >
-                    Download
+                    {backup.downloadProgress ?? 'Download'}
                   </button>
                 ) : null}
                 <RestoreBackupDialog

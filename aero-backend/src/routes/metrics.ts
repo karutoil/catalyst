@@ -48,6 +48,15 @@ export async function metricsRoutes(app: FastifyInstance) {
         take: maxRecords,
       });
 
+      const normalizedMetrics = metrics.map((metric) => ({
+        cpuPercent: metric.cpuPercent,
+        memoryUsageMb: metric.memoryUsageMb,
+        diskUsageMb: metric.diskUsageMb,
+        networkRxBytes: metric.networkRxBytes.toString(),
+        networkTxBytes: metric.networkTxBytes.toString(),
+        timestamp: metric.timestamp,
+      }));
+
       // Calculate averages
       const avg = metrics.length > 0 ? {
         cpuPercent: metrics.reduce((sum, m) => sum + m.cpuPercent, 0) / metrics.length,
@@ -56,15 +65,15 @@ export async function metricsRoutes(app: FastifyInstance) {
       } : null;
 
       // Get latest metrics
-      const latest = metrics[0] || null;
+      const latest = normalizedMetrics[0] || null;
 
       reply.send({
         success: true,
         data: {
           latest,
           averages: avg,
-          history: metrics.reverse(),
-          count: metrics.length,
+          history: normalizedMetrics.slice().reverse(),
+          count: normalizedMetrics.length,
         },
       });
     }
