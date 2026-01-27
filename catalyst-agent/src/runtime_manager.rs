@@ -4,10 +4,10 @@ use std::io::Write;
 use std::net::Ipv4Addr;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::io::AsRawFd;
-use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
@@ -15,12 +15,14 @@ use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 use tracing::{debug, error, info, warn};
 
-use crate::errors::{AgentError, AgentResult};
-use crate::firewall_manager::FirewallManager;
-
 use nix::errno::Errno;
+use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use nix::sys::stat::Mode;
 use nix::unistd::mkfifo;
+
+// Assuming these modules exist in your project structure
+use crate::errors::{AgentError, AgentResult};
+use crate::firewall_manager::FirewallManager;
 
 #[derive(Clone)]
 pub struct ContainerdRuntime {
@@ -64,7 +66,13 @@ impl ContainerdRuntime {
     ) -> AgentResult<String> {
         info!("Creating container: {} from image: {}", container_id, image);
 
+        // 1. Prepare FIFO for stdin
         let console_fifo = self.prepare_console_fifo(container_id).await?;
+
+        // 2. Attach Console Writer
+        // CRITICAL FIX: We must attach the writer *before* the container starts to ensure
+        // the FIFO exists and handles are ready, but we must use a non-blocking open strategy
+        // (O_RDWR) to avoid deadlocking waiting for the container to read.
         self.attach_console_writer(container_id, console_fifo.path.clone())
             .await?;
 
@@ -118,6 +126,11 @@ impl ContainerdRuntime {
         // Container name and image
         cmd.arg("--name").arg(container_id);
         cmd.arg("-d"); // Detached
+
+        // FIX: Removed "-i" because nerdctl does not support -i and -d together.
+        // Since we are piping stdin via a mounted FIFO file inside the shell command below,
+        // we do not need the container runtime to allocate an interactive stdin stream.
+        
         cmd.arg("-v")
             .arg(format!("{}:{}:ro", console_fifo.dir, console_fifo.dir));
         cmd.arg(image);
@@ -159,7 +172,8 @@ impl ContainerdRuntime {
 
         // Get container IP for firewall configuration
         let container_ip_opt = match self.get_container_ip(container_id).await {
-            Ok(ip) => Some(ip),
+            Ok(ip) if !ip.is_empty() => Some(ip),
+            Ok(_) => None,
             Err(err) => {
                 warn!(
                     "Could not determine container IP for {}: {}. Skipping firewall configuration.",
@@ -178,7 +192,6 @@ impl ContainerdRuntime {
             if let Err(e) = FirewallManager::allow_port(port, &container_ip).await {
                 error!("Failed to configure firewall: {}", e);
                 // Don't fail container creation if firewall config fails
-                // The container is already running, just log the error
             } else {
                 info!("✓ Firewall configured for port {}", port);
             }
@@ -270,38 +283,38 @@ impl ContainerdRuntime {
         fifo_path: String,
     ) -> AgentResult<()> {
         let path_clone = fifo_path.clone();
+
+        // Spawn a blocking task to open the FIFO.
+        // CRITICAL FIX: We open with read(true) AND write(true).
+        // Opening a FIFO with O_RDWR (read+write) on Linux succeeds immediately without blocking,
+        // because the kernel sees that "a reader" (us) is present.
+        // If we opened with only write(true) (O_WRONLY), open() would block until the container reads from it.
+        // Since the container isn't running yet, we would deadlock.
         let file = spawn_blocking(move || {
-            match std::fs::OpenOptions::new()
+            let file = std::fs::OpenOptions::new()
+                .read(true) // Helper to ensure O_RDWR flag is set to avoid blocking
                 .write(true)
-                .custom_flags(libc::O_NONBLOCK)
+                .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC)
                 .open(&path_clone)
-            {
-                Ok(file) => {
-                    if let Ok(flags) = fcntl(file.as_raw_fd(), FcntlArg::F_GETFL) {
-                        let mut oflags = OFlag::from_bits_truncate(flags);
-                        oflags.remove(OFlag::O_NONBLOCK);
-                        let _ = fcntl(file.as_raw_fd(), FcntlArg::F_SETFL(oflags));
-                    }
-                    Ok(file)
-                }
-                Err(err) if err.raw_os_error() == Some(libc::ENXIO) => {
-                    let file = std::fs::OpenOptions::new().write(true).open(&path_clone)?;
-                    if let Ok(flags) = fcntl(file.as_raw_fd(), FcntlArg::F_GETFL) {
-                        let mut oflags = OFlag::from_bits_truncate(flags);
-                        oflags.remove(OFlag::O_NONBLOCK);
-                        let _ = fcntl(file.as_raw_fd(), FcntlArg::F_SETFL(oflags));
-                    }
-                    Ok(file)
-                }
-                Err(err) => Err(err),
+                .map_err(|e| AgentError::ContainerError(format!("Failed to open console FIFO: {}", e)))?;
+
+            // We remove O_NONBLOCK now that we have the handle.
+            // We keep the handle open as O_RDWR.
+            if let Ok(flags) = fcntl(file.as_raw_fd(), FcntlArg::F_GETFL) {
+                let mut oflags = OFlag::from_bits_truncate(flags);
+                oflags.remove(OFlag::O_NONBLOCK);
+                let _ = fcntl(file.as_raw_fd(), FcntlArg::F_SETFL(oflags));
             }
+            Ok::<File, AgentError>(file)
         })
-            .await
-            .map_err(|e| AgentError::ContainerError(format!("Console writer task failed: {}", e)))?
-            .map_err(|e| AgentError::ContainerError(format!("Failed to open console FIFO: {}", e)))?;
+        .await
+        .map_err(|e| AgentError::ContainerError(format!("Console writer task failed: {}", e)))??;
 
         let mut writers = self.console_writers.lock().await;
-        writers.insert(container_id.to_string(), ConsoleWriter { fifo_path, file });
+        writers.insert(
+            container_id.to_string(),
+            ConsoleWriter { fifo_path, file },
+        );
 
         Ok(())
     }
@@ -310,6 +323,7 @@ impl ContainerdRuntime {
         {
             let mut writers = self.console_writers.lock().await;
             writers.remove(container_id);
+            // File handle is closed when removed from map
         }
         let dir = PathBuf::from("/tmp/catalyst-console").join(container_id);
         let _ = fs::remove_dir_all(&dir);
@@ -318,6 +332,9 @@ impl ContainerdRuntime {
     /// Start a container
     pub async fn start_container(&self, container_id: &str) -> AgentResult<()> {
         info!("Starting container: {}", container_id);
+
+        // Ensure console writer is ready if this is a restart
+        let _ = self.ensure_console_writer(container_id).await;
 
         let output = Command::new("nerdctl")
             .arg("--namespace")
@@ -514,8 +531,9 @@ impl ContainerdRuntime {
             if line.trim().is_empty() {
                 continue;
             }
-            let container: ContainerInfo = serde_json::from_str(line)?;
-            containers.push(container);
+            if let Ok(container) = serde_json::from_str::<ContainerInfo>(line) {
+                containers.push(container);
+            }
         }
 
         Ok(containers)
@@ -567,6 +585,21 @@ impl ContainerdRuntime {
             }
 
             if !active_ips.contains(&name) {
+                // RACE CONDITION FIX:
+                // Check if the file is very recent. A CNI plugin might have just allocated it
+                // for a container that is currently starting up but not yet fully "Up" or
+                // reporting an IP in inspection.
+                if let Ok(metadata) = fs::metadata(&path) {
+                    if let Ok(modified) = metadata.modified() {
+                        if let Ok(age) = SystemTime::now().duration_since(modified) {
+                            if age < Duration::from_secs(60) {
+                                // Allocation is less than 60s old; unsafe to delete.
+                                continue;
+                            }
+                        }
+                    }
+                }
+
                 if fs::remove_file(&path).is_ok() {
                     removed += 1;
                 }
@@ -641,8 +674,6 @@ impl ContainerdRuntime {
         debug!("Sending input to container: {}", container_id);
 
         // Best-effort: try to ensure the console writer exists before writing.
-        // Even if this returns false (no writer ensured), we still attempt a
-        // single write to the FIFO, then fall back to a shell-based redirect.
         let writer_ensured = self.ensure_console_writer(container_id).await?;
         debug!(
             "Console writer ensured for {}: {}",
@@ -655,17 +686,24 @@ impl ContainerdRuntime {
                 container_id
             );
         }
+
+        // Try writing to the FIFO handle
         if let Ok(true) = self.write_to_console_fifo(container_id, input).await {
             debug!("Console input delivered via FIFO for {}", container_id);
             return Ok(());
         }
         debug!("Console input FIFO write failed for {}", container_id);
 
+        // Fallback: exec into container and write to default stdin fd
         let target_path = self
             .resolve_stdin_path(container_id, None)
             .await
             .unwrap_or_else(|| "/proc/1/fd/0".to_string());
-        debug!("Console input falling back to exec for {} -> {}", container_id, target_path);
+
+        debug!(
+            "Console input falling back to exec for {} -> {}",
+            container_id, target_path
+        );
         let escaped = input.replace('\'', "'\\''");
         let command = format!("printf '%s' '{}' > {}", escaped, target_path);
         let output = Command::new("nerdctl")
@@ -723,6 +761,7 @@ impl ContainerdRuntime {
         let file_handle = {
             let mut writers = self.console_writers.lock().await;
             if let Some(writer) = writers.get_mut(container_id) {
+                // Try to clone the file handle
                 writer.file.try_clone().map_err(|e| {
                     AgentError::ContainerError(format!("Failed to clone FIFO handle: {}", e))
                 })?
@@ -734,9 +773,20 @@ impl ContainerdRuntime {
         let data = input.as_bytes().to_vec();
         spawn_blocking(move || {
             let mut writer = file_handle;
-            writer.write_all(&data)?;
-            writer.flush()?;
-            Ok::<(), std::io::Error>(())
+            match writer.write_all(&data) {
+                Ok(_) => {
+                    let _ = writer.flush();
+                    Ok(())
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                    // Pipe broken means container probably stopped reading
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "Container stdin closed",
+                    ))
+                }
+                Err(e) => Err(e),
+            }
         })
         .await
         .map_err(|e| AgentError::ContainerError(format!("Console write task failed: {}", e)))?
@@ -832,7 +882,9 @@ impl ContainerdRuntime {
             .arg("inspect")
             .arg(container_id)
             .arg("--format")
-            .arg("{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}")
+            // BUG FIX: Add newline separator. Original: {{...}}{{...}} concatenated IPs.
+            // New: {{...}}{{.IPAddress}}\n{{end}}
+            .arg("{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}")
             .output()
             .await?;
 
@@ -842,7 +894,16 @@ impl ContainerdRuntime {
             )));
         }
 
-        let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let full_output = String::from_utf8_lossy(&output.stdout);
+
+        // Take the first non-empty line
+        let ip = full_output
+            .lines()
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty())
+            .unwrap_or("")
+            .to_string();
+
         Ok(ip)
     }
 
