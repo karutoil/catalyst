@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { FitAddon, init, Terminal } from 'ghostty-web';
-import { notifyError } from '../../utils/notify';
+import { Terminal } from 'xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import 'xterm/css/xterm.css';
 
 type ConsoleEntry = {
   id: string;
@@ -28,8 +29,6 @@ function XtermConsole({ entries }: XtermConsoleProps) {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastEntryIdRef = useRef<string | null>(null);
   const entriesRef = useRef(entries);
-  const openRafRef = useRef<number | null>(null);
-  const initPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     entriesRef.current = entries;
@@ -48,70 +47,44 @@ function XtermConsole({ entries }: XtermConsoleProps) {
 
   useEffect(() => {
     let active = true;
-    let terminal: Terminal | null = null;
-    let fitAddon: FitAddon | null = null;
+    const terminal = new Terminal({
+      convertEol: true,
+      cursorBlink: true,
+      disableStdin: true,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+      fontSize: 12,
+      theme: {
+        background: '#050914',
+        foreground: '#e8edf7',
+        selectionBackground: '#1b2240',
+      },
+      scrollback: 2000,
+    });
+    const fitAddon = new FitAddon();
     let resize: (() => void) | null = null;
 
     if (!containerRef.current) return;
-    if (!initPromiseRef.current) {
-      initPromiseRef.current = init();
+    terminal.loadAddon(fitAddon);
+    terminal.open(containerRef.current);
+    fitAddon.fit();
+    resize = () => fitAddon.fit();
+    window.addEventListener('resize', resize);
+    terminal.focus();
+    const initialEntries = entriesRef.current;
+    if (initialEntries.length) {
+      initialEntries.forEach((entry) => writeEntry(terminal, entry));
+      terminal.scrollToBottom();
+      lastEntryIdRef.current = initialEntries[initialEntries.length - 1]?.id ?? null;
     }
-
-    initPromiseRef.current
-      .then(() => {
-        if (!active || !containerRef.current) return;
-        terminal = new Terminal({
-          convertEol: true,
-          cursorBlink: true,
-          disableStdin: true,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-          fontSize: 12,
-          theme: {
-            background: '#020617',
-            foreground: '#e2e8f0',
-            selectionBackground: '#1e293b',
-          },
-          scrollback: 2000,
-          smoothScrollDuration: 80,
-        });
-        fitAddon = new FitAddon();
-        terminal.loadAddon(fitAddon);
-
-        openRafRef.current = window.requestAnimationFrame(() => {
-          if (!containerRef.current || !terminal || !fitAddon) return;
-          terminal.open(containerRef.current);
-          fitAddon.fit();
-          fitAddon.observeResize();
-          terminal.focus();
-          const initialEntries = entriesRef.current;
-          if (initialEntries.length) {
-            initialEntries.forEach((entry) => writeEntry(terminal, entry));
-            terminal.scrollToBottom();
-            lastEntryIdRef.current = initialEntries[initialEntries.length - 1]?.id ?? null;
-          }
-        });
-
-        resize = () => fitAddon?.fit();
-        window.addEventListener('resize', resize);
-
-        terminalRef.current = terminal;
-        fitAddonRef.current = fitAddon;
-      })
-      .catch((error) => {
-        notifyError('Failed to initialize console terminal');
-        console.error('ghostty init failed', error);
-      });
+    terminalRef.current = terminal;
+    fitAddonRef.current = fitAddon;
 
     return () => {
       active = false;
       if (resize) {
         window.removeEventListener('resize', resize);
       }
-      if (openRafRef.current !== null) {
-        window.cancelAnimationFrame(openRafRef.current);
-        openRafRef.current = null;
-      }
-      terminal?.dispose();
+      terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };

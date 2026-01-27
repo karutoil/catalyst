@@ -26,7 +26,7 @@ function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+    <div className="app-shell flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900/80 px-6 py-8 shadow-xl">
         <h1 className="text-2xl font-semibold text-slate-50">Create account</h1>
         <p className="mt-2 text-sm text-slate-400">Start managing your infrastructure.</p>

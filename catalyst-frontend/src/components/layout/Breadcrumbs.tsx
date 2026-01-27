@@ -2,12 +2,12 @@ import { Link, useLocation } from 'react-router-dom';
 
 const labelMap: Record<string, string> = {
   dashboard: 'Dashboard',
-  servers: 'Servers',
   nodes: 'Nodes',
   templates: 'Templates',
   alerts: 'Alerts',
   admin: 'Admin',
   users: 'Users',
+  servers: 'Servers',
   system: 'System',
   'audit-logs': 'Audit Logs',
   files: 'Files',

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -28,6 +29,7 @@ pub struct WebSocketHandler {
     file_manager: Arc<FileManager>,
     storage_manager: Arc<StorageManager>,
     write: Arc<RwLock<Option<Arc<tokio::sync::Mutex<WsWrite>>>>>,
+    active_log_streams: Arc<RwLock<HashSet<String>>>,
 }
 
 impl Clone for WebSocketHandler {
@@ -38,6 +40,7 @@ impl Clone for WebSocketHandler {
             file_manager: self.file_manager.clone(),
             storage_manager: self.storage_manager.clone(),
             write: self.write.clone(),
+            active_log_streams: self.active_log_streams.clone(),
         }
     }
 }
@@ -55,6 +58,7 @@ impl WebSocketHandler {
             file_manager,
             storage_manager,
             write: Arc::new(RwLock::new(None)),
+            active_log_streams: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -167,14 +171,16 @@ impl WebSocketHandler {
                     AgentError::InvalidRequest("Missing serverUuid".to_string())
                 })?;
                 let server_id = msg["serverId"].as_str().unwrap_or(server_uuid);
-                self.stop_server(server_id, server_uuid).await?;
+                let container_id = self.resolve_container_id(server_id, server_uuid).await;
+                self.stop_server(server_id, container_id).await?;
             }
             Some("restart_server") => {
                 let server_uuid = msg["serverUuid"].as_str().ok_or_else(|| {
                     AgentError::InvalidRequest("Missing serverUuid".to_string())
                 })?;
                 let server_id = msg["serverId"].as_str().unwrap_or(server_uuid);
-                self.stop_server(server_id, server_uuid).await?;
+                let container_id = self.resolve_container_id(server_id, server_uuid).await;
+                self.stop_server(server_id, container_id).await?;
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 self.start_server_with_details(&msg).await?;
             }
@@ -206,10 +212,17 @@ impl WebSocketHandler {
             AgentError::InvalidRequest("Missing serverId".to_string())
         })?;
 
-        let container_id = msg
+        let server_uuid = msg
             .get("serverUuid")
             .and_then(|value| value.as_str())
             .unwrap_or(server_id);
+        let container_id = self.resolve_container_id(server_id, server_uuid).await;
+        if container_id.is_empty() {
+            return Err(AgentError::ContainerError(format!(
+                "Container not found for server {}",
+                server_id
+            )));
+        }
 
         match action {
             "install" => self.install_server(msg).await?,
@@ -219,6 +232,7 @@ impl WebSocketHandler {
             "restart" => {
                 self.stop_server(server_id, container_id).await?;
                 tokio::time::sleep(Duration::from_secs(2)).await;
+                let container_id = self.resolve_container_id(server_id, server_uuid).await;
                 self.start_server(server_id, container_id).await?;
             }
             _ => {
@@ -240,19 +254,14 @@ impl WebSocketHandler {
             AgentError::InvalidRequest("Missing serverUuid".to_string())
         })?;
 
-        let container_id = match self
-            .resolve_console_container_id(server_id, server_uuid)
-            .await
-        {
-            Some(value) => value,
-            None => {
-                debug!(
-                    "Resume console skipped; container not found for {} ({})",
-                    server_id, server_uuid
-                );
-                return Ok(());
-            }
-        };
+        let container_id = self.resolve_container_id(server_id, server_uuid).await;
+        if container_id.is_empty() {
+            debug!(
+                "Resume console skipped; container not found for {} ({})",
+                server_id, server_uuid
+            );
+            return Ok(());
+        }
 
         if !self
             .runtime
@@ -284,17 +293,27 @@ impl WebSocketHandler {
         server_id: &str,
         server_uuid: &str,
     ) -> Option<String> {
-        if self.runtime.container_exists(server_uuid).await {
-            return Some(server_uuid.to_string());
-        }
         if self.runtime.container_exists(server_id).await {
             warn!(
-                "Console container lookup fell back to serverId {} (uuid {})",
+                "Console container lookup using serverId {} (uuid {})",
                 server_id, server_uuid
             );
             return Some(server_id.to_string());
         }
+        if self.runtime.container_exists(server_uuid).await {
+            return Some(server_uuid.to_string());
+        }
         None
+    }
+
+    async fn resolve_container_id(&self, server_id: &str, server_uuid: &str) -> String {
+        match self
+            .resolve_console_container_id(server_id, server_uuid)
+            .await
+        {
+            Some(value) => value,
+            None => String::new(),
+        }
     }
 
     async fn install_server(&self, msg: &Value) -> AgentResult<()> {
@@ -459,6 +478,14 @@ impl WebSocketHandler {
         let server_id = server_id.to_string();
         let container_id = container_id.to_string();
         tokio::spawn(async move {
+            let stream_key = format!("{}:{}", server_id, container_id);
+            {
+                let mut guard = handler.active_log_streams.write().await;
+                if guard.contains(&stream_key) {
+                    return;
+                }
+                guard.insert(stream_key.clone());
+            }
             if let Err(err) = handler
                 .stream_container_logs(&server_id, &container_id)
                 .await
@@ -475,6 +502,7 @@ impl WebSocketHandler {
                     )
                     .await;
             }
+            handler.active_log_streams.write().await.remove(&stream_key);
         });
     }
 
@@ -628,11 +656,14 @@ impl WebSocketHandler {
 
             info!("Final startup command: {}", final_startup_command);
 
-            let network_ip = env_map.get("CATALYST_NETWORK_IP").map(|value| value.as_str());
+            let network_ip = env_map
+                .get("CATALYST_NETWORK_IP")
+                .or_else(|| env_map.get("AERO_NETWORK_IP"))
+                .map(|value| value.as_str());
 
             // Create and start container
             self.runtime.create_container(
-                server_uuid,
+                server_id,
                 docker_image,
                 &final_startup_command,
                 &env_map,
@@ -644,16 +675,16 @@ impl WebSocketHandler {
                 network_ip,
             ).await?;
 
-            let is_running = match self.runtime.is_container_running(server_uuid).await {
+            let is_running = match self.runtime.is_container_running(server_id).await {
                 Ok(value) => value,
                 Err(err) => {
-                    error!("Failed to check container state for {}: {}", server_uuid, err);
+                    error!("Failed to check container state for {}: {}", server_id, err);
                     false
                 }
             };
             if !is_running {
                 let reason = "Container exited immediately after start";
-                if let Ok(logs) = self.runtime.get_logs(server_uuid, Some(100)).await {
+                if let Ok(logs) = self.runtime.get_logs(server_id, Some(100)).await {
                     if !logs.trim().is_empty() {
                         self.emit_console_output(server_id, "stderr", &logs).await?;
                     }
@@ -661,13 +692,16 @@ impl WebSocketHandler {
                 return Err(AgentError::ContainerError(reason.to_string()));
             }
 
-            self.spawn_log_stream(server_id, server_uuid);
+            let container_id = self.resolve_container_id(server_id, server_uuid).await;
+            if !container_id.is_empty() {
+                self.spawn_log_stream(server_id, &container_id);
+            }
 
             // Emit state update
             self.emit_server_state_update(server_id, "running", None)
                 .await?;
 
-            info!("Server started successfully: {}", server_uuid);
+            info!("Server started successfully: {}", server_id);
             Ok(())
         }.await;
 
@@ -681,13 +715,19 @@ impl WebSocketHandler {
         result
     }
 
-    async fn start_server(&self, server_id: &str, server_uuid: &str) -> AgentResult<()> {
-        info!("Starting server: {} (container {})", server_id, server_uuid);
+    async fn start_server(&self, server_id: &str, container_id: String) -> AgentResult<()> {
+        if container_id.is_empty() {
+            return Err(AgentError::ContainerError(format!(
+                "Container not found for server {}",
+                server_id
+            )));
+        }
+        info!("Starting server: {} (container {})", server_id, container_id);
 
         // In production, fetch server config from database or local cache
-        match self.runtime.start_container(server_uuid).await {
+        match self.runtime.start_container(&container_id).await {
             Ok(()) => {
-                self.spawn_log_stream(server_id, server_uuid);
+                self.spawn_log_stream(server_id, &container_id);
                 self.emit_server_state_update(server_id, "running", None)
                     .await?;
                 Ok(())
@@ -702,17 +742,28 @@ impl WebSocketHandler {
         }
     }
 
-    async fn stop_server(&self, server_id: &str, server_uuid: &str) -> AgentResult<()> {
-        info!("Stopping server: {} (container {})", server_id, server_uuid);
+    async fn stop_server(&self, server_id: &str, container_id: String) -> AgentResult<()> {
+        if container_id.is_empty() {
+            return Err(AgentError::ContainerError(format!(
+                "Container not found for server {}",
+                server_id
+            )));
+        }
+        info!("Stopping server: {} (container {})", server_id, container_id);
 
-        if self.runtime.is_container_running(server_uuid).await.unwrap_or(false) {
+        if self
+            .runtime
+            .is_container_running(&container_id)
+            .await
+            .unwrap_or(false)
+        {
             self.runtime
-                .stop_container(server_uuid, 30)
+                .stop_container(&container_id, 30)
                 .await?;
         }
 
-        if self.runtime.container_exists(server_uuid).await {
-            self.runtime.remove_container(server_uuid).await?;
+        if self.runtime.container_exists(&container_id).await {
+            self.runtime.remove_container(&container_id).await?;
         }
 
         self.emit_server_state_update(server_id, "stopped", None)
@@ -721,15 +772,21 @@ impl WebSocketHandler {
         Ok(())
     }
 
-    async fn kill_server(&self, server_id: &str, server_uuid: &str) -> AgentResult<()> {
-        info!("Killing server: {} (container {})", server_id, server_uuid);
+    async fn kill_server(&self, server_id: &str, container_id: String) -> AgentResult<()> {
+        if container_id.is_empty() {
+            return Err(AgentError::ContainerError(format!(
+                "Container not found for server {}",
+                server_id
+            )));
+        }
+        info!("Killing server: {} (container {})", server_id, container_id);
 
         self.runtime
-            .kill_container(server_uuid, "SIGKILL")
+            .kill_container(&container_id, "SIGKILL")
             .await?;
 
-        if self.runtime.container_exists(server_uuid).await {
-            self.runtime.remove_container(server_uuid).await?;
+        if self.runtime.container_exists(&container_id).await {
+            self.runtime.remove_container(&container_id).await?;
         }
 
         self.emit_server_state_update(server_id, "crashed", Some("Killed by agent".to_string()))
@@ -751,30 +808,27 @@ impl WebSocketHandler {
             .get("serverUuid")
             .and_then(|value| value.as_str())
             .unwrap_or(server_id);
-        let container_id = match self
-            .resolve_console_container_id(server_id, server_uuid)
-            .await
-        {
-            Some(value) => value,
-            None => {
-                let err = AgentError::ContainerError(format!(
-                    "Container not found for server {}",
-                    server_id
-                ));
-                let _ = self.emit_console_output(
-                    server_id,
-                    "stderr",
-                    &format!("[Catalyst] Console input failed: {}\n", err),
-                )
-                .await;
-                return Err(err);
-            }
-        };
+        let container_id = self.resolve_container_id(server_id, server_uuid).await;
+        if container_id.is_empty() {
+            let err = AgentError::ContainerError(format!(
+                "Container not found for server {}",
+                server_id
+            ));
+            let _ = self.emit_console_output(
+                server_id,
+                "stderr",
+                &format!("[Catalyst] Console input failed: {}\n", err),
+            )
+            .await;
+            return Err(err);
+        }
 
         debug!(
             "Console input for {} (container {}): {}",
             server_id, container_id, data
         );
+
+        self.spawn_log_stream(server_id, &container_id);
 
         // Send to container stdin
         if let Err(err) = self.runtime.send_input(&container_id, data).await {

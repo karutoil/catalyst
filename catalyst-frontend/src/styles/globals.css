@@ -4,37 +4,125 @@
 @tailwind utilities;
 
 :root {
-  --background: 223 40% 6%;
-  --foreground: 220 13% 91%;
-  --muted: 215 16% 20%;
-  --muted-foreground: 215 15% 65%;
-  --popover: 223 40% 8%;
-  --popover-foreground: 220 13% 91%;
-  --card: 223 40% 9%;
-  --card-foreground: 220 13% 91%;
-  --border: 216 20% 20%;
-  --input: 216 20% 20%;
-  --primary: 199 89% 63%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 220 15% 18%;
-  --secondary-foreground: 220 13% 91%;
-  --accent: 213 94% 68%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62% 55%;
+  --brand-yellow: 44 100% 63%;
+  --brand-magenta: 308 67% 56%;
+  --brand-cyan: 189 100% 50%;
+  --brand-violet: 273 71% 39%;
+  --brand-blue: 216 100% 50%;
+  --brand-black: 224 60% 5%;
+
+  --background: 210 40% 98%;
+  --foreground: 224 25% 14%;
+  --muted: 214 32% 92%;
+  --muted-foreground: 224 12% 40%;
+  --popover: 210 40% 96%;
+  --popover-foreground: 224 25% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 25% 14%;
+  --border: 214 20% 85%;
+  --input: 214 20% 85%;
+  --primary: var(--brand-cyan);
+  --primary-foreground: 220 18% 15%;
+  --secondary: 214 32% 92%;
+  --secondary-foreground: 224 25% 14%;
+  --accent: var(--brand-magenta);
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 70% 54%;
   --destructive-foreground: 0 0% 100%;
-  --ring: 199 89% 63%;
+  --ring: var(--brand-cyan);
   --radius: 0.5rem;
 
-  /* Sonner toast colors */
-  --sonner-background: hsl(223 40% 9%);
-  --sonner-border: hsl(216 20% 20%);
-  --sonner-text: hsl(220 13% 91%);
+  --slate-50: 224 25% 14%;
+  --slate-100: 224 22% 20%;
+  --slate-200: 224 18% 28%;
+  --slate-300: 224 14% 40%;
+  --slate-400: 224 12% 50%;
+  --slate-500: 224 10% 60%;
+  --slate-600: 224 12% 70%;
+  --slate-700: 224 16% 80%;
+  --slate-800: 224 20% 90%;
+  --slate-900: 224 28% 95%;
+  --slate-950: 210 40% 98%;
+
+  --sky-50: 190 100% 96%;
+  --sky-100: 190 100% 92%;
+  --sky-200: 190 100% 86%;
+  --sky-300: 190 100% 76%;
+  --sky-400: 189 100% 60%;
+  --sky-500: var(--brand-cyan);
+  --sky-600: 189 92% 46%;
+  --sky-700: 189 88% 38%;
+  --sky-800: 189 82% 30%;
+  --sky-900: 189 75% 22%;
+
+  --sonner-background: hsl(0 0% 100%);
+  --sonner-border: hsl(var(--border));
+  --sonner-text: hsl(var(--foreground));
+  --sonner-success: hsl(142 70% 40%);
+  --sonner-error: hsl(0 72% 54%);
+  --sonner-info: hsl(var(--primary));
+  --sonner-warning: hsl(44 100% 60%);
+
+  color-scheme: light;
+}
+
+.dark {
+  --background: var(--brand-black);
+  --foreground: 220 20% 94%;
+  --muted: 224 25% 14%;
+  --muted-foreground: 220 14% 70%;
+  --popover: 224 32% 9%;
+  --popover-foreground: 220 20% 94%;
+  --card: 224 32% 10%;
+  --card-foreground: 220 20% 94%;
+  --border: 223 24% 18%;
+  --input: 223 24% 18%;
+  --primary: var(--brand-cyan);
+  --primary-foreground: 220 30% 12%;
+  --secondary: 224 26% 15%;
+  --secondary-foreground: 220 20% 90%;
+  --accent: var(--brand-magenta);
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 56%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: var(--brand-cyan);
+
+  --slate-50: 220 20% 94%;
+  --slate-100: 220 18% 90%;
+  --slate-200: 220 16% 82%;
+  --slate-300: 220 14% 70%;
+  --slate-400: 220 12% 58%;
+  --slate-500: 221 14% 48%;
+  --slate-600: 223 18% 36%;
+  --slate-700: 224 24% 26%;
+  --slate-800: 224 28% 18%;
+  --slate-900: 224 32% 12%;
+  --slate-950: var(--brand-black);
+
+  --sky-50: 189 100% 92%;
+  --sky-100: 189 100% 86%;
+  --sky-200: 189 100% 76%;
+  --sky-300: 189 100% 64%;
+  --sky-400: 189 100% 56%;
+  --sky-500: var(--brand-cyan);
+  --sky-600: 189 96% 48%;
+  --sky-700: 189 90% 38%;
+  --sky-800: 189 82% 30%;
+  --sky-900: 189 75% 22%;
+
+  --sonner-background: hsl(var(--card));
+  --sonner-border: hsl(var(--border));
+  --sonner-text: hsl(var(--foreground));
   --sonner-success: hsl(142 70% 55%);
   --sonner-error: hsl(0 84% 60%);
-  --sonner-info: hsl(199 89% 63%);
-  --sonner-warning: hsl(38 92% 50%);
+  --sonner-info: hsl(var(--primary));
+  --sonner-warning: hsl(44 100% 60%);
 
   color-scheme: dark;
+}
+
+.light {
+  color-scheme: light;
 }
 
 
@@ -47,6 +135,26 @@ body {
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+.app-shell {
+  background:
+    radial-gradient(1200px 600px at 10% 0%, hsl(var(--brand-yellow) / 0.25), transparent 60%),
+    radial-gradient(1000px 500px at 90% 0%, hsl(var(--brand-magenta) / 0.28), transparent 60%),
+    radial-gradient(1200px 700px at 50% 50%, hsl(var(--brand-cyan) / 0.2), transparent 65%),
+    radial-gradient(900px 600px at 95% 70%, hsl(var(--brand-violet) / 0.35), transparent 60%),
+    radial-gradient(900px 600px at 0% 100%, hsl(var(--brand-blue) / 0.35), transparent 60%),
+    hsl(var(--background));
+}
+
+.light .app-shell {
+  background:
+    radial-gradient(1100px 600px at 10% 0%, hsl(var(--brand-yellow) / 0.18), transparent 65%),
+    radial-gradient(900px 500px at 90% 0%, hsl(var(--brand-magenta) / 0.2), transparent 65%),
+    radial-gradient(1000px 650px at 50% 50%, hsl(var(--brand-cyan) / 0.14), transparent 70%),
+    radial-gradient(800px 600px at 95% 70%, hsl(var(--brand-violet) / 0.2), transparent 65%),
+    radial-gradient(800px 600px at 0% 100%, hsl(var(--brand-blue) / 0.18), transparent 65%),
+    hsl(var(--background));
 }
 
 .container {

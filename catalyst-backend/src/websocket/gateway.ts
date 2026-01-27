@@ -20,6 +20,7 @@ interface ClientConnection {
   userId: string;
   socket: any;
   authenticated: boolean;
+  subscriptions: Set<string>;
 }
 
 type PendingAgentRequest = {
@@ -36,6 +37,11 @@ export class WebSocketGateway {
   private clients = new Map<string, ClientConnection>();
   private logger: pino.Logger;
   private pendingAgentRequests = new Map<string, PendingAgentRequest>();
+  private consoleOutputCounters = new Map<string, { count: number; resetAt: number; warned: boolean }>();
+  private clientCommandCounters = new Map<string, { count: number; resetAt: number }>();
+  private consoleResumeTimestamps = new Map<string, number>();
+  private readonly consoleOutputLimit = { max: 200, windowMs: 1000 };
+  private readonly consoleInputLimit = { max: 10, windowMs: 1000 };
 
   constructor(private prisma: PrismaClient, logger: pino.Logger) {
     this.logger = logger.child({ component: "WebSocketGateway" });
@@ -171,6 +177,7 @@ export class WebSocketGateway {
         userId: decoded.userId,
         socket,
         authenticated: true,
+        subscriptions: new Set<string>(),
       };
 
       this.clients.set(clientId, client);
@@ -179,6 +186,7 @@ export class WebSocketGateway {
       socket.socket.on("message", (data: any) => this.handleClientMessage(clientId, data));
       socket.socket.on("close", () => {
         this.clients.delete(clientId);
+        this.clientCommandCounters.delete(clientId);
         this.logger.info(`Client disconnected: ${clientId}`);
       });
     } catch (err) {
@@ -338,8 +346,11 @@ export class WebSocketGateway {
             },
           });
         }
-        // Route console output to all subscribed clients
-        await this.routeToClients(message.serverId, message);
+        if (!this.allowConsoleOutput(message.serverId)) {
+          await this.maybeWarnConsoleThrottle(message.serverId);
+          return;
+        }
+        await this.routeConsoleToSubscribers(message.serverId, message);
       } else if (message.type === "server_state_update") {
         // Update server status in database
         await this.prisma.server.update({
@@ -417,6 +428,37 @@ export class WebSocketGateway {
         return;
       }
 
+      if (message.type === "subscribe") {
+        if (!message.serverId) {
+          return;
+        }
+        const server = await this.prisma.server.findUnique({
+          where: { id: message.serverId },
+        });
+        if (!server) {
+          return;
+        }
+        const access = await this.prisma.serverAccess.findUnique({
+          where: { userId_serverId: { userId: client.userId, serverId: server.id } },
+        });
+        if (!access && server.ownerId !== client.userId) {
+          return;
+        }
+        if (!access?.permissions?.includes("console.read") && server.ownerId !== client.userId) {
+          return;
+        }
+        client.subscriptions.add(server.id);
+        await this.requestConsoleStream(server.id, server.uuid);
+        return;
+      }
+
+      if (message.type === "unsubscribe") {
+        if (message.serverId) {
+          client.subscriptions.delete(message.serverId);
+        }
+        return;
+      }
+
       if (message.type === "server_control") {
         const event: WsEvent.ServerControl = message;
 
@@ -471,6 +513,54 @@ export class WebSocketGateway {
         });
 
         if (!server) {
+          if (client.socket.socket.readyState === 1) {
+            client.socket.socket.send(
+              JSON.stringify({
+                type: "error",
+                error: ErrorCodes.SERVER_NOT_FOUND,
+              })
+            );
+          }
+          return;
+        }
+
+        const access = await this.prisma.serverAccess.findUnique({
+          where: { userId_serverId: { userId: client.userId, serverId: server.id } },
+        });
+        if (!access && server.ownerId !== client.userId) {
+          if (client.socket.socket.readyState === 1) {
+            client.socket.socket.send(
+              JSON.stringify({
+                type: "error",
+                error: ErrorCodes.PERMISSION_DENIED,
+              })
+            );
+          }
+          return;
+        }
+        if (!access?.permissions?.includes("console.write") && server.ownerId !== client.userId) {
+          if (client.socket.socket.readyState === 1) {
+            client.socket.socket.send(
+              JSON.stringify({
+                type: "error",
+                error: ErrorCodes.PERMISSION_DENIED,
+              })
+            );
+          }
+          return;
+        }
+        if (!this.allowConsoleCommand(clientId)) {
+          if (client.socket.socket.readyState === 1) {
+            client.socket.socket.send(
+              JSON.stringify({
+                type: "console_output",
+                serverId: server.id,
+                stream: "system",
+                data: "[Catalyst] Console input rate limit exceeded.\n",
+                timestamp: Date.now(),
+              })
+            );
+          }
           return;
         }
 
@@ -479,6 +569,13 @@ export class WebSocketGateway {
         if (agent && agent.socket.socket.readyState === 1) {
           agent.socket.socket.send(
             JSON.stringify({ ...event, serverUuid: server.uuid })
+          );
+        } else if (client.socket.socket.readyState === 1) {
+          client.socket.socket.send(
+            JSON.stringify({
+              type: "error",
+              error: ErrorCodes.NODE_OFFLINE,
+            })
           );
         }
       }
@@ -512,6 +609,108 @@ export class WebSocketGateway {
           client.socket.socket.send(JSON.stringify(message));
         }
       }
+    }
+  }
+
+  private async routeConsoleToSubscribers(serverId: string, message: any) {
+    const server = await this.prisma.server.findUnique({
+      where: { id: serverId },
+      include: {
+        access: {
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (!server) {
+      return;
+    }
+
+    const allowedUsers = [
+      server.ownerId,
+      ...server.access.map((a) => a.userId),
+    ];
+
+    for (const [, client] of this.clients) {
+      if (!client.subscriptions.has(serverId)) {
+        continue;
+      }
+      if (allowedUsers.includes(client.userId)) {
+        if (client.socket.socket.readyState === 1) {
+          client.socket.socket.send(JSON.stringify(message));
+        }
+      }
+    }
+  }
+
+  private allowConsoleCommand(clientId: string) {
+    const now = Date.now();
+    const windowMs = this.consoleInputLimit.windowMs;
+    const limit = this.consoleInputLimit.max;
+    const existing = this.clientCommandCounters.get(clientId);
+    if (!existing || now >= existing.resetAt) {
+      this.clientCommandCounters.set(clientId, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+    if (existing.count >= limit) {
+      return false;
+    }
+    existing.count += 1;
+    return true;
+  }
+
+  private allowConsoleOutput(serverId: string) {
+    const now = Date.now();
+    const windowMs = this.consoleOutputLimit.windowMs;
+    const limit = this.consoleOutputLimit.max;
+    const existing = this.consoleOutputCounters.get(serverId);
+    if (!existing || now >= existing.resetAt) {
+      this.consoleOutputCounters.set(serverId, { count: 1, resetAt: now + windowMs, warned: false });
+      return true;
+    }
+    existing.count += 1;
+    return existing.count <= limit;
+  }
+
+  private async maybeWarnConsoleThrottle(serverId: string) {
+    const now = Date.now();
+    const entry = this.consoleOutputCounters.get(serverId);
+    if (!entry || entry.warned || now >= entry.resetAt) {
+      return;
+    }
+    entry.warned = true;
+    await this.routeConsoleToSubscribers(serverId, {
+      type: "console_output",
+      serverId,
+      stream: "system",
+      data: "[Catalyst] Console output throttled.\n",
+      timestamp: now,
+    });
+  }
+
+  private async requestConsoleStream(serverId: string, serverUuid: string) {
+    const server = await this.prisma.server.findUnique({
+      where: { id: serverId },
+    });
+    if (!server) {
+      return;
+    }
+    const resumeKey = `${server.nodeId}:${serverId}`;
+    const now = Date.now();
+    const last = this.consoleResumeTimestamps.get(resumeKey) ?? 0;
+    if (now - last < 1000) {
+      return;
+    }
+    this.consoleResumeTimestamps.set(resumeKey, now);
+    const agent = this.agents.get(server.nodeId);
+    if (agent && agent.socket.socket.readyState === 1) {
+      agent.socket.socket.send(
+        JSON.stringify({
+          type: "resume_console",
+          serverId,
+          serverUuid,
+        })
+      );
     }
   }
 

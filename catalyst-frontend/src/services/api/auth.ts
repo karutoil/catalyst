@@ -14,6 +14,7 @@ export const authApi = {
       user: {
         id: data.data.userId,
         email: data.data.email,
+        username: data.data.username,
         role: 'user',
         permissions: data.data.permissions ?? [],
       },
@@ -30,6 +31,7 @@ export const authApi = {
       user: {
         id: data.data.userId,
         email: data.data.email,
+        username: data.data.username,
         role: 'user',
         permissions: data.data.permissions ?? [],
       },
@@ -47,6 +49,7 @@ export const authApi = {
       user: {
         id: data.data.id,
         email: data.data.email,
+        username: data.data.username,
         role: 'user',
         permissions: data.data.permissions ?? [],
       },

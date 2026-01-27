@@ -12,7 +12,7 @@ function AppLayout() {
   useServerStateUpdates();
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-950 text-slate-50">
+    <div className="app-shell flex min-h-screen flex-col">
       <Header />
       <div className="flex flex-1">
         <Sidebar />

@@ -1,5 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+import { createAuditLog } from '../middleware/audit';
 import { summarizePool } from '../utils/ipam';
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -122,6 +124,377 @@ export async function adminRoutes(app: FastifyInstance) {
           totalPages: Math.ceil(total / Number(limit)),
         },
       });
+    }
+  );
+
+  // Create user (admin only)
+  app.post(
+    '/users',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { email, username, password, roleIds, serverIds, serverPermissions } = request.body as {
+        email: string;
+        username: string;
+        password: string;
+        roleIds?: string[];
+        serverIds?: string[];
+        serverPermissions?: string[];
+      };
+
+      if (!email || !username || !password) {
+        return reply.status(400).send({ error: 'email, username, and password are required' });
+      }
+
+      if (password.length < 8) {
+        return reply.status(400).send({ error: 'Password must be at least 8 characters' });
+      }
+
+      const existing = await prisma.user.findFirst({
+        where: { OR: [{ email }, { username }] },
+      });
+
+      if (existing) {
+        return reply.status(409).send({ error: 'Email or username already in use' });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const rolesToAssign = roleIds?.length
+        ? await prisma.role.findMany({ where: { id: { in: roleIds } } })
+        : [];
+
+      if (roleIds?.length && rolesToAssign.length !== roleIds.length) {
+        return reply.status(400).send({ error: 'One or more roles are invalid' });
+      }
+
+      let serverAccessIds: string[] = [];
+      let defaultPermissions: string[] | undefined;
+      if (serverIds?.length) {
+        const uniqueServerIds = Array.from(new Set(serverIds));
+        const existingServers = await prisma.server.findMany({
+          where: { id: { in: uniqueServerIds } },
+          select: { id: true },
+        });
+
+        if (existingServers.length !== uniqueServerIds.length) {
+          return reply.status(400).send({ error: 'One or more servers are invalid' });
+        }
+
+        serverAccessIds = uniqueServerIds;
+        defaultPermissions =
+          serverPermissions && serverPermissions.length > 0
+            ? serverPermissions
+            : [
+                'server.start',
+                'server.stop',
+                'server.read',
+                'file.read',
+                'file.write',
+                'console.read',
+                'console.write',
+                'server.delete',
+              ];
+      }
+
+      const created = await prisma.user.create({
+        data: {
+          email,
+          username,
+          password: passwordHash,
+          roles: rolesToAssign.length
+            ? { connect: rolesToAssign.map((role) => ({ id: role.id })) }
+            : undefined,
+          servers: serverAccessIds.length
+            ? {
+                create: serverAccessIds.map((serverIdEntry) => ({
+                  serverId: serverIdEntry,
+                  permissions: defaultPermissions ?? [],
+                })),
+              }
+            : undefined,
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          createdAt: true,
+          updatedAt: true,
+          roles: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      await createAuditLog(user.userId, {
+        action: 'user_create',
+        resource: 'user',
+        resourceId: created.id,
+        details: {
+          email: created.email,
+          username: created.username,
+          roleIds: created.roles.map((role) => role.id),
+          serverIds: serverIds ?? undefined,
+        },
+      });
+
+      return reply.status(201).send(created);
+    }
+  );
+
+  // Update user (admin only)
+  app.put(
+    '/users/:userId',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { userId } = request.params as { userId: string };
+      const {
+        email,
+        username,
+        password,
+        roleIds,
+        serverIds,
+        serverPermissions,
+      } = request.body as {
+        email?: string;
+        username?: string;
+        password?: string;
+        roleIds?: string[];
+        serverIds?: string[];
+        serverPermissions?: string[];
+      };
+
+      const existingUser = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { roles: { select: { id: true } } },
+      });
+
+      if (!existingUser) {
+        return reply.status(404).send({ error: 'User not found' });
+      }
+
+      if (password && password.length < 8) {
+        return reply.status(400).send({ error: 'Password must be at least 8 characters' });
+      }
+
+      const rolesToAssign = roleIds?.length
+        ? await prisma.role.findMany({ where: { id: { in: roleIds } } })
+        : [];
+
+      if (roleIds?.length && rolesToAssign.length !== roleIds.length) {
+        return reply.status(400).send({ error: 'One or more roles are invalid' });
+      }
+
+      if (email || username) {
+        const duplicate = await prisma.user.findFirst({
+          where: {
+            id: { not: userId },
+            OR: [email ? { email } : undefined, username ? { username } : undefined].filter(
+              Boolean,
+            ) as Array<{ email?: string; username?: string }>,
+          },
+        });
+        if (duplicate) {
+          return reply.status(409).send({ error: 'Email or username already in use' });
+        }
+      }
+
+      const passwordHash = password ? await bcrypt.hash(password, 10) : undefined;
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          email: email ?? undefined,
+          username: username ?? undefined,
+          password: passwordHash ?? undefined,
+          roles: roleIds
+            ? {
+                set: rolesToAssign.map((role) => ({ id: role.id })),
+              }
+            : undefined,
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          createdAt: true,
+          updatedAt: true,
+          roles: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (serverIds) {
+        const uniqueServerIds = Array.from(new Set(serverIds));
+        const existingServers = await prisma.server.findMany({
+          where: { id: { in: uniqueServerIds } },
+          select: { id: true },
+        });
+
+        if (existingServers.length !== uniqueServerIds.length) {
+          return reply.status(400).send({ error: 'One or more servers are invalid' });
+        }
+
+        const defaultPermissions =
+          serverPermissions && serverPermissions.length > 0
+            ? serverPermissions
+            : [
+                'server.start',
+                'server.stop',
+                'server.read',
+                'file.read',
+                'file.write',
+                'console.read',
+                'console.write',
+                'server.delete',
+              ];
+
+        await prisma.serverAccess.deleteMany({
+          where: { userId, serverId: { notIn: uniqueServerIds } },
+        });
+        const existingAccess = await prisma.serverAccess.findMany({
+          where: { userId, serverId: { in: uniqueServerIds } },
+          select: { serverId: true, permissions: true },
+        });
+        await prisma.serverAccess.createMany({
+          data: uniqueServerIds.map((serverIdEntry) => ({
+            userId,
+            serverId: serverIdEntry,
+            permissions: defaultPermissions,
+          })),
+          skipDuplicates: true,
+        });
+        await Promise.all(
+          existingAccess
+            .filter((entry) => entry.permissions.join(',') !== defaultPermissions.join(','))
+            .map((entry) =>
+              prisma.serverAccess.update({
+                where: { userId_serverId: { userId, serverId: entry.serverId } },
+                data: { permissions: defaultPermissions },
+              }),
+            ),
+        );
+      }
+
+      await createAuditLog(user.userId, {
+        action: 'user_update',
+        resource: 'user',
+        resourceId: userId,
+        details: {
+          email: updatedUser.email,
+          username: updatedUser.username,
+          roleIds: updatedUser.roles.map((role) => role.id),
+          serverIds: serverIds ?? undefined,
+        },
+      });
+
+      return reply.send(updatedUser);
+    }
+  );
+
+  // Get user server access (admin only)
+  app.get(
+    '/users/:userId/servers',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { userId } = request.params as { userId: string };
+      const existingUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!existingUser) {
+        return reply.status(404).send({ error: 'User not found' });
+      }
+
+      const accessEntries = await prisma.serverAccess.findMany({
+        where: { userId },
+        select: { serverId: true },
+      });
+
+      return reply.send({ serverIds: accessEntries.map((entry) => entry.serverId) });
+    }
+  );
+
+  // List roles (admin only)
+  app.get(
+    '/roles',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const roles = await prisma.role.findMany({
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          permissions: true,
+        },
+      });
+
+      return reply.send({ roles });
+    }
+  );
+
+  // Delete user (admin only)
+  app.delete(
+    '/users/:userId',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { userId } = request.params as { userId: string };
+
+      if (userId === user.userId) {
+        return reply.status(400).send({ error: 'Cannot delete the current user' });
+      }
+
+      const existingUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!existingUser) {
+        return reply.status(404).send({ error: 'User not found' });
+      }
+
+      await prisma.user.delete({ where: { id: userId } });
+
+      await createAuditLog(user.userId, {
+        action: 'user_delete',
+        resource: 'user',
+        resourceId: userId,
+        details: {
+          email: existingUser.email,
+          username: existingUser.username,
+        },
+      });
+
+      return reply.send({ success: true });
     }
   );
 
@@ -268,12 +641,16 @@ export async function adminRoutes(app: FastifyInstance) {
         userId,
         action,
         resource,
+        from,
+        to,
       } = request.query as {
         page?: number;
         limit?: number;
         userId?: string;
         action?: string;
         resource?: string;
+        from?: string;
+        to?: string;
       };
 
       const skip = (Number(page) - 1) * Number(limit);
@@ -282,6 +659,20 @@ export async function adminRoutes(app: FastifyInstance) {
       if (userId) where.userId = userId;
       if (action) where.action = { contains: action };
       if (resource) where.resource = resource;
+      if (from || to) {
+        const parsedFrom = from ? new Date(from) : undefined;
+        const parsedTo = to ? new Date(to) : undefined;
+        if (parsedFrom && Number.isNaN(parsedFrom.getTime())) {
+          return reply.status(400).send({ error: 'Invalid from timestamp' });
+        }
+        if (parsedTo && Number.isNaN(parsedTo.getTime())) {
+          return reply.status(400).send({ error: 'Invalid to timestamp' });
+        }
+        where.timestamp = {
+          ...(parsedFrom ? { gte: parsedFrom } : {}),
+          ...(parsedTo ? { lte: parsedTo } : {}),
+        };
+      }
 
       const [logs, total] = await Promise.all([
         prisma.auditLog.findMany({

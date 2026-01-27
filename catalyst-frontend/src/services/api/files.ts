@@ -126,13 +126,18 @@ export const filesApi = {
     await Promise.all(
       files.map((file) => {
         const formData = new FormData();
-        formData.append('file', file);
         formData.append('path', normalizedPath);
+        formData.append('file', file);
         return apiClient.post<ApiResponse<void>>(
           `/api/servers/${serverId}/files/upload`,
           formData,
           {
-            headers: { 'Content-Type': 'multipart/form-data' },
+            transformRequest: (data, headers) => {
+              if (headers) {
+                delete headers['Content-Type'];
+              }
+              return data;
+            },
           },
         );
       }),

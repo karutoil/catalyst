@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::Write;
 use std::net::Ipv4Addr;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::io::AsRawFd;
+use nix::fcntl::{fcntl, FcntlArg, OFlag};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -63,6 +65,8 @@ impl ContainerdRuntime {
         info!("Creating container: {} from image: {}", container_id, image);
 
         let console_fifo = self.prepare_console_fifo(container_id).await?;
+        self.attach_console_writer(container_id, console_fifo.path.clone())
+            .await?;
 
         // Build nerdctl command
         let mut cmd = Command::new("nerdctl");
@@ -152,9 +156,6 @@ impl ContainerdRuntime {
         let container_full_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         info!("Container created successfully: {}", container_full_id);
-
-        self.attach_console_writer(container_id, console_fifo.path.clone())
-            .await?;
 
         // Get container IP for firewall configuration
         let container_ip_opt = match self.get_container_ip(container_id).await {
@@ -269,15 +270,35 @@ impl ContainerdRuntime {
         fifo_path: String,
     ) -> AgentResult<()> {
         let path_clone = fifo_path.clone();
-        let file =
-            spawn_blocking(move || std::fs::OpenOptions::new().read(true).write(true).open(&path_clone))
-                .await
-                .map_err(|e| {
-                    AgentError::ContainerError(format!("Console writer task failed: {}", e))
-                })?
-                .map_err(|e| {
-                    AgentError::ContainerError(format!("Failed to open console FIFO: {}", e))
-                })?;
+        let file = spawn_blocking(move || {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(&path_clone)
+            {
+                Ok(file) => {
+                    if let Ok(flags) = fcntl(file.as_raw_fd(), FcntlArg::F_GETFL) {
+                        let mut oflags = OFlag::from_bits_truncate(flags);
+                        oflags.remove(OFlag::O_NONBLOCK);
+                        let _ = fcntl(file.as_raw_fd(), FcntlArg::F_SETFL(oflags));
+                    }
+                    Ok(file)
+                }
+                Err(err) if err.raw_os_error() == Some(libc::ENXIO) => {
+                    let file = std::fs::OpenOptions::new().write(true).open(&path_clone)?;
+                    if let Ok(flags) = fcntl(file.as_raw_fd(), FcntlArg::F_GETFL) {
+                        let mut oflags = OFlag::from_bits_truncate(flags);
+                        oflags.remove(OFlag::O_NONBLOCK);
+                        let _ = fcntl(file.as_raw_fd(), FcntlArg::F_SETFL(oflags));
+                    }
+                    Ok(file)
+                }
+                Err(err) => Err(err),
+            }
+        })
+            .await
+            .map_err(|e| AgentError::ContainerError(format!("Console writer task failed: {}", e)))?
+            .map_err(|e| AgentError::ContainerError(format!("Failed to open console FIFO: {}", e)))?;
 
         let mut writers = self.console_writers.lock().await;
         writers.insert(container_id.to_string(), ConsoleWriter { fifo_path, file });
@@ -623,6 +644,10 @@ impl ContainerdRuntime {
         // Even if this returns false (no writer ensured), we still attempt a
         // single write to the FIFO, then fall back to a shell-based redirect.
         let writer_ensured = self.ensure_console_writer(container_id).await?;
+        debug!(
+            "Console writer ensured for {}: {}",
+            container_id, writer_ensured
+        );
 
         if !writer_ensured {
             debug!(
@@ -630,14 +655,17 @@ impl ContainerdRuntime {
                 container_id
             );
         }
-        if self.write_to_console_fifo(container_id, input).await? {
+        if let Ok(true) = self.write_to_console_fifo(container_id, input).await {
+            debug!("Console input delivered via FIFO for {}", container_id);
             return Ok(());
         }
+        debug!("Console input FIFO write failed for {}", container_id);
 
         let target_path = self
             .resolve_stdin_path(container_id, None)
             .await
             .unwrap_or_else(|| "/proc/1/fd/0".to_string());
+        debug!("Console input falling back to exec for {} -> {}", container_id, target_path);
         let escaped = input.replace('\'', "'\\''");
         let command = format!("printf '%s' '{}' > {}", escaped, target_path);
         let output = Command::new("nerdctl")
@@ -677,8 +705,16 @@ impl ContainerdRuntime {
             return Ok(false);
         }
 
-        self.attach_console_writer(container_id, fifo_path.to_string_lossy().into_owned())
-            .await?;
+        if let Err(err) = self
+            .attach_console_writer(container_id, fifo_path.to_string_lossy().into_owned())
+            .await
+        {
+            debug!(
+                "Console writer attach failed for {}: {}. Falling back to exec input.",
+                container_id, err
+            );
+            return Ok(false);
+        }
 
         Ok(true)
     }

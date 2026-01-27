@@ -26,7 +26,7 @@ function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
+    <div className="app-shell flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900/80 px-6 py-8 shadow-xl">
         <div className="flex flex-col items-center text-center">
           <img src="/logo.png" alt="Catalyst logo" className="h-12 w-12" />

@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 
 const tabs = [
   { to: '/admin/users', label: 'Users' },
+  { to: '/admin/servers', label: 'Servers' },
   { to: '/admin/nodes', label: 'Nodes' },
   { to: '/admin/templates', label: 'Templates' },
   { to: '/admin/system', label: 'System' },

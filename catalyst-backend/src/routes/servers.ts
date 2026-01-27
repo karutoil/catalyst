@@ -747,12 +747,12 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Missing file upload" });
       }
 
-      const fields = upload.fields as Record<string, { value?: unknown }> | undefined;
-      const rawPath = fields?.path?.value;
+      const rawPath = upload.fields?.path?.value;
       const basePath =
         typeof rawPath === "string" ? rawPath : rawPath ? String(rawPath) : "/";
       const normalizedPath = normalizeRequestPath(basePath);
-      const filePath = path.posix.join(normalizedPath, upload.filename);
+      const safeFilename = path.posix.basename(upload.filename || "upload");
+      const filePath = path.posix.join(normalizedPath, safeFilename);
 
       try {
         const { targetPath } = await resolveServerPath(server.uuid, filePath);
@@ -803,12 +803,12 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       const normalizedPath = normalizeRequestPath(requestedPath);
+      if (normalizedPath === "/") {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
 
       try {
         const { targetPath } = await resolveServerPath(server.uuid, normalizedPath);
-        if (normalizedPath === "/") {
-          return reply.status(400).send({ error: "Invalid path" });
-        }
         if (isDirectory) {
           await fs.mkdir(targetPath, { recursive: true });
         } else {
