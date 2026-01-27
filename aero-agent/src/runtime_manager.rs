@@ -102,7 +102,7 @@ impl ContainerdRuntime {
         }
 
         // Port mapping (only if not using host network)
-        if network_mode.is_none() || (network_mode.is_some() && network_mode.unwrap() != "host") {
+        if network_mode != Some("host") {
             cmd.arg("-p").arg(format!("0.0.0.0:{}:{}", port, port));
         }
 
@@ -157,22 +157,30 @@ impl ContainerdRuntime {
             .await?;
 
         // Get container IP for firewall configuration
-        let container_ip = self
-            .get_container_ip(container_id)
-            .await
-            .unwrap_or_else(|_| "0.0.0.0".to_string());
+        let container_ip_opt = match self.get_container_ip(container_id).await {
+            Ok(ip) => Some(ip),
+            Err(err) => {
+                warn!(
+                    "Could not determine container IP for {}: {}. Skipping firewall configuration.",
+                    container_id, err
+                );
+                None
+            }
+        };
 
-        // Configure firewall to allow the port
-        info!(
-            "Configuring firewall for port {} (container IP: {})",
-            port, container_ip
-        );
-        if let Err(e) = FirewallManager::allow_port(port, &container_ip).await {
-            error!("Failed to configure firewall: {}", e);
-            // Don't fail container creation if firewall config fails
-            // The container is already running, just log the error
-        } else {
-            info!("✓ Firewall configured for port {}", port);
+        // Configure firewall to allow the port, if we have a concrete container IP
+        if let Some(container_ip) = container_ip_opt {
+            info!(
+                "Configuring firewall for port {} (container IP: {})",
+                port, container_ip
+            );
+            if let Err(e) = FirewallManager::allow_port(port, &container_ip).await {
+                error!("Failed to configure firewall: {}", e);
+                // Don't fail container creation if firewall config fails
+                // The container is already running, just log the error
+            } else {
+                info!("✓ Firewall configured for port {}", port);
+            }
         }
 
         Ok(container_full_id)
@@ -611,12 +619,17 @@ impl ContainerdRuntime {
     pub async fn send_input(&self, container_id: &str, input: &str) -> AgentResult<()> {
         debug!("Sending input to container: {}", container_id);
 
-        if self.ensure_console_writer(container_id).await? {
-            if self.write_to_console_fifo(container_id, input).await? {
-                return Ok(());
-            }
-        }
+        // Best-effort: try to ensure the console writer exists before writing.
+        // Even if this returns false (no writer ensured), we still attempt a
+        // single write to the FIFO, then fall back to a shell-based redirect.
+        let writer_ensured = self.ensure_console_writer(container_id).await?;
 
+        if !writer_ensured {
+            debug!(
+                "Console writer could not be ensured for container {}; proceeding with FIFO/shell fallback",
+                container_id
+            );
+        }
         if self.write_to_console_fifo(container_id, input).await? {
             return Ok(());
         }
@@ -855,7 +868,7 @@ impl ContainerdRuntime {
 
 fn create_fifo(path: &Path) -> std::io::Result<()> {
     let c_path = CString::new(path.as_os_str().as_bytes())?;
-    let ret = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+    let ret = unsafe { libc::mkfifo(c_path.as_ptr(), 0o666) };
     if ret != 0 {
         let err = std::io::Error::last_os_error();
         if err.kind() != std::io::ErrorKind::AlreadyExists {
