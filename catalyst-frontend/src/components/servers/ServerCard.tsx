@@ -46,12 +46,15 @@ function ServerCard({ server }: { server: Server }) {
           <div className="text-xs text-slate-400">Node: {server.nodeName ?? server.nodeId}</div>
           <div className="text-xs text-slate-400">IP: {host}:{port}</div>
         </div>
-        <Link
-          to={`/servers/${server.id}/console`}
-          className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
-        >
-          Open console
-        </Link>
+        <div className="flex items-center gap-2">
+          <ServerControls serverId={server.id} status={server.status} />
+          <Link
+            to={`/servers/${server.id}/console`}
+            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
+          >
+            Open console
+          </Link>
+        </div>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
         <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1">
@@ -70,9 +73,6 @@ function ServerCard({ server }: { server: Server }) {
               : formatPercent(diskPercent)}
           </div>
         </div>
-      </div>
-      <div className="mt-3">
-        <ServerControls serverId={server.id} status={server.status} />
       </div>
     </div>
   );
