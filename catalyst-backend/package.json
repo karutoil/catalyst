@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "bulk-servers": "tsx scripts/bulk-servers.ts",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {

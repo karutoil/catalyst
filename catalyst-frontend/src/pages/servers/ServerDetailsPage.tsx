@@ -124,6 +124,14 @@ function ServerDetailsPage() {
     ? server.node?.publicAddress ?? server.node?.hostname ?? 'n/a'
     : server.primaryIp ?? 'n/a';
   const nodePort = server.primaryPort ?? 'n/a';
+  const diskLimitMb = server.allocatedDiskMb ?? 0;
+  const liveDiskUsageMb = liveMetrics?.diskUsageMb;
+  const liveDiskTotalMb = liveMetrics?.diskTotalMb;
+  const liveDiskIoMb = liveMetrics?.diskIoMb;
+  const diskPercent =
+    liveDiskUsageMb != null && (liveDiskTotalMb || diskLimitMb)
+      ? Math.min(100, (liveDiskUsageMb / (liveDiskTotalMb || diskLimitMb)) * 100)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -319,17 +327,27 @@ function ServerDetailsPage() {
                      {liveMetrics?.memoryUsageMb ? `${liveMetrics.memoryUsageMb} MB` : 'n/a'}
                    </div>
                  </div>
-                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                   <div className="text-slate-400">Disk IO (last tick)</div>
-                   <div className="text-sm font-semibold text-slate-100">
-                     {metricsHistory?.latest?.diskUsageMb ?? 0} MB
-                   </div>
-                 </div>
-                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                   <div className="text-slate-400">Network RX</div>
-                   <div className="text-sm font-semibold text-slate-100">
-                     {formatBytes(Number(metricsHistory?.latest?.networkRxBytes ?? 0))}
-                   </div>
+                  <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                    <div className="text-slate-400">Disk usage</div>
+                    <div className="text-sm font-semibold text-slate-100">
+                      {liveDiskUsageMb != null && (liveDiskTotalMb || diskLimitMb)
+                        ? `${liveDiskUsageMb} / ${liveDiskTotalMb || diskLimitMb} MB${
+                            diskPercent != null ? ` (${diskPercent.toFixed(0)}%)` : ''
+                          }`
+                        : 'n/a'}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                    <div className="text-slate-400">Disk IO (last tick)</div>
+                    <div className="text-sm font-semibold text-slate-100">
+                      {liveDiskIoMb != null ? `${liveDiskIoMb} MB` : 'n/a'}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                    <div className="text-slate-400">Network RX</div>
+                    <div className="text-sm font-semibold text-slate-100">
+                      {formatBytes(Number(metricsHistory?.latest?.networkRxBytes ?? 0))}
+                    </div>
                  </div>
                  <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
                    <div className="text-slate-400">Network TX</div>

@@ -301,17 +301,21 @@ export class WebSocketGateway {
           this.logger.warn("resource_stats missing serverUuid");
           return;
         }
+        // Note: serverUuid here is actually the serverId (container name from agent)
+        // Agent uses server.id as container name, so lookup by id not uuid
         const server = await this.prisma.server.findUnique({
-          where: { uuid: serverUuid },
+          where: { id: serverUuid },
         });
         if (!server) {
-          this.logger.warn({ serverUuid }, "resource_stats for unknown server");
+          this.logger.warn({ serverId: serverUuid }, "resource_stats for unknown server");
           return;
         }
 
         const cpuPercent = Number(message.cpuPercent);
         const memoryUsageMb = Number(message.memoryUsageMb);
         const diskUsageMb = Number(message.diskUsageMb ?? 0);
+        const diskIoMb = Number(message.diskIoMb ?? 0);
+        const diskTotalMb = Number(message.diskTotalMb ?? 0);
         const networkRxBytes = BigInt(Math.max(0, Number(message.networkRxBytes ?? 0)));
         const networkTxBytes = BigInt(Math.max(0, Number(message.networkTxBytes ?? 0)));
 
@@ -322,6 +326,7 @@ export class WebSocketGateway {
             memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? memoryUsageMb : 0),
             networkRxBytes,
             networkTxBytes,
+            diskIoMb: Math.round(Number.isFinite(diskIoMb) ? diskIoMb : 0),
             diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? diskUsageMb : 0),
           },
         });
@@ -333,7 +338,9 @@ export class WebSocketGateway {
           memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? memoryUsageMb : 0),
           networkRxBytes: networkRxBytes.toString(),
           networkTxBytes: networkTxBytes.toString(),
+          diskIoMb: Math.round(Number.isFinite(diskIoMb) ? diskIoMb : 0),
           diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? diskUsageMb : 0),
+          diskTotalMb: Math.round(Number.isFinite(diskTotalMb) ? diskTotalMb : 0),
           timestamp: Date.now(),
         });
       } else if (message.type === "console_output") {

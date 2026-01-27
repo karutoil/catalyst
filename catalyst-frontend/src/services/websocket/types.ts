@@ -26,7 +26,9 @@ export type WebSocketMessage =
       memoryUsageMb?: number;
       networkRxBytes?: number;
       networkTxBytes?: number;
+      diskIoMb?: number;
       diskUsageMb?: number;
+      diskTotalMb?: number;
       cpu?: number;
       memory?: number;
     }

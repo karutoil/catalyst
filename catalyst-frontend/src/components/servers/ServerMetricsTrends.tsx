@@ -42,6 +42,7 @@ function ServerMetricsTrends({
     return Math.min(100, (point.memoryUsageMb / allocatedMemoryMb) * 100);
   });
   const diskHistory = history.map((point) => point.diskUsageMb);
+  const diskIoHistory = history.map((point) => point.diskIoMb ?? 0);
   const netRxHistory = history.map((point) => toNumber(point.networkRxBytes));
   const netTxHistory = history.map((point) => toNumber(point.networkTxBytes));
   const throughput = toDeltas(netRxHistory.map((value, index) => value + netTxHistory[index]));
@@ -64,11 +65,19 @@ function ServerMetricsTrends({
       data: toChartData(memoryHistory),
     },
     {
-      label: 'Disk IO',
+      label: 'Disk Usage',
       value: formatBytes((latest?.diskUsageMb ?? 0) * 1024 * 1024),
       color: 'text-amber-300',
       stroke: '#fbbf24',
       data: toChartData(diskHistory),
+      formatTooltip: (value) => formatBytes(value * 1024 * 1024),
+    },
+    {
+      label: 'Disk IO',
+      value: formatBytes((latest?.diskIoMb ?? 0) * 1024 * 1024),
+      color: 'text-orange-300',
+      stroke: '#fb923c',
+      data: toChartData(diskIoHistory),
       formatTooltip: (value) => formatBytes(value * 1024 * 1024),
     },
     {

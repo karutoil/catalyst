@@ -51,6 +51,7 @@ export async function metricsRoutes(app: FastifyInstance) {
       const normalizedMetrics = metrics.map((metric) => ({
         cpuPercent: metric.cpuPercent,
         memoryUsageMb: metric.memoryUsageMb,
+        diskIoMb: metric.diskIoMb ?? 0,
         diskUsageMb: metric.diskUsageMb,
         networkRxBytes: metric.networkRxBytes.toString(),
         networkTxBytes: metric.networkTxBytes.toString(),
@@ -61,6 +62,7 @@ export async function metricsRoutes(app: FastifyInstance) {
       const avg = metrics.length > 0 ? {
         cpuPercent: metrics.reduce((sum, m) => sum + m.cpuPercent, 0) / metrics.length,
         memoryUsageMb: Math.round(metrics.reduce((sum, m) => sum + m.memoryUsageMb, 0) / metrics.length),
+        diskIoMb: Math.round(metrics.reduce((sum, m) => sum + (m.diskIoMb ?? 0), 0) / metrics.length),
         diskUsageMb: Math.round(metrics.reduce((sum, m) => sum + m.diskUsageMb, 0) / metrics.length),
       } : null;
 
@@ -137,6 +139,7 @@ export async function metricsRoutes(app: FastifyInstance) {
           memoryUsageMb: latest.memoryUsageMb,
           memoryAllocatedMb: server.allocatedMemoryMb,
           memoryPercentage: (latest.memoryUsageMb / server.allocatedMemoryMb) * 100,
+          diskIoMb: latest.diskIoMb ?? 0,
           diskUsageMb: latest.diskUsageMb,
           networkRxBytes: latest.networkRxBytes.toString(),
           networkTxBytes: latest.networkTxBytes.toString(),

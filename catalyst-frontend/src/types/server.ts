@@ -29,9 +29,18 @@ export interface Server {
   };
   cpuPercent?: number;
   memoryPercent?: number;
+  memoryUsageMb?: number | null;
+  diskUsageMb?: number | null;
+  diskTotalMb?: number | null;
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
   allocatedDiskMb?: number;
+  connection?: {
+    assignedIp?: string | null;
+    nodeIp?: string | null;
+    host?: string | null;
+    port?: number | null;
+  };
 }
 
 export interface ServerListParams {
@@ -70,13 +79,16 @@ export interface ServerMetrics {
   memoryUsageMb?: number;
   networkRxBytes?: number;
   networkTxBytes?: number;
+  diskIoMb?: number;
   diskUsageMb?: number;
+  diskTotalMb?: number;
   timestamp: string;
 }
 
 export interface ServerMetricsPoint {
   cpuPercent: number;
   memoryUsageMb: number;
+  diskIoMb?: number;
   diskUsageMb: number;
   networkRxBytes: string;
   networkTxBytes: string;
@@ -88,6 +100,7 @@ export interface ServerMetricsResponse {
   averages: {
     cpuPercent: number;
     memoryUsageMb: number;
+    diskIoMb?: number;
     diskUsageMb: number;
   } | null;
   history: ServerMetricsPoint[];

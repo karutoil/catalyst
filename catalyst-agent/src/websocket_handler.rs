@@ -1345,7 +1345,24 @@ impl WebSocketHandler {
             let memory_usage_mb = parse_memory_usage_mb(&stats.memory_usage).unwrap_or(0);
             let (network_rx_bytes, network_tx_bytes) = parse_io_pair_bytes(&stats.net_io).unwrap_or((0, 0));
             let (disk_read_bytes, disk_write_bytes) = parse_io_pair_bytes(&stats.block_io).unwrap_or((0, 0));
-            let disk_usage_mb = ((disk_read_bytes + disk_write_bytes) / (1024 * 1024)) as u64;
+            let disk_io_mb = ((disk_read_bytes + disk_write_bytes) / (1024 * 1024)) as u64;
+            let (disk_usage_mb, disk_total_mb) = match self
+                .runtime
+                .exec(&container.id, vec!["df", "-m", "/data"])
+                .await
+                .ok()
+                .and_then(|output| parse_df_output_mb(&output))
+                .map(|(used_mb, total_mb)| (used_mb, total_mb))
+            {
+                Some(value) => value,
+                None => {
+                    warn!(
+                        "Failed to read filesystem usage for container {}. Falling back to block IO stats.",
+                        container.id
+                    );
+                    (disk_io_mb, 0)
+                }
+            };
 
             let payload = json!({
                 "type": "resource_stats",
@@ -1354,7 +1371,9 @@ impl WebSocketHandler {
                 "memoryUsageMb": memory_usage_mb,
                 "networkRxBytes": network_rx_bytes,
                 "networkTxBytes": network_tx_bytes,
+                "diskIoMb": disk_io_mb,
                 "diskUsageMb": disk_usage_mb,
+                "diskTotalMb": disk_total_mb,
                 "timestamp": chrono::Utc::now().timestamp_millis(),
             });
 
@@ -1448,4 +1467,20 @@ fn parse_size_to_bytes(value: &str) -> Option<u64> {
         _ => return None,
     };
     Some((number * multiplier).round() as u64)
+}
+
+fn parse_df_output_mb(output: &str) -> Option<(u64, u64)> {
+    let mut lines = output.lines().filter(|line| !line.trim().is_empty());
+    let header = lines.next()?;
+    if !header.to_lowercase().contains("filesystem") {
+        return None;
+    }
+    let data = lines.next()?;
+    let parts: Vec<&str> = data.split_whitespace().collect();
+    if parts.len() < 6 {
+        return None;
+    }
+    let total_mb = parts[1].parse::<u64>().ok()?;
+    let used_mb = parts[2].parse::<u64>().ok()?;
+    Some((used_mb, total_mb))
 }

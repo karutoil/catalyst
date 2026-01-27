@@ -189,6 +189,9 @@ model Server {
   location       Location @relation(fields: [locationId], references: [id])
   ownerId        String
   status         String   @default("stopped")
+  suspendedAt    DateTime?
+  suspendedByUserId String?
+  suspensionReason String?
   allocatedMemoryMb Int
   allocatedCpuCores Int
   allocatedDiskMb  Int     @default(10240)
@@ -301,6 +304,7 @@ model ServerMetrics {
   memoryUsageMb Int
   networkRxBytes BigInt
   networkTxBytes BigInt
+  diskIoMb      Int      @default(0)
   diskUsageMb   Int
   timestamp     DateTime @default(now())
   

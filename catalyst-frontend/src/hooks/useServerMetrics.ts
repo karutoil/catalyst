@@ -35,7 +35,9 @@ export function useServerMetrics(serverId?: string, allocatedMemoryMb?: number) 
           memoryUsageMb,
           networkRxBytes: message.networkRxBytes,
           networkTxBytes: message.networkTxBytes,
+          diskIoMb: message.diskIoMb,
           diskUsageMb: message.diskUsageMb,
+          diskTotalMb: message.diskTotalMb,
           timestamp: new Date().toISOString(),
         });
       }

@@ -345,10 +345,29 @@ export async function serverRoutes(app: FastifyInstance) {
           location: true,
         },
       });
+      const latestMetrics = await prisma.serverMetrics.findMany({
+        where: { serverId: { in: servers.map((server) => server.id) } },
+        orderBy: { timestamp: "desc" },
+        distinct: ["serverId"],
+      });
+      const latestMetricsByServer = new Map(
+        latestMetrics.map((metric) => [metric.serverId, metric])
+      );
 
       reply.send({
         success: true,
-        data: servers.map((server) => withConnectionInfo(server)),
+        data: servers.map((server) => {
+          const metrics = latestMetricsByServer.get(server.id);
+          const diskTotalMb =
+            server.allocatedDiskMb && server.allocatedDiskMb > 0 ? server.allocatedDiskMb : null;
+          return {
+            ...withConnectionInfo(server),
+            cpuPercent: metrics?.cpuPercent ?? null,
+            memoryUsageMb: metrics?.memoryUsageMb ?? null,
+            diskUsageMb: metrics?.diskUsageMb ?? null,
+            diskTotalMb,
+          };
+        }),
       });
     }
   );

@@ -27,6 +27,25 @@
 
 ---
 
+## Feature Parity (Wings)
+
+**Implemented**
+- Server lifecycle, templates, RBAC, metrics, SFTP, backups (local), tasks, alerts, IPAM pools
+
+**Partial**
+- Transfers (assumes shared storage; no cross-node copy)
+- Backups (no retention rules or remote storage)
+- Scheduler (nextRunAt is approximate; no catch-up)
+- File archives (backend-only; agent compress/decompress not implemented)
+- Crash handling (restartPolicy not enforced; no exit-code reporting)
+
+**Missing**
+- Server suspension/unsuspension
+- Per-server database management
+- Secondary allocations/port bindings
+
+---
+
 ## Authentication
 
 ### Register User
