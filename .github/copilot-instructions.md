@@ -22,7 +22,7 @@ Aero is a full-stack game server management system built as a three-tier monorep
 2. **Frontend** (`aero-frontend/`) - React 18 + Vite + TypeScript
    - TanStack Query for API state management
    - WebSocket connection for live console/metrics
-   - Terminal emulator (xterm.js) for console access
+   - Terminal emulator (ghostty-web) for console access
    - Radix UI for accessible components
 
 3. **Agent** (`aero-agent/`) - Rust + Tokio + Containerd

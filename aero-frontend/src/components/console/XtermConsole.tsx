@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import '@xterm/xterm/css/xterm.css';
+import { FitAddon, init, Terminal } from 'ghostty-web';
+import { notifyError } from '../../utils/notify';
 
 type ConsoleEntry = {
   id: string;
@@ -22,73 +20,25 @@ const streamColors: Record<string, string> = {
 };
 
 const ensureLineEnding = (value: string) => (value.endsWith('\n') || value.endsWith('\r') ? value : `${value}\n`);
-const formatForXterm = (value: string) => value.replace(/\r?\n/g, '\r\n');
+const normalizeLineEndings = (value: string) => value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
 function XtermConsole({ entries }: XtermConsoleProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const lastEntryCount = useRef(0);
+  const lastEntryIdRef = useRef<string | null>(null);
+  const entriesRef = useRef(entries);
   const openRafRef = useRef<number | null>(null);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const initPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const terminal = new Terminal({
-      convertEol: true,
-      cursorBlink: true,
-      disableStdin: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      fontSize: 12,
-      lineHeight: 1.2,
-      theme: {
-        background: '#020617',
-        foreground: '#e2e8f0',
-        selectionBackground: '#1e293b',
-      },
-      scrollback: 2000,
-    });
-    const fitAddon = new FitAddon();
-    const linkAddon = new WebLinksAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.loadAddon(linkAddon);
-
-    openRafRef.current = window.requestAnimationFrame(() => {
-      if (!containerRef.current) return;
-      terminal.open(containerRef.current);
-      fitAddon.fit();
-      terminal.focus();
-    });
-
-    const resize = () => fitAddon.fit();
-    window.addEventListener('resize', resize);
-
-    if (containerRef.current && 'ResizeObserver' in window) {
-      resizeObserverRef.current = new ResizeObserver(() => fitAddon.fit());
-      resizeObserverRef.current.observe(containerRef.current);
-    }
-
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-
-    return () => {
-      window.removeEventListener('resize', resize);
-      if (openRafRef.current !== null) {
-        window.cancelAnimationFrame(openRafRef.current);
-        openRafRef.current = null;
-      }
-      resizeObserverRef.current?.disconnect();
-      resizeObserverRef.current = null;
-      terminal.dispose();
-      terminalRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, []);
+    entriesRef.current = entries;
+  }, [entries]);
 
   const writeEntry = (terminal: Terminal, entry: ConsoleEntry) => {
     const color = streamColors[entry.stream] ?? '';
     const prefix = entry.stream && entry.stream !== 'stdin' ? `[${entry.stream}] ` : '';
-    const message = formatForXterm(ensureLineEnding(`${prefix}${entry.data}`));
+    const message = ensureLineEnding(normalizeLineEndings(`${prefix}${entry.data}`));
     if (color) {
       terminal.write(`${color}${message}\x1b[0m`);
     } else {
@@ -97,20 +47,99 @@ function XtermConsole({ entries }: XtermConsoleProps) {
   };
 
   useEffect(() => {
+    let active = true;
+    let terminal: Terminal | null = null;
+    let fitAddon: FitAddon | null = null;
+    let resize: (() => void) | null = null;
+
+    if (!containerRef.current) return;
+    if (!initPromiseRef.current) {
+      initPromiseRef.current = init();
+    }
+
+    initPromiseRef.current
+      .then(() => {
+        if (!active || !containerRef.current) return;
+        terminal = new Terminal({
+          convertEol: true,
+          cursorBlink: true,
+          disableStdin: true,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+          fontSize: 12,
+          theme: {
+            background: '#020617',
+            foreground: '#e2e8f0',
+            selectionBackground: '#1e293b',
+          },
+          scrollback: 2000,
+          smoothScrollDuration: 80,
+        });
+        fitAddon = new FitAddon();
+        terminal.loadAddon(fitAddon);
+
+        openRafRef.current = window.requestAnimationFrame(() => {
+          if (!containerRef.current || !terminal || !fitAddon) return;
+          terminal.open(containerRef.current);
+          fitAddon.fit();
+          fitAddon.observeResize();
+          terminal.focus();
+          const initialEntries = entriesRef.current;
+          if (initialEntries.length) {
+            initialEntries.forEach((entry) => writeEntry(terminal, entry));
+            terminal.scrollToBottom();
+            lastEntryIdRef.current = initialEntries[initialEntries.length - 1]?.id ?? null;
+          }
+        });
+
+        resize = () => fitAddon?.fit();
+        window.addEventListener('resize', resize);
+
+        terminalRef.current = terminal;
+        fitAddonRef.current = fitAddon;
+      })
+      .catch((error) => {
+        notifyError('Failed to initialize console terminal');
+        console.error('ghostty init failed', error);
+      });
+
+    return () => {
+      active = false;
+      if (resize) {
+        window.removeEventListener('resize', resize);
+      }
+      if (openRafRef.current !== null) {
+        window.cancelAnimationFrame(openRafRef.current);
+        openRafRef.current = null;
+      }
+      terminal?.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
 
-    if (entries.length < lastEntryCount.current) {
+    if (entries.length === 0) {
       terminal.reset();
-      lastEntryCount.current = 0;
+      lastEntryIdRef.current = null;
+      return;
     }
 
-    const nextEntries = entries.slice(lastEntryCount.current);
-    nextEntries.forEach((entry) => writeEntry(terminal, entry));
-    if (nextEntries.length) {
+    const lastEntryId = lastEntryIdRef.current;
+    const lastIndex = lastEntryId ? entries.findIndex((entry) => entry.id === lastEntryId) : -1;
+    if (lastIndex === -1) {
+      terminal.reset();
+      entries.forEach((entry) => writeEntry(terminal, entry));
+    } else {
+      const nextEntries = entries.slice(lastIndex + 1);
+      nextEntries.forEach((entry) => writeEntry(terminal, entry));
+    }
+    if (entries.length) {
       terminal.scrollToBottom();
     }
-    lastEntryCount.current = entries.length;
+    lastEntryIdRef.current = entries[entries.length - 1]?.id ?? null;
   }, [entries]);
 
   const containerClass = useMemo(

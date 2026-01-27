@@ -78,9 +78,7 @@ Aero Frontend is a modern, responsive web application for managing game servers 
 - **@monaco-editor/react** - React wrapper
 
 ### Terminal Emulator
-- **xterm.js** - Terminal emulator for console output
-- **xterm-addon-fit** - Automatic terminal sizing
-- **xterm-addon-web-links** - Clickable URLs in terminal
+- **ghostty-web** - Terminal emulator for console output (Ghostty WASM)
 
 ### Date/Time
 - **date-fns** - Date manipulation and formatting
@@ -297,7 +295,7 @@ aero-frontend/
 
 ### 4. Real-time Console
 - **Live console output** via WebSocket
-- **Terminal emulator** with xterm.js
+- **Terminal emulator** with ghostty-web
 - **Command execution** - Send commands to server
 - **Auto-scroll** to latest output
 - **Search console** - Find text in output
@@ -436,7 +434,7 @@ aero-frontend/
 - [x] Integrate live metrics into server details
 
 ### Phase 6: Real-time Console (Week 3-4)
-- [ ] Install xterm.js and addons
+- [ ] Install ghostty-web
 - [ ] Create console terminal component
 - [ ] Implement console WebSocket subscription
 - [ ] Add console input component
@@ -1209,9 +1207,7 @@ jobs:
     "tailwind-merge": "^2.5.5",
     "@monaco-editor/react": "^4.6.0",
     "monaco-editor": "^0.52.2",
-    "@xterm/xterm": "^5.5.0",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-web-links": "^0.11.0",
+    "ghostty-web": "^0.3.0",
     "framer-motion": "^11.13.5"
   },
   "devDependencies": {

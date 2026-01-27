@@ -4,12 +4,11 @@ import { useAuthStore } from '../stores/authStore';
 
 export function useWebSocketConnection() {
   const { connect } = useWebSocketStore();
-  const { isReady, token } = useAuthStore();
+  const { token } = useAuthStore();
 
   useEffect(() => {
-    // Connect as soon as a token is available.
-    if (isReady && token) {
+    if (token) {
       connect();
     }
-  }, [isReady, token, connect]);
+  }, [token, connect]);
 }
