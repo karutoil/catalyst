@@ -37,7 +37,7 @@
 - Backups (no retention rules or remote storage)
 - Scheduler (nextRunAt is approximate; no catch-up)
 - File archives (backend-only; agent compress/decompress not implemented)
-- Crash handling (restartPolicy not enforced; no exit-code reporting)
+- Crash handling (restartPolicy enforced; exit-code reporting)
 
 **Missing**
 - Secondary allocations/port bindings
@@ -1066,6 +1066,30 @@ Move a server to another node.
 {
   "success": true,
   "message": "Crash count reset"
+}
+```
+
+---
+
+### Update Restart Policy
+
+**Endpoint:** `PATCH /api/servers/:serverId/restart-policy`  
+**Authentication:** Required (server.update permission)
+
+**Body:**
+```json
+{
+  "restartPolicy": "on-failure",
+  "maxCrashCount": 5
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "restartPolicy": "on-failure",
+  "maxCrashCount": 5
 }
 ```
 

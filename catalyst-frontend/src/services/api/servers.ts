@@ -6,6 +6,7 @@ import type {
   TransferServerPayload,
   CreateServerPayload,
   ServerLogs,
+  RestartPolicy,
 } from '../../types/server';
 
 type ApiResponse<T> = {
@@ -108,5 +109,22 @@ export const serversApi = {
       { containerPort },
     );
     return data.data;
+  },
+  updateRestartPolicy: async (
+    id: string,
+    payload: { restartPolicy?: RestartPolicy; maxCrashCount?: number },
+  ) => {
+    const { data } = await apiClient.patch<ApiResponse<any>>(
+      `/api/servers/${id}/restart-policy`,
+      payload,
+    );
+    return data;
+  },
+  resetCrashCount: async (id: string) => {
+    const { data } = await apiClient.post<ApiResponse<any>>(
+      `/api/servers/${id}/reset-crash-count`,
+      {},
+    );
+    return data;
   },
 };

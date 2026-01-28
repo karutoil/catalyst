@@ -19,6 +19,7 @@ export type WebSocketMessage =
     reason?: string;
     timestamp?: number | string;
     portBindings?: Record<number, number>;
+    exitCode?: number;
   }
   | {
       type: 'resource_stats';

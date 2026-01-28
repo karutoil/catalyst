@@ -591,15 +591,15 @@ export async function serverRoutes(app: FastifyInstance) {
           const metrics = latestMetricsByServer.get(server.id);
           const diskTotalMb =
             server.allocatedDiskMb && server.allocatedDiskMb > 0 ? server.allocatedDiskMb : null;
-          return {
-            ...withConnectionInfo(server),
-            cpuPercent: metrics?.cpuPercent ?? null,
-            memoryUsageMb: metrics?.memoryUsageMb ?? null,
-            diskUsageMb: metrics?.diskUsageMb ?? null,
-            diskTotalMb,
-          };
-        }),
-      });
+      return {
+        ...withConnectionInfo(server),
+        cpuPercent: metrics?.cpuPercent ?? null,
+        memoryUsageMb: metrics?.memoryUsageMb ?? null,
+        diskUsageMb: metrics?.diskUsageMb ?? null,
+        diskTotalMb,
+      };
+    }),
+  });
     }
   );
 

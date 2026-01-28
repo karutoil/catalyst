@@ -30,6 +30,7 @@ pub struct WebSocketHandler {
     storage_manager: Arc<StorageManager>,
     write: Arc<RwLock<Option<Arc<tokio::sync::Mutex<WsWrite>>>>>,
     active_log_streams: Arc<RwLock<HashSet<String>>>,
+    monitor_tasks: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
 
 impl Clone for WebSocketHandler {
@@ -41,6 +42,7 @@ impl Clone for WebSocketHandler {
             storage_manager: self.storage_manager.clone(),
             write: self.write.clone(),
             active_log_streams: self.active_log_streams.clone(),
+            monitor_tasks: self.monitor_tasks.clone(),
         }
     }
 }
@@ -59,6 +61,7 @@ impl WebSocketHandler {
             storage_manager,
             write: Arc::new(RwLock::new(None)),
             active_log_streams: Arc::new(RwLock::new(HashSet::new())),
+            monitor_tasks: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -320,6 +323,102 @@ impl WebSocketHandler {
         }
     }
 
+    async fn stop_monitor_task(&self, server_id: &str) {
+        let mut tasks = self.monitor_tasks.write().await;
+        if let Some(handle) = tasks.remove(server_id) {
+            handle.abort();
+        }
+    }
+
+    fn spawn_exit_monitor(&self, server_id: &str, container_id: &str) {
+        let handler = self.clone();
+        let server_id = server_id.to_string();
+        let container_id = container_id.to_string();
+        tokio::spawn(async move {
+            // Atomically replace the monitor task while holding the lock to prevent race conditions
+            let mut tasks = handler.monitor_tasks.write().await;
+            if let Some(existing) = tasks.remove(&server_id) {
+                existing.abort();
+            }
+            // Clone for the inner task to avoid borrow checker issues
+            let monitor_handler = handler.clone();
+            let monitor_server_id = server_id.clone();
+            let monitor_container_id = container_id.clone();
+            // Use containerd's event stream API for immediate exit notifications
+            // This replaces polling and provides instant notification when containers exit
+            let monitor = tokio::spawn(async move {
+                // Subscribe to container events
+                let mut event_stream = match monitor_handler.runtime.subscribe_to_container_events(&monitor_container_id).await {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        error!("Failed to subscribe to events for {}: {}. Falling back to polling.", monitor_container_id, e);
+                        // Fallback to polling if event stream fails
+                        loop {
+                            let running = monitor_handler.runtime.is_container_running(&monitor_container_id).await.unwrap_or(false);
+                            if !running {
+                                let exit_code = monitor_handler
+                                    .runtime
+                                    .get_container_exit_code(&monitor_container_id)
+                                    .await
+                                    .unwrap_or(None);
+                                let reason = match exit_code {
+                                    Some(code) => format!("Container exited with code {}", code),
+                                    None => "Container exited".to_string(),
+                                };
+                                let _ = monitor_handler
+                                    .emit_server_state_update(&monitor_server_id, "crashed", Some(reason), None, exit_code)
+                                    .await;
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_secs(2)).await;
+                        }
+                        return;
+                    }
+                };
+
+                // Take stdout from the event stream
+                let stdout = match event_stream.stdout.take() {
+                    Some(out) => out,
+                    None => {
+                        error!("Failed to capture event stream stdout for {}", monitor_container_id);
+                        return;
+                    }
+                };
+
+                let mut reader = tokio::io::BufReader::new(stdout).lines();
+
+                // Read events line by line
+                while let Ok(Some(event)) = reader.next_line().await {
+                    let event = event.trim();
+                    debug!("Container {} event: {}", monitor_container_id, event);
+                    
+                    // Check for exit-related events
+                    if event == "die" || event == "stop" || event == "kill" {
+                        // Container has stopped, get exit code
+                        let exit_code = monitor_handler
+                            .runtime
+                            .get_container_exit_code(&monitor_container_id)
+                            .await
+                            .unwrap_or(None);
+                        let reason = match exit_code {
+                            Some(code) => format!("Container exited with code {}", code),
+                            None => "Container exited".to_string(),
+                        };
+                        let _ = monitor_handler
+                            .emit_server_state_update(&monitor_server_id, "crashed", Some(reason), None, exit_code)
+                            .await;
+                        break;
+                    }
+                }
+
+                // Clean up the event stream process
+                let _ = event_stream.wait().await;
+            });
+            tasks.insert(server_id, monitor);
+            // Lock is held until end of scope, ensuring atomic operation
+        });
+    }
+
     async fn install_server(&self, msg: &Value) -> AgentResult<()> {
         let server_uuid = msg["serverUuid"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing serverUuid".to_string())
@@ -458,7 +557,7 @@ impl WebSocketHandler {
                 .await?;
             // The fourth argument is an optional metadata/progress payload for the state update;
             // we pass None here because the install failed and there is no additional data to attach.
-            self.emit_server_state_update(server_id, "error", Some(reason.clone()), None)
+            self.emit_server_state_update(server_id, "error", Some(reason.clone()), None, None)
                 .await?;
             return Err(AgentError::InstallationError(format!(
                 "Install script failed: {}",
@@ -472,7 +571,7 @@ impl WebSocketHandler {
         }
 
         // Emit state update
-        self.emit_server_state_update(server_id, "stopped", None, None)
+        self.emit_server_state_update(server_id, "stopped", None, None, None)
             .await?;
 
         info!("Server installed successfully: {}", server_uuid);
@@ -709,22 +808,31 @@ impl WebSocketHandler {
                 }
             };
             if !is_running {
-                let reason = "Container exited immediately after start";
+                let exit_code = self
+                    .runtime
+                    .get_container_exit_code(server_id)
+                    .await
+                    .unwrap_or(None);
+                let reason = match exit_code {
+                    Some(code) => format!("Container exited immediately with code {}", code),
+                    None => "Container exited immediately after start".to_string(),
+                };
                 if let Ok(logs) = self.runtime.get_logs(server_id, Some(100)).await {
                     if !logs.trim().is_empty() {
                         self.emit_console_output(server_id, "stderr", &logs).await?;
                     }
                 }
-                return Err(AgentError::ContainerError(reason.to_string()));
+                return Err(AgentError::ContainerError(reason));
             }
 
             let container_id = self.resolve_container_id(server_id, server_uuid).await;
             if !container_id.is_empty() {
                 self.spawn_log_stream(server_id, &container_id);
+                self.spawn_exit_monitor(server_id, &container_id);
             }
 
             // Emit state update
-            self.emit_server_state_update(server_id, "running", None, Some(port_bindings.clone()))
+            self.emit_server_state_update(server_id, "running", None, Some(port_bindings.clone()), None)
                 .await?;
 
             info!("Server started successfully: {}", server_id);
@@ -735,7 +843,7 @@ impl WebSocketHandler {
             let reason = format!("Start failed: {}", err);
             let _ = self.emit_console_output(server_id, "stderr", &format!("[Catalyst] {}\n", reason))
                 .await;
-            let _ = self.emit_server_state_update(server_id, "error", Some(reason), None).await;
+            let _ = self.emit_server_state_update(server_id, "error", Some(reason), None, None).await;
         }
 
         result
@@ -754,7 +862,8 @@ impl WebSocketHandler {
         match self.runtime.start_container(&container_id).await {
             Ok(()) => {
                 self.spawn_log_stream(server_id, &container_id);
-                self.emit_server_state_update(server_id, "running", None, None)
+                self.spawn_exit_monitor(server_id, &container_id);
+                self.emit_server_state_update(server_id, "running", None, None, None)
                     .await?;
                 Ok(())
             }
@@ -762,7 +871,7 @@ impl WebSocketHandler {
                 let reason = format!("Start failed: {}", err);
                 let _ = self.emit_console_output(server_id, "stderr", &format!("[Catalyst] {}\n", reason))
                     .await;
-                let _ = self.emit_server_state_update(server_id, "error", Some(reason), None).await;
+                let _ = self.emit_server_state_update(server_id, "error", Some(reason), None, None).await;
                 Err(err)
             }
         }
@@ -776,6 +885,8 @@ impl WebSocketHandler {
             )));
         }
         info!("Stopping server: {} (container {})", server_id, container_id);
+
+        self.stop_monitor_task(server_id).await;
 
         if self
             .runtime
@@ -792,7 +903,7 @@ impl WebSocketHandler {
             self.runtime.remove_container(&container_id).await?;
         }
 
-        self.emit_server_state_update(server_id, "stopped", None, None)
+        self.emit_server_state_update(server_id, "stopped", None, None, None)
             .await?;
 
         Ok(())
@@ -807,6 +918,8 @@ impl WebSocketHandler {
         }
         info!("Killing server: {} (container {})", server_id, container_id);
 
+        self.stop_monitor_task(server_id).await;
+
         self.runtime
             .kill_container(&container_id, "SIGKILL")
             .await?;
@@ -815,7 +928,13 @@ impl WebSocketHandler {
             self.runtime.remove_container(&container_id).await?;
         }
 
-        self.emit_server_state_update(server_id, "crashed", Some("Killed by agent".to_string()), None)
+        self.emit_server_state_update(
+            server_id,
+            "crashed",
+            Some("Killed by agent".to_string()),
+            None,
+            Some(137),
+        )
             .await?;
 
         Ok(())
@@ -1246,6 +1365,7 @@ impl WebSocketHandler {
         state: &str,
         reason: Option<String>,
         port_bindings: Option<HashMap<u16, u16>>,
+        exit_code: Option<i32>,
     ) -> AgentResult<()> {
         let msg = json!({
             "type": "server_state_update",
@@ -1254,6 +1374,7 @@ impl WebSocketHandler {
             "timestamp": chrono::Utc::now().timestamp_millis(),
             "reason": reason,
             "portBindings": port_bindings,
+            "exitCode": exit_code,
         });
 
         debug!("Emitting state update: {}", msg);

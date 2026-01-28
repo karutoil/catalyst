@@ -203,6 +203,23 @@ http_put() {
     fi
 }
 
+http_patch() {
+    local url="$1"
+    local data="$2"
+    local headers="${3:-}"
+    
+    if [ -n "$headers" ]; then
+        curl -s -w "\n%{http_code}" -X PATCH "$url" \
+            -H "Content-Type: application/json" \
+            -H "$headers" \
+            -d "$data"
+    else
+        curl -s -w "\n%{http_code}" -X PATCH "$url" \
+            -H "Content-Type: application/json" \
+            -d "$data"
+    fi
+}
+
 http_delete() {
     local url="$1"
     local headers="${2:-}"

@@ -1023,6 +1023,32 @@ impl ContainerdRuntime {
         Ok(state == "true")
     }
 
+    /// Get container exit code if available
+    pub async fn get_container_exit_code(&self, container_id: &str) -> AgentResult<Option<i32>> {
+        let output = Command::new("nerdctl")
+            .arg("--namespace")
+            .arg(&self.namespace)
+            .arg("inspect")
+            .arg(container_id)
+            .arg("--format")
+            .arg("{{.State.ExitCode}}")
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            return Ok(None);
+        }
+
+        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if value.is_empty() {
+            return Ok(None);
+        }
+        match value.parse::<i32>() {
+            Ok(code) => Ok(Some(code)),
+            Err(_) => Ok(None),
+        }
+    }
+
     /// Spawn a process to stream container logs (stdout/stderr)
     /// Returns a handle to the log streaming process
     pub async fn spawn_log_stream(&self, container_id: &str) -> AgentResult<tokio::process::Child> {
@@ -1038,6 +1064,28 @@ impl ContainerdRuntime {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
+
+        Ok(child)
+    }
+
+    /// Subscribe to container events for a specific container
+    /// Returns a child process streaming events (one event per line)
+    /// Events include: start, die, stop, kill, etc.
+    pub async fn subscribe_to_container_events(&self, container_id: &str) -> AgentResult<tokio::process::Child> {
+        debug!("Subscribing to events for container: {}", container_id);
+
+        let child = Command::new("nerdctl")
+            .arg("--namespace")
+            .arg(&self.namespace)
+            .arg("events")
+            .arg("--filter")
+            .arg(format!("container={}", container_id))
+            .arg("--format")
+            .arg("{{.Status}}")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| AgentError::ContainerError(format!("Failed to spawn events stream: {}", e)))?;
 
         Ok(child)
     }

@@ -214,6 +214,7 @@ model Server {
   crashCount     Int      @default(0)
   maxCrashCount  Int      @default(5)
   lastCrashAt    DateTime?
+  lastExitCode   Int?
   
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

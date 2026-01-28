@@ -42,6 +42,7 @@ export class WebSocketGateway {
   private consoleResumeTimestamps = new Map<string, number>();
   private readonly consoleOutputLimit = { max: 200, windowMs: 1000 };
   private readonly consoleInputLimit = { max: 10, windowMs: 1000 };
+  private readonly autoRestartingServers = new Set<string>();
 
   constructor(private prisma: PrismaClient, logger: pino.Logger) {
     this.logger = logger.child({ component: "WebSocketGateway" });
@@ -368,15 +369,49 @@ export class WebSocketGateway {
             return;
           }
         }
-        // Update server status in database
+        const server = await this.prisma.server.findUnique({
+          where: { id: message.serverId },
+          include: { node: true, template: true },
+        });
+
+        if (!server) {
+          return;
+        }
+
+        const nextData: Record<string, any> = {
+          status: message.state,
+          ...(message.portBindings && typeof message.portBindings === "object"
+            ? { portBindings: message.portBindings }
+            : {}),
+          ...(typeof message.exitCode === "number" ? { lastExitCode: message.exitCode } : {}),
+        };
+
+        const shouldRecordCrash = message.state === ServerState.CRASHED;
+        let shouldAutoRestart = false;
+        if (shouldRecordCrash) {
+          const nextCrashCount = (server.crashCount ?? 0) + 1;
+          nextData.crashCount = nextCrashCount;
+          nextData.lastCrashAt = new Date();
+          const maxCrashCount = server.maxCrashCount ?? 0;
+          if (
+            server.restartPolicy !== "never" &&
+            nextCrashCount <= maxCrashCount
+          ) {
+            if (server.restartPolicy === "always") {
+              shouldAutoRestart = true;
+            } else if (server.restartPolicy === "on-failure") {
+              const exitCode = typeof message.exitCode === "number" ? message.exitCode : null;
+              if (exitCode !== null && exitCode !== 0) {
+                shouldAutoRestart = true;
+              }
+            }
+          }
+
+        }
+
         await this.prisma.server.update({
           where: { id: message.serverId },
-          data: {
-            status: message.state,
-            ...(message.portBindings && typeof message.portBindings === "object"
-              ? { portBindings: message.portBindings }
-              : {}),
-          },
+          data: nextData,
         });
         if (message.reason) {
           await this.prisma.serverLog.create({
@@ -387,6 +422,66 @@ export class WebSocketGateway {
             },
           });
         }
+        if (shouldRecordCrash && typeof message.exitCode === "number") {
+          await this.prisma.serverLog.create({
+            data: {
+              serverId: message.serverId,
+              stream: "system",
+              data: `Exit code: ${message.exitCode}`,
+            },
+          });
+        }
+
+        if (shouldAutoRestart && server.node?.isOnline) {
+          this.autoRestartingServers.add(server.id);
+          await this.prisma.server.update({
+            where: { id: server.id },
+            data: { status: ServerState.STARTING },
+          });
+          const serverDir = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
+          const fullServerDir = `${serverDir}/${server.uuid}`;
+          const templateVariables = (server.template.variables as any[]) || [];
+          const templateDefaults = templateVariables.reduce((acc, variable) => {
+            if (variable?.name && variable?.default !== undefined) {
+              acc[variable.name] = String(variable.default);
+            }
+            return acc;
+          }, {} as Record<string, string>);
+          const environment = {
+            ...templateDefaults,
+            ...(server.environment as Record<string, string>),
+            SERVER_DIR: fullServerDir,
+          };
+          const restartSent = await this.sendToAgent(server.nodeId, {
+            type: "start_server",
+            serverId: server.id,
+            serverUuid: server.uuid,
+            template: server.template,
+            environment,
+            allocatedMemoryMb: server.allocatedMemoryMb,
+            allocatedCpuCores: server.allocatedCpuCores,
+            allocatedDiskMb: server.allocatedDiskMb,
+            primaryPort: server.primaryPort,
+            portBindings:
+              message.portBindings && typeof message.portBindings === "object"
+                ? message.portBindings
+                : server.portBindings,
+            networkMode: server.networkMode,
+          });
+          if (!restartSent) {
+            this.autoRestartingServers.delete(server.id);
+            await this.prisma.server.update({
+
+              data: { status: ServerState.CRASHED },
+            });
+            this.logger.warn({ serverId: server.id }, "Auto-restart failed to send to agent");
+          }
+        }
+
+        if (message.state === ServerState.RUNNING && this.autoRestartingServers.has(server.id)) {
+          this.autoRestartingServers.delete(server.id);
+        }
+
         // Route to clients
         await this.routeToClients(message.serverId, message);
       } else if (message.type === "backup_complete") {

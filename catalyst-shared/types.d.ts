@@ -139,6 +139,7 @@ export declare namespace WsEvent {
         timestamp: number;
         reason?: string;
         portBindings?: Record<number, number>;
+        exitCode?: number;
     }
     interface HealthReport {
         nodeId: string;

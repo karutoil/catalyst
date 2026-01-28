@@ -8,6 +8,8 @@ export type ServerStatus =
   | 'transferring'
   | 'suspended';
 
+export type RestartPolicy = 'always' | 'on-failure' | 'never';
+
 export interface Server {
   id: string;
   ownerId?: string;
@@ -42,6 +44,11 @@ export interface Server {
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
   allocatedDiskMb?: number;
+  restartPolicy?: RestartPolicy;
+  crashCount?: number;
+  maxCrashCount?: number;
+  lastCrashAt?: string | null;
+  lastExitCode?: number | null;
   suspendedAt?: string | null;
   suspendedByUserId?: string | null;
   suspensionReason?: string | null;

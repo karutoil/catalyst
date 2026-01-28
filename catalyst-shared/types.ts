@@ -170,6 +170,7 @@ export namespace WsEvent {
     timestamp: number;
     reason?: string;
     portBindings?: Record<number, number>;
+    exitCode?: number;
   }
 
   export interface HealthReport {

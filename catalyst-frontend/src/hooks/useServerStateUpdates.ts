@@ -28,6 +28,10 @@ export function useServerStateUpdates() {
               ...previous,
               status: nextState,
               portBindings: message.portBindings ?? previous.portBindings,
+              lastExitCode:
+                typeof message.exitCode === 'number'
+                  ? message.exitCode
+                  : previous.lastExitCode,
             };
           },
         );
@@ -44,6 +48,10 @@ export function useServerStateUpdates() {
                   ...server,
                   status: nextState,
                   portBindings: message.portBindings ?? server.portBindings,
+                  lastExitCode:
+                    typeof message.exitCode === 'number'
+                      ? message.exitCode
+                      : server.lastExitCode,
                 }
               : server,
           );

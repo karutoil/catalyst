@@ -208,15 +208,35 @@ response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}/logs" "Authorizatio
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "200" "GET /api/servers/{id}/logs"
 
-# Test 11: Get Non-existent Server
-log_info "Test 11: Get non-existent server"
+# Test 11: Update restart policy
+log_info "Test 11: Update restart policy"
+response=$(http_patch "${BACKEND_URL}/api/servers/${SERVER_ID}/restart-policy" "{
+    \"restartPolicy\": \"always\",
+    \"maxCrashCount\": 2
+}" "Authorization: Bearer $TOKEN")
+
+http_code=$(parse_http_code "$response")
+body=$(parse_response "$response")
+assert_http_code "$http_code" "200" "PATCH /api/servers/{id}/restart-policy"
+assert_json_field "$body" "restartPolicy" "always" "Restart policy updated"
+assert_json_field "$body" "maxCrashCount" "2" "Max crash count updated"
+
+# Test 12: Reset crash count
+log_info "Test 12: Reset crash count"
+response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/reset-crash-count" "{}" "Authorization: Bearer $TOKEN")
+
+http_code=$(parse_http_code "$response")
+assert_http_code "$http_code" "200" "POST /api/servers/{id}/reset-crash-count"
+
+# Test 13: Get Non-existent Server
+log_info "Test 13: Get non-existent server"
 response=$(http_get "${BACKEND_URL}/api/servers/nonexistent-id" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "404" "GET /api/servers/{id} (non-existent)"
 
-# Test 12: Unauthorized Access to Another User's Server
-log_info "Test 12: Attempt unauthorized access"
+# Test 14: Unauthorized Access to Another User's Server
+log_info "Test 14: Attempt unauthorized access"
 # Create another user
 response=$(http_post "${BACKEND_URL}/api/auth/register" "{
     \"email\": \"$(random_email)\",
@@ -230,15 +250,15 @@ response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}" "Authorization: Be
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "403" "GET /api/servers/{id} (unauthorized)"
 
-# Test 13: Delete Server
-log_info "Test 13: Delete server"
+# Test 15: Delete Server
+log_info "Test 15: Delete server"
 response=$(http_delete "${BACKEND_URL}/api/servers/${SERVER_ID}" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "200" "DELETE /api/servers/{id}"
 
-# Test 14: Verify Server Deleted
-log_info "Test 14: Verify server is deleted"
+# Test 16: Verify Server Deleted
+log_info "Test 16: Verify server is deleted"
 response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")

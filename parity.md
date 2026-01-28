@@ -43,31 +43,31 @@ Catalyst is missing several core Wings-equivalent features across backend, agent
 - [x] Server “Databases” tab (list, create, rotate password, delete).
 - [x] Admin DB host management UI.
 
-### Phase 3 — Multi-Allocations & Port Bindings
+### Phase 3 — Multi-Allocations & Port Bindings (Complete)
 **Backend**
-- [ ] Formalize `portBindings` structure in Server model; add endpoints to add/remove allocations.
-- [ ] Validate port conflicts per node + IPAM integration for non-bridge networks.
-- [ ] Update create/update server flows to reflect allocations list instead of single port.
+- [x] Formalize `portBindings` structure in Server model; add endpoints to add/remove allocations.
+- [x] Validate port conflicts per node + IPAM integration for non-bridge networks.
+- [x] Update create/update server flows to reflect allocations list instead of single port.
 
 **Agent**
-- [ ] Update container start to map all port bindings (host:container pairs).
-- [ ] Expose current port bindings in state updates.
+- [x] Update container start to map all port bindings (host:container pairs).
+- [x] Expose current port bindings in state updates.
 
 **Frontend**
-- [ ] UI for adding/removing allocations + primary allocation selection.
+- [x] UI for adding/removing allocations + primary allocation selection.
 
 ### Phase 4 — Crash Detection & Auto-Restart
 **Backend**
-- [ ] Update WebSocket gateway handling for `server_state_update` with `exitCode` and `reason`.
-- [ ] Implement crash policy evaluation: increment crashCount, set lastCrashAt, auto-restart if allowed.
+- [x] Update WebSocket gateway handling for `server_state_update` with `exitCode` and `reason`.
+- [x] Implement crash policy evaluation: increment crashCount, set lastCrashAt, auto-restart if allowed.
 - [ ] Notify alerts when crashCount threshold exceeded.
 
 **Agent**
-- [ ] Track container exit events (poll or subscribe), emit `server_state_update` with `exitCode`.
-- [ ] Ensure “crashed” is emitted for non-zero exit or abnormal stop.
+- [x] Track container exit events (poll or subscribe), emit `server_state_update` with `exitCode`.
+- [x] Ensure “crashed” is emitted for non-zero exit or abnormal stop.
 
 **Frontend**
-- [ ] Show crash reason + restart policy settings UI.
+- [x] Show crash reason + restart policy settings UI.
 
 ### Phase 5 — Transfers & Backups (Multi-Storage Modes)
 **Backend**

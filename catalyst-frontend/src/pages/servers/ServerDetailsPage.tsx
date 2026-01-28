@@ -116,6 +116,8 @@ function ServerDetailsPage() {
   const [allocationsError, setAllocationsError] = useState<string | null>(null);
   const [newContainerPort, setNewContainerPort] = useState('');
   const [newHostPort, setNewHostPort] = useState('');
+  const [restartPolicy, setRestartPolicy] = useState<'always' | 'on-failure' | 'never'>('on-failure');
+  const [maxCrashCount, setMaxCrashCount] = useState('5');
 
   const createDatabaseMutation = useMutation({
     mutationFn: () => {
@@ -302,6 +304,59 @@ function ServerDetailsPage() {
       notifyError(message);
     },
   });
+
+  const restartPolicyMutation = useMutation({
+    mutationFn: async () => {
+      if (!serverId) throw new Error('Missing server id');
+      const parsedMax = maxCrashCount.trim() === '' ? undefined : Number(maxCrashCount);
+      const minCrashCount = restartPolicy === 'always' ? 1 : 0;
+      if (
+        parsedMax !== undefined &&
+        (!Number.isFinite(parsedMax) || parsedMax < minCrashCount || parsedMax > 100)
+      ) {
+        throw new Error(`Max crash count must be between ${minCrashCount} and 100`);
+      }
+      return serversApi.updateRestartPolicy(serverId, {
+        restartPolicy,
+        maxCrashCount: parsedMax,
+      });
+    },
+    onSuccess: () => {
+      notifySuccess('Restart policy updated');
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to update restart policy';
+      notifyError(message);
+    },
+  });
+
+  const resetCrashCountMutation = useMutation({
+    mutationFn: async () => {
+      if (!serverId) throw new Error('Missing server id');
+      return serversApi.resetCrashCount(serverId);
+    },
+    onSuccess: () => {
+      notifySuccess('Crash count reset');
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to reset crash count';
+      notifyError(message);
+    },
+  });
+
+  useEffect(() => {
+    if (!server) return;
+    setRestartPolicy(server.restartPolicy ?? 'on-failure');
+    setMaxCrashCount(
+      server.maxCrashCount !== undefined && server.maxCrashCount !== null
+        ? String(server.maxCrashCount)
+        : '5',
+    );
+  }, [server?.id, server?.restartPolicy, server?.maxCrashCount]);
 
   const normalizeEntry = (key: string, value: ConfigNode): ConfigEntry => {
     if (isConfigMap(value)) {
@@ -1467,6 +1522,69 @@ function ServerDetailsPage() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-100">Crash recovery</div>
+                <div className="text-xs text-slate-400">
+                  Configure automatic restart behavior for crashes.
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+              <div>
+                <label className="text-[11px] uppercase tracking-wide text-slate-500">Restart policy</label>
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={restartPolicy}
+                  onChange={(event) => setRestartPolicy(event.target.value)}
+                  disabled={isSuspended}
+                >
+                  <option value="always">Always</option>
+                  <option value="on-failure">On failure</option>
+                  <option value="never">Never</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] uppercase tracking-wide text-slate-500">Max crash count</label>
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={maxCrashCount}
+                  onChange={(event) => setMaxCrashCount(event.target.value)}
+                  disabled={isSuspended}
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <button
+                type="button"
+                className="rounded-md bg-sky-600 px-3 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                onClick={() => restartPolicyMutation.mutate()}
+                disabled={isSuspended || restartPolicyMutation.isPending}
+              >
+                Save policy
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                onClick={() => resetCrashCountMutation.mutate()}
+                disabled={isSuspended || resetCrashCountMutation.isPending}
+              >
+                Reset crash count
+              </button>
+              <div className="text-[11px] text-slate-400">
+                Crashes: {server.crashCount ?? 0} / {server.maxCrashCount ?? 0}
+                {server.lastCrashAt ? ` · Last crash ${new Date(server.lastCrashAt).toLocaleString()}` : ''}
+                {server.lastExitCode !== null && server.lastExitCode !== undefined
+                  ? ` · Exit ${server.lastExitCode}`
+                  : ''}
+              </div>
             </div>
           </div>
 
