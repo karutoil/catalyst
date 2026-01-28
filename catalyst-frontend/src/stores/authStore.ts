@@ -18,6 +18,7 @@ interface AuthState {
   init: () => Promise<void>;
   logout: () => void;
   setUser: (user: User | null) => void;
+  setSession: (payload: { token: string; user: User }) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -87,6 +88,8 @@ export const useAuthStore = create<AuthState>()(
         set({ user: null, token: null, isAuthenticated: false, isReady: true });
       },
       setUser: (user) => set({ user, isAuthenticated: Boolean(user) }),
+      setSession: ({ token, user }) =>
+        set({ user, token, isAuthenticated: true, isLoading: false, isReady: true, error: null }),
     }),
     {
       name: 'catalyst-auth',

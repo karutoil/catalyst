@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { loginSchema, LoginSchema } from '../../validators/auth';
 
@@ -13,12 +13,15 @@ function LoginPage() {
     formState: { errors },
   } = useForm<LoginSchema>({ resolver: zodResolver(loginSchema) });
 
+  const location = useLocation();
+  const from = (location.state as { from?: { pathname?: string } } | undefined)?.from?.pathname;
+
   const onSubmit = async (values: LoginSchema) => {
     try {
       await login(values);
       // Redirect on successful login
       setTimeout(() => {
-        navigate('/servers');
+        navigate(from || '/servers');
       }, 100);
     } catch (err) {
       // Error is already in the store

@@ -106,6 +106,35 @@ Catalyst is missing several core Wings-equivalent features across backend, agent
 **Frontend**
 - [ ] Enable compress/decompress in file manager with status toasts.
 
+### Phase 8 — Sub-User Access & Permissions
+**Backend**
+- [x] Add sub-user invitations per server (create, accept, revoke).
+- [x] Expand ServerAccess to include per-server role assignments and permissions presets.
+- [x] Endpoint suite: list/add/update/remove server sub-users.
+- [x] Audit logging for sub-user changes.
+
+**Frontend**
+- [x] Server “Users” tab to manage sub-users and permissions.
+- [x] Invite flow with permission presets (read-only, power user, custom).
+
+### Phase 9 — Alert Thresholds & Notifications
+**Backend**
+- [ ] Define alert rules (CPU, memory, disk, offline) with thresholds + cooldown.
+- [ ] Evaluate metrics to trigger alerts; persist alert history.
+- [ ] Notification targets (email/webhook incl. Slack/Discord) and delivery retries.
+
+**Frontend**
+- [ ] Alert rule configuration UI and alert history views.
+
+### Phase 10 — Security & Rate Limiting Hardening
+**Backend**
+- [ ] Expand rate limit policies per endpoint group (auth, file ops, console).
+- [ ] Brute-force protection with lockout/backoff.
+- [ ] Audit log retention policy and export.
+
+**Frontend**
+- [ ] Admin security settings page for rate limits and lockout visibility.
+
 ## Notes & Considerations
 - Maintain backward compatibility with existing routes and clients; add new fields as optional.
 - Avoid breaking changes to template format.

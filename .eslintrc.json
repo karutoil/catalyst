@@ -1,0 +1,12 @@
+{
+  "root": true,
+  "ignorePatterns": [
+    "catalyst-backend/node_modules",
+    "catalyst-backend/dist",
+    "catalyst-frontend/node_modules",
+    "catalyst-frontend/dist",
+    "catalyst-agent/target",
+    "node_modules",
+    ".git"
+  ]
+}

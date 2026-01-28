@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { createAuditLog } from '../middleware/audit';
+import { getSmtpSettings, upsertSmtpSettings } from '../services/mailer';
 import { summarizePool } from '../utils/ipam';
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -1143,6 +1144,96 @@ export async function adminRoutes(app: FastifyInstance) {
         resource: 'database_host',
         resourceId: hostId,
         details: { name: deleted.name },
+      });
+
+      reply.send({ success: true });
+    }
+  );
+
+  app.get(
+    '/smtp',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+      const settings = await getSmtpSettings();
+      reply.send({ success: true, data: settings });
+    }
+  );
+
+  app.put(
+    '/smtp',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+      const {
+        host,
+        port,
+        username,
+        password,
+        from,
+        replyTo,
+        secure,
+        requireTls,
+        pool,
+        maxConnections,
+        maxMessages,
+      } = request.body as {
+        host?: string;
+        port?: number;
+        username?: string;
+        password?: string;
+        from?: string;
+        replyTo?: string;
+        secure?: boolean;
+        requireTls?: boolean;
+        pool?: boolean;
+        maxConnections?: number;
+        maxMessages?: number;
+      };
+
+      if (host === '' || username === '' || from === '' || replyTo === '') {
+        return reply.status(400).send({ error: 'SMTP fields cannot be empty strings' });
+      }
+
+      if (port !== undefined && (!Number.isInteger(port) || port <= 0 || port > 65535)) {
+        return reply.status(400).send({ error: 'Invalid SMTP port' });
+      }
+
+      await upsertSmtpSettings({
+        host: host ?? null,
+        port: port ?? null,
+        username: username ?? null,
+        password: password ?? null,
+        from: from ?? null,
+        replyTo: replyTo ?? null,
+        secure: secure ?? false,
+        requireTls: requireTls ?? false,
+        pool: pool ?? false,
+        maxConnections: maxConnections ?? null,
+        maxMessages: maxMessages ?? null,
+      });
+
+      await createAuditLog(user.userId, {
+        action: 'smtp_update',
+        resource: 'system',
+        details: {
+          host: host ?? null,
+          port: port ?? null,
+          username: username ?? null,
+          from: from ?? null,
+          replyTo: replyTo ?? null,
+          secure: secure ?? false,
+          requireTls: requireTls ?? false,
+          pool: pool ?? false,
+          maxConnections: maxConnections ?? null,
+          maxMessages: maxMessages ?? null,
+        },
       });
 
       reply.send({ success: true });

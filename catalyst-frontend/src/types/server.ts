@@ -149,3 +149,49 @@ export interface ServerLogs {
   count: number;
   requestedLines: number;
 }
+
+export type ServerPermissionPreset = 'readOnly' | 'power' | 'full' | 'custom';
+
+export interface ServerAccessEntry {
+  id: string;
+  userId: string;
+  serverId: string;
+  permissions: string[];
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    email: string;
+    username: string;
+  };
+}
+
+export interface ServerInvite {
+  id: string;
+  serverId: string;
+  email: string;
+  token: string;
+  permissions: string[];
+  invitedByUserId: string;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  cancelledAt?: string | null;
+}
+
+export interface ServerInvitePreview {
+  email: string;
+  serverName: string;
+  permissions: string[];
+  expiresAt: string;
+}
+
+export interface ServerPermissionsResponse {
+  success: boolean;
+  data: ServerAccessEntry[];
+  presets: {
+    readOnly: string[];
+    power: string[];
+    full: string[];
+  };
+}

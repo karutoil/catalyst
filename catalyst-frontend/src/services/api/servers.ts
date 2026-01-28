@@ -8,6 +8,9 @@ import type {
   ServerLogs,
   RestartPolicy,
   BackupStorageMode,
+  ServerPermissionsResponse,
+  ServerInvite,
+  ServerAccessEntry,
 } from '../../types/server';
 
 type ApiResponse<T> = {
@@ -139,6 +142,54 @@ export const serversApi = {
     const { data } = await apiClient.patch<ApiResponse<any>>(
       `/api/servers/${id}/backup-settings`,
       payload,
+    );
+    return data;
+  },
+  permissions: async (id: string) => {
+    const { data } = await apiClient.get<ServerPermissionsResponse>(`/api/servers/${id}/permissions`);
+    return data;
+  },
+  listInvites: async (id: string) => {
+    const { data } = await apiClient.get<ApiResponse<ServerInvite[]>>(`/api/servers/${id}/invites`);
+    return data.data || [];
+  },
+  createInvite: async (id: string, payload: { email: string; permissions: string[] }) => {
+    const { data } = await apiClient.post<ApiResponse<ServerInvite>>(
+      `/api/servers/${id}/invites`,
+      payload,
+    );
+    return data.data;
+  },
+  cancelInvite: async (id: string, inviteId: string) => {
+    const { data } = await apiClient.delete<ApiResponse<void>>(
+      `/api/servers/${id}/invites/${inviteId}`,
+    );
+    return data;
+  },
+  acceptInvite: async (token: string) => {
+    const { data } = await apiClient.post<ApiResponse<void>>('/api/servers/invites/accept', {
+      token,
+    });
+    return data;
+  },
+  registerInvite: async (payload: { token: string; username: string; password: string }) => {
+    const { data } = await apiClient.post<ApiResponse<any>>('/api/servers/invites/register', payload);
+    return data;
+  },
+  previewInvite: async (token: string) => {
+    const { data } = await apiClient.get<ApiResponse<any>>(`/api/servers/invites/${token}`);
+    return data;
+  },
+  upsertAccess: async (id: string, payload: { targetUserId: string; permissions: string[] }) => {
+    const { data } = await apiClient.post<ApiResponse<ServerAccessEntry>>(
+      `/api/servers/${id}/access`,
+      payload,
+    );
+    return data.data;
+  },
+  removeAccess: async (id: string, targetUserId: string) => {
+    const { data } = await apiClient.delete<ApiResponse<void>>(
+      `/api/servers/${id}/access/${targetUserId}`,
     );
     return data;
   },

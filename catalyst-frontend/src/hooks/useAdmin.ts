@@ -59,3 +59,10 @@ export function useDatabaseHosts() {
     queryFn: adminApi.listDatabaseHosts,
   });
 }
+
+export function useSmtpSettings() {
+  return useQuery({
+    queryKey: ['admin-smtp'],
+    queryFn: adminApi.getSmtpSettings,
+  });
+}

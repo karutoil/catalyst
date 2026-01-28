@@ -21,6 +21,7 @@ import AlertsPage from './pages/alerts/AlertsPage';
 import UsersPage from './pages/admin/UsersPage';
 import SystemPage from './pages/admin/SystemPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
+import InvitesPage from './pages/InvitesPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/invites/:token" element={<InvitesPage />} />
         <Route
           path="/"
           element={

@@ -23,6 +23,7 @@ model User {
   roles     Role[]
   servers   ServerAccess[]
   auditLog  AuditLog[]
+  invitesSent ServerAccessInvite[] @relation("ServerInviteSender")
 }
 
 // ============================================================================
@@ -63,6 +64,41 @@ model ServerAccess {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, serverId])
+}
+
+model ServerAccessInvite {
+  id              String   @id @default(cuid())
+  serverId        String
+  server          Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  email           String
+  token           String   @unique
+  permissions     String[]
+  invitedByUserId String
+  invitedByUser   User     @relation("ServerInviteSender", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  cancelledAt     DateTime?
+
+  @@index([serverId, email])
+  @@index([expiresAt])
+}
+
+model SystemSetting {
+  id                 String   @id
+  smtpHost           String?
+  smtpPort           Int?
+  smtpUsername       String?
+  smtpPassword       String?
+  smtpFrom           String?
+  smtpReplyTo        String?
+  smtpSecure         Boolean  @default(false)
+  smtpRequireTls     Boolean  @default(false)
+  smtpPool           Boolean  @default(false)
+  smtpMaxConnections Int?
+  smtpMaxMessages    Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 // ============================================================================
@@ -225,6 +261,7 @@ model Server {
   updatedAt      DateTime @updatedAt
 
   access         ServerAccess[]
+  invites        ServerAccessInvite[]
   roles          ServerRole[]
   logs           ServerLog[]
   metrics        ServerMetrics[]

@@ -5,6 +5,8 @@ import fastifyCors from "@fastify/cors";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyHelmet from "@fastify/helmet";
 import fastifyMultipart from "@fastify/multipart";
+import fastifySwagger from "@fastify/swagger";
+import fastifySwaggerUi from "@fastify/swagger-ui";
 import pino from "pino";
 import { PrismaClient } from "@prisma/client";
 import "./types"; // Load type augmentations
@@ -236,6 +238,24 @@ async function bootstrap() {
       sign: { expiresIn: "24h" },
     });
 
+    await app.register(fastifySwagger, {
+      openapi: {
+        info: {
+          title: "Catalyst API",
+          description: "Catalyst backend API documentation",
+          version: "1.0.0",
+        },
+      },
+    });
+
+    await app.register(fastifySwaggerUi, {
+      routePrefix: "/docs",
+      uiConfig: {
+        docExpansion: "list",
+        deepLinking: false,
+      },
+    });
+
     await app.register(fastifyWebsocket, {
       errorHandler: (error) => {
         logger.error(error, "WebSocket error handler");
@@ -244,7 +264,7 @@ async function bootstrap() {
 
     // Health check (exempt from rate limiting)
     app.get("/health", { 
-      config: { rateLimit: { max: 1000, timeWindow: '1 minute' } }
+      config: { rateLimit: { max: 1000000000, timeWindow: '1 minute' } }
     }, async (request, reply) => {
       return { status: "ok", timestamp: new Date().toISOString() };
     });

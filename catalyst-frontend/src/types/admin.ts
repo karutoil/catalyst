@@ -114,3 +114,17 @@ export interface DatabaseHost {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface SmtpSettings {
+  host: string | null;
+  port: number | null;
+  username: string | null;
+  password: string | null;
+  from: string | null;
+  replyTo: string | null;
+  secure: boolean;
+  requireTls: boolean;
+  pool: boolean;
+  maxConnections: number | null;
+  maxMessages: number | null;
+}

@@ -33,8 +33,9 @@ import {
   type ConfigMap,
   type ConfigNode,
 } from '../../utils/configFormats';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../../services/api/tasks';
+import type { ServerAccessEntry, ServerInvite, ServerPermissionsResponse } from '../../types/server';
 
 type ConfigEntry = {
   key: string;
@@ -65,6 +66,7 @@ const tabLabels = {
   databases: 'Databases',
   metrics: 'Metrics',
   configuration: 'Configuration',
+  users: 'Users',
   settings: 'Settings',
 } as const;
 
@@ -83,6 +85,16 @@ function ServerDetailsPage() {
   const { isConnected } = useWebSocketStore();
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
+  const { data: permissionsData } = useQuery<ServerPermissionsResponse>({
+    queryKey: ['server-permissions', serverId],
+    queryFn: () => serversApi.permissions(serverId ?? ''),
+    enabled: Boolean(serverId),
+  });
+  const { data: invites = [] } = useQuery<ServerInvite[]>({
+    queryKey: ['server-invites', serverId],
+    queryFn: () => serversApi.listInvites(serverId ?? ''),
+    enabled: Boolean(serverId),
+  });
 
   const {
     entries,
@@ -120,6 +132,10 @@ function ServerDetailsPage() {
   const [newHostPort, setNewHostPort] = useState('');
   const [restartPolicy, setRestartPolicy] = useState<'always' | 'on-failure' | 'never'>('on-failure');
   const [maxCrashCount, setMaxCrashCount] = useState('5');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePreset, setInvitePreset] = useState<'readOnly' | 'power' | 'full' | 'custom'>('readOnly');
+  const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
+  const [accessPermissions, setAccessPermissions] = useState<Record<string, string[]>>({});
 
   const createDatabaseMutation = useMutation({
     mutationFn: () => {
@@ -359,6 +375,111 @@ function ServerDetailsPage() {
         : '5',
     );
   }, [server?.id, server?.restartPolicy, server?.maxCrashCount]);
+
+  useEffect(() => {
+    if (!permissionsData?.data) return;
+    const nextPermissions: Record<string, string[]> = {};
+    permissionsData.data.forEach((entry) => {
+      nextPermissions[entry.userId] = entry.permissions;
+    });
+    setAccessPermissions(nextPermissions);
+  }, [permissionsData?.data]);
+
+  useEffect(() => {
+    if (!permissionsData?.presets) return;
+    if (invitePreset !== 'custom') {
+      setInvitePermissions(permissionsData.presets[invitePreset]);
+    }
+  }, [invitePreset, permissionsData?.presets]);
+
+  const createInviteMutation = useMutation({
+    mutationFn: () => {
+      if (!serverId) throw new Error('Missing server id');
+      return serversApi.createInvite(serverId, {
+        email: inviteEmail.trim(),
+        permissions: invitePreset === 'custom' ? invitePermissions : permissionsData?.presets[invitePreset] ?? [],
+      });
+    },
+    onSuccess: () => {
+      notifySuccess('Invite sent');
+      setInviteEmail('');
+      queryClient.invalidateQueries({ queryKey: ['server-invites', serverId] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to send invite';
+      notifyError(message);
+    },
+  });
+
+  const cancelInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => {
+      if (!serverId) throw new Error('Missing server id');
+      return serversApi.cancelInvite(serverId, inviteId);
+    },
+    onSuccess: () => {
+      notifySuccess('Invite cancelled');
+      queryClient.invalidateQueries({ queryKey: ['server-invites', serverId] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to cancel invite';
+      notifyError(message);
+    },
+  });
+
+  const saveAccessMutation = useMutation({
+    mutationFn: (entry: ServerAccessEntry) => {
+      if (!serverId) throw new Error('Missing server id');
+      const permissions = accessPermissions[entry.userId] ?? [];
+      return serversApi.upsertAccess(serverId, { targetUserId: entry.userId, permissions });
+    },
+    onSuccess: () => {
+      notifySuccess('Permissions updated');
+      queryClient.invalidateQueries({ queryKey: ['server-permissions', serverId] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to update permissions';
+      notifyError(message);
+    },
+  });
+
+  const removeAccessMutation = useMutation({
+    mutationFn: (targetUserId: string) => {
+      if (!serverId) throw new Error('Missing server id');
+      return serversApi.removeAccess(serverId, targetUserId);
+    },
+    onSuccess: () => {
+      notifySuccess('Access removed');
+      queryClient.invalidateQueries({ queryKey: ['server-permissions', serverId] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to remove access';
+      notifyError(message);
+    },
+  });
+
+  const permissionOptions = useMemo(() => {
+    const base = [
+      'server.read',
+      'server.start',
+      'server.stop',
+      'server.install',
+      'server.transfer',
+      'server.delete',
+      'console.read',
+      'console.write',
+      'file.read',
+      'file.write',
+      'database.read',
+      'database.create',
+      'database.rotate',
+      'database.delete',
+    ];
+    const all = new Set<string>(base);
+    permissionsData?.data?.forEach((entry) => entry.permissions.forEach((perm) => all.add(perm)));
+    permissionsData?.presets &&
+      Object.values(permissionsData.presets).forEach((list) => list.forEach((perm) => all.add(perm)));
+    return Array.from(all).sort();
+  }, [permissionsData?.data, permissionsData?.presets]);
 
   const normalizeEntry = (key: string, value: ConfigNode): ConfigEntry => {
     if (isConfigMap(value)) {
@@ -1113,6 +1234,183 @@ function ServerDetailsPage() {
             latest={metricsHistory?.latest ?? null}
             allocatedMemoryMb={server.allocatedMemoryMb ?? 0}
           />
+        </div>
+      ) : null}
+
+      {activeTab === 'users' ? (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-100">Invite user</div>
+                <div className="text-xs text-slate-400">
+                  Send an invite to grant access to this server.
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-3">
+              <input
+                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="user@example.com"
+              />
+              <select
+                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                value={invitePreset}
+                onChange={(event) =>
+                  setInvitePreset(event.target.value as 'readOnly' | 'power' | 'full' | 'custom')
+                }
+              >
+                <option value="readOnly">Read-only</option>
+                <option value="power">Power user</option>
+                <option value="full">Full access</option>
+                <option value="custom">Custom</option>
+              </select>
+              <button
+                type="button"
+                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                onClick={() => createInviteMutation.mutate()}
+                disabled={!inviteEmail.trim() || createInviteMutation.isPending}
+              >
+                Send invite
+              </button>
+            </div>
+            {invitePreset === 'custom' ? (
+              <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                {permissionOptions.map((perm) => (
+                  <label key={perm} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+                      checked={invitePermissions.includes(perm)}
+                      onChange={(event) => {
+                        setInvitePermissions((current) =>
+                          event.target.checked
+                            ? [...current, perm]
+                            : current.filter((entry) => entry !== perm),
+                        );
+                      }}
+                    />
+                    {perm}
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-slate-400">
+                {permissionsData?.presets?.[invitePreset]?.join(', ') || 'No preset loaded.'}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="text-sm font-semibold text-slate-100">Active access</div>
+            <div className="mt-4 space-y-3 text-xs text-slate-300">
+              {permissionsData?.data?.length ? (
+                permissionsData.data.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-100">{entry.user.username}</div>
+                        <div className="text-xs text-slate-400">{entry.user.email}</div>
+                      </div>
+                      {entry.userId !== server.ownerId ? (
+                        <button
+                          type="button"
+                          className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500"
+                          onClick={() => removeAccessMutation.mutate(entry.userId)}
+                          disabled={removeAccessMutation.isPending}
+                        >
+                          Remove
+                        </button>
+                      ) : (
+                        <span className="rounded-full border border-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-300">
+                          Owner
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                      {permissionOptions.map((perm) => (
+                        <label key={`${entry.id}-${perm}`} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+                            checked={(accessPermissions[entry.userId] ?? entry.permissions).includes(perm)}
+                            onChange={(event) => {
+                              if (entry.userId === server.ownerId) return;
+                              setAccessPermissions((current) => {
+                                const next = new Set(current[entry.userId] ?? entry.permissions);
+                                if (event.target.checked) {
+                                  next.add(perm);
+                                } else {
+                                  next.delete(perm);
+                                }
+                                return { ...current, [entry.userId]: Array.from(next) };
+                              });
+                            }}
+                            disabled={entry.userId === server.ownerId}
+                          />
+                          {perm}
+                        </label>
+                      ))}
+                    </div>
+                    {entry.userId !== server.ownerId ? (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                          onClick={() => saveAccessMutation.mutate(entry)}
+                          disabled={saveAccessMutation.isPending}
+                        >
+                          Save permissions
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-6 text-center text-xs text-slate-400">
+                  No additional users yet.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="text-sm font-semibold text-slate-100">Pending invites</div>
+            <div className="mt-4 space-y-2 text-xs text-slate-300">
+              {invites.length ? (
+                invites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2"
+                  >
+                    <div>
+                      <div className="text-sm font-semibold text-slate-100">{invite.email}</div>
+                      <div className="text-[11px] text-slate-400">
+                        Expires {new Date(invite.expiresAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500"
+                      onClick={() => cancelInviteMutation.mutate(invite.id)}
+                      disabled={cancelInviteMutation.isPending}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-6 text-center text-xs text-slate-400">
+                  No pending invites.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       ) : null}
 

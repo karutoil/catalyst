@@ -31,6 +31,7 @@ USERNAME2="user-$(random_string)"
 
 response=$(http_post "${BACKEND_URL}/api/auth/register" "{\"email\":\"$EMAIL2\",\"username\":\"$USERNAME2\",\"password\":\"$PASSWORD\"}")
 USER_TOKEN=$(echo "$response" | head -n-1 | jq -r '.data.token')
+USER_ID=$(echo "$response" | head -n-1 | jq -r '.data.userId')
 
 # Get existing location
 response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $ADMIN_TOKEN")
@@ -78,17 +79,18 @@ assert_http_code "$http_code" "403" "Unauthorized access blocked"
 
 # Test 3: Grant Permission
 log_info "Test 3: Owner grants permission to user"
-response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/permissions" "{
-    \"userId\": \"user-id-here\",
-    \"permissions\": [\"view\", \"console\"]
+response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/access" "{
+    \"targetUserId\": \"${USER_ID}\",
+    \"permissions\": [\"server.read\", \"console.read\"]
 }" "Authorization: Bearer $OWNER_TOKEN")
 http_code=$(parse_http_code "$response")
-# May not be implemented, log result
-log_info "Grant permission result: HTTP $http_code"
+assert_http_code "$http_code" "200" "Grant server access"
 
 # Test 4: User Can Access After Grant
 log_info "Test 4: User can access after permission grant"
-# Implementation depends on permissions system
+response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}" "Authorization: Bearer $USER_TOKEN")
+http_code=$(parse_http_code "$response")
+assert_http_code "$http_code" "200" "User can access server after grant"
 
 # Test 5: User Cannot Delete Without Permission
 log_info "Test 5: User cannot delete without permission"

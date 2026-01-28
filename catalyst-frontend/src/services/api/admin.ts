@@ -8,6 +8,7 @@ import type {
   AdminUsersResponse,
   AuditLogsResponse,
   DatabaseHost,
+  SmtpSettings,
 } from '../../types/admin';
 
 type ApiResponse<T> = {
@@ -151,6 +152,14 @@ export const adminApi = {
   },
   deleteDatabaseHost: async (hostId: string) => {
     const { data } = await apiClient.delete<ApiResponse<void>>(`/api/admin/database-hosts/${hostId}`);
+    return data;
+  },
+  getSmtpSettings: async () => {
+    const { data } = await apiClient.get<ApiResponse<SmtpSettings>>('/api/admin/smtp');
+    return data.data;
+  },
+  updateSmtpSettings: async (payload: SmtpSettings) => {
+    const { data } = await apiClient.put<ApiResponse<void>>('/api/admin/smtp', payload);
     return data;
   },
 };

@@ -1,7 +1,7 @@
 # Catalyst - AI Coding Agent Instructions
 
 **Project:** Catalyst - Production-Grade Game Server Management System  
-**Last Updated:** January 24, 2026  
+**Last Updated:** January 28, 2026  
 **Monorepo Structure:** Backend (TypeScript), Frontend (React), Agent (Rust), Shared Types
 
 ---
@@ -112,64 +112,112 @@ cd catalyst-frontend && npm run dev &
 
 ## Critical Code Patterns
 
-### Server State Machine
-File: `catalyst-backend/src/services/state-machine.ts`
+### Server State Machine  
+File: [catalyst-backend/src/services/state-machine.ts](../catalyst-backend/src/services/state-machine.ts)
 
-Server lifecycle: `stopped` → `installing/starting/running/stopping/crashed`
+Server lifecycle: `stopped` → `installing/starting/running/stopping/crashed/error/suspended`
 
 **Pattern:** All state transitions validated in backend BEFORE sending commands to agent. Database persists state immediately.
+- `ServerStateMachine.canTransition(from, to)` validates all state changes
+- `ServerStateMachine.canStart()` / `canStop()` guard operations
+- Implementation uses static transition maps for explicit validation
 
-```typescript
-// Correct pattern:
-const currentServer = await db.server.findUnique(...);
-if (currentServer.status !== 'stopped') throw new ValidationError('...');
-await db.server.update(..., { status: 'starting' });  // Persist FIRST
-await wsGateway.sendToAgent('start_server', {...});  // Then command
-```
+**When adding server operations:**
+1. Check state validity via `ServerStateMachine.validateTransition()`
+2. Persist state change to DB immediately  
+3. Then send WebSocket message to agent
+4. Never rely on agent to validate state
 
 ### File Operations
-Path traversal prevention is CRITICAL. File manager implements a whitelist pattern:
+Backend validates all file paths before agent execution:
+- Path traversal blocked: reject `..` and paths outside server directory
+- Implement whitelist pattern with server-scoped root directory
+- Validation happens in backend BEFORE WebSocket message sent to agent
+- Agent file_manager.rs enforces the same checks (defense in depth)
+
+**When adding file operations:** Always validate on backend first, never trust file paths from frontend directly.
+
+### WebSocket Message Routing  
+File: [catalyst-backend/src/websocket/gateway.ts](../catalyst-backend/src/websocket/gateway.ts)
+
+The gateway manages two connection types:
+- **Agent connections** (nodeId + secret): receive commands, send state/metrics updates  
+- **Client connections** (JWT token): send user commands, receive real-time updates via subscriptions
+
+Message flow pattern:
 ```typescript
-// src/services/file-manager.ts
-validatePath(userPath: string): boolean {
-  if (userPath.includes('..')) return false;  // Block parent directory access
-  if (!userPath.startsWith('/servers/')) return false;  // Whitelist directory
-  return true;
+// Backend → Agent: commands with full context
+wsGateway.sendToAgent(nodeId, { type: 'start_server', serverId, serverUuid, environment, ... })
+
+// Agent → Backend: state updates with validation
+{ type: 'server_state_update', serverId, status: 'running' } → persists to DB → broadcasts to subscribed clients
+
+// Client → Agent: routed through backend
+console_input → validates permission → routes to agent → executes
+```
+
+Key implementation details:
+- Agent reconnection: exponential backoff (every 5 seconds) if disconnected
+- Heartbeats: backend tracks agent.lastHeartbeat; disconnects after ~5 minutes inactivity
+- Console output rate-limiting: max 200 lines/second per server to prevent spam
+- Request-response pairs: agent requests include sequence IDs for matching responses
+
+### Metrics & Health Reporting
+Agents send health updates every 30 seconds to backend:
+- `resource_stats`: CPU, memory, disk usage collected via sysinfo crate
+- `health_report`: container status, uptime, error logs
+- Backend persists to `ServerMetrics` and `NodeMetrics` tables (with TTL indices)
+- Frontend uses WebSocket subscriptions for real-time metric streams
+
+**Important:** Metrics gaps > 2 minutes indicate agent disconnect; alert user.
+
+### Frontend Architecture - Zustand Stores & Hooks
+File: [catalyst-frontend/src/stores/](../catalyst-frontend/src/stores/)
+
+State management split across Zustand stores (not Redux):
+- `authStore` - JWT token, user profile, login/logout actions
+- `websocketStore` - WebSocket connection, message subscriptions
+- `uiStore` - theme, modal open/close states
+- `serverStore` (if exists) - cached server data
+
+Hook pattern for data fetching:
+```typescript
+// catalysts-frontend/src/hooks/useServers.ts
+export function useServers() {
+  return useQuery({
+    queryKey: ['servers'],
+    queryFn: async () => { /* API call */ },
+    // Auto-refetch in 1sec if status is transitional
+    refetchInterval: server.status ∈ transitionalStatuses ? 1000 : false,
+  });
 }
 ```
 
-**When adding file operations:** Always validate paths on backend before sending to agent.
+**When adding UI features:**
+1. Create Zustand store in `src/stores/` if state is global
+2. Use TanStack Query hooks for API caching
+3. Components in `src/pages/` structure mirrors route structure
+4. Radix UI + Tailwind for accessible, styled components
+5. Toast notifications via sonner library (not custom impl)
 
-### Metrics Collection
-Agents send `resource_stats` and `health_report` every 30 seconds via WebSocket.
-- Backend ingests messages in `src/websocket/gateway.ts`
-- Persists to `ServerMetrics` and `NodeMetrics` tables
-- Frontend subscribes via WebSocket to receive real-time updates
-- **Note:** Metrics not retroactively filled if agent offline; alert if gaps > 2 minutes
-
-### RBAC Middleware  
-File: `catalyst-backend/src/middleware/rbac.ts`
+### RBAC Middleware Pattern
+File: [catalyst-backend/src/middleware/rbac.ts](../catalyst-backend/src/middleware/rbac.ts)
 
 Applied to all protected routes:
 ```typescript
 app.post('/api/servers/:id/start', 
-  { onRequest: rbac.checkPermission('server.start') },  // Middleware
+  { onRequest: rbac.checkPermission('server.start') },  // Middleware guard
   async (request, reply) => { ... }
 );
 ```
 
-**When adding new endpoints:** Add permission check middleware, update `Permission` enum in database schema.
+Permissions enum in [catalyst-backend/src/shared-types.ts](../catalyst-backend/src/shared-types.ts):
+- `server.start`, `server.stop`, `server.create`, `server.delete`, `server.suspend`
+- `file.read`, `file.write`
+- `console.read`, `console.write`
+- `database.create`, `database.read`, `database.delete`, `database.rotate`
 
-### WebSocket Message Routing
-File: `catalyst-backend/src/websocket/gateway.ts`
-
-```typescript
-// Messages from agents route to backend storage
-type: 'server_state_update' → updates Server.status in DB → broadcasts to subscribed clients
-
-// Messages from clients route to agents
-type: 'console_input' (client) → routes to agent via WebSocket → executes on container
-```
+**When adding new endpoints:** Add permission check middleware, update `Permission` enum in shared-types.
 
 ---
 
@@ -177,19 +225,20 @@ type: 'console_input' (client) → routes to agent via WebSocket → executes on
 
 ### PostgreSQL + Prisma
 - Connection string: `.env` `DATABASE_URL`
-- Schema: `catalyst-backend/prisma/schema.prisma`
+- Schema: [catalyst-backend/prisma/schema.prisma](../catalyst-backend/prisma/schema.prisma)
 - **On schema changes:** Run `npm run db:migrate` (creates versioned migrations)
+- Prisma client auto-generated; use `prisma.modelName.method()` in routes
 
 ### Containerd API
-- Agent connects to `/run/containerd/containerd.sock` (configurable)
-- Uses protocol buffers; pre-compiled in dependencies
-- Requires `runc` or `crun` runtime available on node
-- **Important:** Namespace isolation in config; defaults to `"catalyst"`
+- Agent connects to `/run/containerd/containerd.sock` (configurable in `config.toml`)
+- Uses protocol buffers; pre-compiled in Cargo.lock dependencies
+- Requires `runc` or `crun` runtime available on node machine
+- **Important:** Namespace isolation in config (`namespaces: ["catalyst"]`); all containers run in isolated namespace
 
 ### JWT Authentication
 - Secret: `.env` `JWT_SECRET` (25+ characters in production)
 - Token payload includes `userId`, `email`, `permissions[]`
-- Expiration: 24 hours (hardcoded in `index.ts`)
+- Expiration: 24 hours (hardcoded in [index.ts](../catalyst-backend/src/index.ts#L1))
 - **On changes:** Update `@fastify/jwt` config in `src/index.ts`
 
 ### SFTP Server (ssh2 library)
@@ -198,46 +247,63 @@ type: 'console_input' (client) → routes to agent via WebSocket → executes on
 - Chroot: Each user restricted to their server's file directory
 - **Caveat:** Can timeout if backend API calls block; use async/await
 
+### Redis (if configured)
+- Used for caching, session storage (optional, not required for MVP)
+- Connection: `.env` `REDIS_URL` if enabled
+- Can be disabled with environment flags for single-instance deployments
+
 ---
 
 ## Testing Requirements & Patterns
 
 ### Backend API Testing
-Scripts in `tests/` directory; use `test-backend.sh` as reference:
-```bash
-# Auth test
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"password123"}'
+Scripts in `tests/` directory; use [test-backend.sh](../test-backend.sh) as reference for quick smoke tests.
 
-# Extract token, use in subsequent calls
-TOKEN=$(curl ... | jq -r '.data.token')
+Integration tests are bash suites in `tests/` directory (`NN-name.test.sh` format):
+- [01-auth.test.sh](../tests/01-auth.test.sh) - auth flow patterns
+- [04-servers.test.sh](../tests/04-servers.test.sh) - server state transitions
+- [06-websocket.test.sh](../tests/06-websocket.test.sh) - WebSocket communication
+- [09-file-operations.test.sh](../tests/09-file-operations.test.sh) - path validation patterns
+
+**Test pattern:** Use `curl` with token extraction and variable setup from `tests/lib/` helpers.
+```bash
+# Login to get token
+TOKEN=$(curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"password123"}' | jq -r '.data.token')
+
+# Use token in authenticated calls
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/servers
 ```
 
-**When adding endpoints:** Add curl tests to `tests/` with comments explaining flow.
+**When adding endpoints:** Add corresponding test file to `tests/` with curl-based assertions.
 
 ### Frontend Component Testing
-Use Vitest + React Testing Library:
+Use Vitest + React Testing Library (in `catalyst-frontend/`):
+- `npm run test` - Run unit tests
+- `npm run test:e2e` - Run Playwright integration tests
+- State management via Zustand stores (auth, websocket, UI)
+- TanStack Query for API caching; use `useServers()`, `useServer()` hooks
+
+**Actual pattern in codebase:**
 ```typescript
-// src/components/ServerCard.test.tsx
-import { render, screen } from '@testing-library/react';
-test('displays server name', () => {
-  render(<ServerCard server={{name: 'test'}} />);
-  expect(screen.getByText('test')).toBeInTheDocument();
-});
+// Frontend hooks use TanStack Query with hard-coded status set
+const transitionalStatuses = new Set(['installing', 'starting', 'stopping', 'transferring']);
+export function useServers() {
+  return useQuery({
+    queryKey: ['servers'],
+    queryFn: async () => { /* API call */ },
+    refetchInterval: server.status ∈ transitionalStatuses ? 1000 : false,
+  });
+}
 ```
 
 ### Integration Testing
-WebSocket tests in `catalyst-agent` use `tokio-test` crate:
-```rust
-#[tokio::test]
-async fn test_server_start() {
-  let agent = CatalystAgent::new(config).await.unwrap();
-  // Simulate backend command
-  // Assert state change
-}
-```
+End-to-end flows test complete backend + agent + frontend interactions:
+- Run `./test-e2e-simple.sh` for basic flow (quick)
+- Run `./test-e2e-complete.sh` for comprehensive coverage
+- Run `cd tests && ./run-all-tests.sh` for full suite
+- Configure agent connection targets in `tests/config.env`
 
 ---
 
@@ -256,11 +322,53 @@ async fn test_server_start() {
 3. Regenerate Prisma client: `npm run db:push` (automatic after migrate)
 4. Use in backend routes via `prisma.example.findUnique()`
 
+### Scheduled Tasks & Cron Scheduler
+File: [catalyst-backend/src/services/task-scheduler.ts](../catalyst-backend/src/services/task-scheduler.ts)
+
+Backend supports recurring tasks stored in `ScheduledTask` model:
+```typescript
+// Task payload structure
+{
+  id: string;          // UUID
+  serverId: string;
+  action: 'backup' | 'command' | 'restart';
+  cronExpression: '*/15 * * * *';  // Cron syntax
+  payload?: { command?: string };   // Optional data
+}
+```
+
+**Task executor pattern:**
+1. Task scheduler evaluates cron expressions every minute
+2. Executor builds environment with `SERVER_DIR`, `CATALYST_NETWORK_IP`
+3. Sends appropriate WebSocket message to agent (e.g., `create_backup`, `console_input`)
+4. No persistence of task results; agent handles execution
+
+**When adding new task types:**
+1. Add action to `ScheduledTask.action` enum
+2. Handle in index.ts `taskScheduler.setTaskExecutor()` callback
+3. Send correct message type to agent via `wsGateway.sendToAgent()`
+
+### Containerd & Container Lifecycle  
+File: [catalyst-agent/src/runtime_manager.rs](../catalyst-agent/src/runtime_manager.rs)
+
+Agent connects to Containerd via Unix socket (not Docker):
+- Configuration: `socket_path: /run/containerd/containerd.sock` in `config.toml`
+- Namespace isolation: defaults to `"catalyst"` namespace
+- Container creation expects pre-cached images or manual pull via `nerdctl`
+- No automatic image pulls; template specifies `image` + `installImage`
+
+**When adding agent operations:**
+1. Use Containerd API protocol buffers (pre-compiled in dependencies)
+2. All container operations async via Tokio
+3. Health checks via `container.Status()` API
+4. Log streaming via `Tasks.GetEvents()` for console output
+
 ### Modifying WebSocket Protocol
-1. Update `auro-backend/src/websocket/gateway.ts` for backend handling
-2. Update `catalyst-agent/src/websocket_handler.rs` for agent response
-3. Test message flow with `npm run dev` & manual WebSocket client
-4. **Critical:** Maintain backward compatibility with deployed agents (version message types)
+1. Update [catalyst-backend/src/websocket/gateway.ts](../catalyst-backend/src/websocket/gateway.ts) for backend message handling
+2. Update [catalyst-agent/src/websocket_handler.rs](../catalyst-agent/src/websocket_handler.rs) for agent response/parsing
+3. Test message flow with `npm run dev` in backend & manual WebSocket client or curl
+4. **Critical:** Maintain backward compatibility with deployed agents (version message types if needed)
+5. Message types use snake_case throughout (`node_handshake`, `server_state_update`, `console_output`)
 
 ### Deploying Changes
 Backend + Frontend:
@@ -296,10 +404,55 @@ systemctl restart catalyst-agent  # On node running service
 - Agent: Tracing crate with structured output
 - Production: Set `LOG_LEVEL=info`; Development: `LOG_LEVEL=debug`
 
+### Linting & Code Quality
+
+**Backend (TypeScript):**
+```bash
+npm run lint                          # Run ESLint on src/
+npm run lint -- --fix                # Auto-fix issues
+```
+
+Configuration: [catalyst-backend/.eslintrc.json](../catalyst-backend/.eslintrc.json)
+- Enforces TypeScript best practices
+- Warns on unused variables, missing return types
+- Prevents common pitfalls (floating promises, non-null assertions)
+- Type-checking enabled via tsconfig integration
+
+**Frontend (TypeScript + React):**
+```bash
+npm run lint                          # Run ESLint on all .ts,.tsx files
+npm run lint -- --fix                # Auto-fix issues
+npm run format                        # Format with Prettier
+```
+
+Configuration: [catalyst-frontend/.eslintrc.cjs](../catalyst-frontend/.eslintrc.cjs)
+- Enforces React 18 best practices (no need for React imports in JSX)
+- TypeScript type safety rules
+- React Hook exhaustive dependencies checking
+- Integrates with Prettier for auto-formatting
+
+**Key ESLint Rules Applied Across Codebase:**
+- `eqeqeq: error` - Require strict equality (`===`)
+- `no-debugger: error` - Prevent debugger statements in production
+- `prefer-const` - Use `const` over `let` when possible
+- `@typescript-eslint/no-explicit-any: warn` - Avoid `any` types
+- `@typescript-eslint/consistent-type-imports` - Use `import type` for types
+- `@typescript-eslint/no-floating-promises` - Handle promises properly
+- `max-depth: warn (4)` - Warn on deeply nested code
+- `complexity: warn (15)` - Warn on high cyclomatic complexity
+
+**When adding new code:**
+1. Run linter before committing: `npm run lint`
+2. Fix auto-fixable issues: `npm run lint -- --fix`
+3. Address warnings about types, promises, and complexity
+4. For frontend, ensure React hooks deps are exhaustive
+5. Frontend: Format with Prettier: `npm run format`
+
 ### Configuration
 - Use `.env` files (never commit secrets)
 - `.env.example` with all required variables documented
 - `.env.development` for local overrides
+- Agent config in `catalyst-agent/config.toml` or `config-e2e.toml`
 
 ---
 
@@ -321,6 +474,50 @@ systemctl restart catalyst-agent  # On node running service
 4. **WebSocket messages lost?** Add logging in `www.send()` calls; check network tab in devtools
 5. **Slow API?** Run `npm run db:studio` to inspect query performance, check indexes
 
+## Common Gotchas & Patterns to Avoid
+
+- **DO NOT trust agent state reports** - Always validate in backend before persisting
+- **DO NOT skip path validation** - Even if frontend validates, validate again on agent
+- **DO NOT assume WebSocket is connected** - Always check connection state before sending
+- **DO NOT modify server state without database update** - Persist first, then send WebSocket message
+- **DO NOT reuse server UUIDs** - Use `nanoid()` for unique IDs across all servers
+- **Frontend state refetch:** Servers in transitional states auto-refetch every 1s via TanStack Query
+- **Agent reconnection:** Exponential backoff every 5 seconds; no max retry limit (runs forever)
+
+---
+
+## Quick Command Reference
+
+**Start local dev environment:**
+```bash
+docker-compose up -d                    # PostgreSQL on :5432
+cd catalyst-backend && npm run dev &    # Backend on :3000
+cd catalyst-frontend && npm run dev &   # Frontend on :5173
+# Login: admin@example.com / password123
+```
+
+**Database operations:**
+```bash
+npm run db:push      # Sync schema changes
+npm run db:migrate   # Create migration with name prompt
+npm run db:studio    # Prisma Studio GUI
+npm run db:seed      # Populate with test data
+```
+
+**Testing:**
+```bash
+./test-backend.sh                       # Quick API smoke test
+./test-api-integration.sh               # Extended API tests
+cd catalyst-frontend && npm run test    # Unit tests
+cd tests && ./run-all-tests.sh          # Full E2E suite
+```
+
+**Agent development:**
+```bash
+cd catalyst-agent && cargo build        # Debug build
+cd catalyst-agent && cargo build --release  # Optimized
+```
+
 ---
 
 ## Files to Reference
@@ -332,22 +529,6 @@ systemctl restart catalyst-agent  # On node running service
 - **Agent Structure:** `catalyst-agent/src/` (websocket_handler, runtime_manager, file_manager)
 - **Database Schema:** `catalyst-backend/prisma/schema.prisma`
 - **Test Examples:** `tests/` directory (bash) + `catalyst-frontend/` (vitest, playwright)
-
----
-
-## Next Priority Features
-
-**Ordered by criticality:**
-1. ✅ Server state machine & lifecycle (DONE)
-2. ✅ File operations (DONE)
-3. ✅ Console logging & streaming (DONE)
-4. ✅ Resource monitoring (DONE)
-5. 🔲 Backup/restore system (database models ready, needs agent testing)
-6. 🔲 Crash detection & auto-restart (monitoring logic exists, auto-restart not yet)
-7. 🔲 SFTP server (code present, needs user mapping & chroot testing)
-8. 🔲 Task scheduling (cron scheduler implemented, needs server-side execution)
-9. 🔲 Alert monitoring (framework ready, thresholding incomplete)
-10. 🔲 Rate limiting & security hardening
 
 ---
 
