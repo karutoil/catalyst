@@ -68,6 +68,8 @@ const tabLabels = {
   settings: 'Settings',
 } as const;
 
+const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : '—');
+
 function ServerDetailsPage() {
   const { serverId, tab } = useParams();
   const navigate = useNavigate();
@@ -892,6 +894,29 @@ function ServerDetailsPage() {
                       {task.description || 'No description'}
                     </div>
                     <div className="mt-2 text-xs text-slate-500">Schedule: {task.schedule}</div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-400 sm:grid-cols-4">
+                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
+                        <div className="text-slate-500">Next run</div>
+                        <div className="text-slate-200">{formatDateTime(task.nextRunAt)}</div>
+                      </div>
+                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
+                        <div className="text-slate-500">Last run</div>
+                        <div className="text-slate-200">{formatDateTime(task.lastRunAt)}</div>
+                      </div>
+                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
+                        <div className="text-slate-500">Status</div>
+                        <div className="text-slate-200">{task.lastStatus ?? '—'}</div>
+                      </div>
+                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
+                        <div className="text-slate-500">Runs</div>
+                        <div className="text-slate-200">{task.runCount ?? 0}</div>
+                      </div>
+                    </div>
+                    {task.lastError ? (
+                      <div className="mt-2 rounded-md border border-rose-900/70 bg-rose-950/40 px-3 py-2 text-[11px] text-rose-200">
+                        {task.lastError}
+                      </div>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2 text-xs">
                       <EditTaskModal serverId={server.id} task={task} disabled={isSuspended} />
                       <button

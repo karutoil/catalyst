@@ -298,6 +298,8 @@ model ScheduledTask {
   enabled     Boolean  @default(true)
   lastRunAt   DateTime?
   nextRunAt   DateTime?
+  lastStatus  String?  // success, failed, skipped
+  lastError   String?
   runCount    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

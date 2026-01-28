@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import cron from 'node-cron';
+import cronParser from 'cron-parser';
 
 export async function taskRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
@@ -94,6 +95,17 @@ export async function taskRoutes(app: FastifyInstance) {
       );
       if (!canSchedule) return;
 
+      let nextRunAt: Date | null = null;
+      try {
+        const interval = cronParser.parseExpression(schedule, {
+          currentDate: new Date(),
+          tz: process.env.TZ || 'UTC',
+        });
+        nextRunAt = interval.next().toDate();
+      } catch (error) {
+        return reply.status(400).send({ error: 'Invalid cron expression' });
+      }
+
       // Create task
       const task = await prisma.scheduledTask.create({
         data: {
@@ -104,6 +116,7 @@ export async function taskRoutes(app: FastifyInstance) {
           payload: payload || {},
           schedule,
           enabled: true,
+          nextRunAt,
         },
       });
 
@@ -240,6 +253,19 @@ export async function taskRoutes(app: FastifyInstance) {
         });
       }
 
+      let nextRunAt: Date | undefined;
+      if (schedule) {
+        try {
+          const interval = cronParser.parseExpression(schedule, {
+            currentDate: new Date(),
+            tz: process.env.TZ || 'UTC',
+          });
+          nextRunAt = interval.next().toDate();
+        } catch (error) {
+          return reply.status(400).send({ error: 'Invalid cron expression' });
+        }
+      }
+
       // Update task
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
@@ -247,6 +273,7 @@ export async function taskRoutes(app: FastifyInstance) {
       if (action !== undefined) updateData.action = action;
       if (payload !== undefined) updateData.payload = payload;
       if (schedule !== undefined) updateData.schedule = schedule;
+      if (nextRunAt) updateData.nextRunAt = nextRunAt;
       if (enabled !== undefined) updateData.enabled = enabled;
 
       const task = await prisma.scheduledTask.update({

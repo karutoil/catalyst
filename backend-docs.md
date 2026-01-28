@@ -1478,12 +1478,14 @@ Extract a tar.gz archive.
       "name": "Daily Restart",
       "action": "restart",
       "schedule": "0 3 * * *",
-      "payload": null,
-      "enabled": true,
-      "lastRunAt": "2026-01-25T03:00:00.000Z",
-      "nextRunAt": "2026-01-26T03:00:00.000Z",
-      "runCount": 45,
-      "createdAt": "2026-01-01T00:00:00.000Z"
+        "payload": null,
+        "enabled": true,
+        "lastRunAt": "2026-01-25T03:00:00.000Z",
+        "nextRunAt": "2026-01-26T03:00:00.000Z",
+        "lastStatus": "success",
+        "lastError": null,
+        "runCount": 45,
+        "createdAt": "2026-01-01T00:00:00.000Z"
     }
   ]
 }
@@ -1545,6 +1547,10 @@ Extract a tar.gz archive.
 - `0 3 * * *` - Every day at 3:00 AM
 - `*/30 * * * *` - Every 30 minutes
 - `0 0 * * 0` - Every Sunday at midnight
+
+**Scheduler Notes:**
+- Scheduler uses `TZ` (defaults to `UTC`) for cron evaluation.
+- If a task is missed (server offline), it runs once as soon as the scheduler resumes.
 
 ---
 

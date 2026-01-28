@@ -7,6 +7,11 @@ export interface Task {
   schedule: string;
   serverId: string;
   enabled?: boolean;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  runCount?: number;
+  lastStatus?: string | null;
+  lastError?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

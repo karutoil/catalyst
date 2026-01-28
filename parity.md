@@ -88,12 +88,12 @@ Catalyst is missing several core Wings-equivalent features across backend, agent
 
 ### Phase 6 — Scheduler Accuracy & Reliability
 **Backend**
-- [ ] Replace placeholder `calculateNextRun()` with proper cron parser.
-- [ ] Ensure missed runs are handled (catch-up strategy).
-- [ ] Add task execution logging + last status.
+- [x] Replace placeholder `calculateNextRun()` with proper cron parser.
+- [x] Ensure missed runs are handled (catch-up strategy).
+- [x] Add task execution logging + last status.
 
 **Frontend**
-- [ ] Show nextRunAt, last status, and last error.
+- [x] Show nextRunAt, last status, and last error.
 
 ### Phase 7 — Agent File Archive Ops
 **Agent**
