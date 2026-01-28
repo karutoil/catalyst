@@ -115,6 +115,7 @@ taskScheduler.setTaskExecutor({
         allocatedCpuCores: server.allocatedCpuCores,
         allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
+        portBindings: server.portBindings ?? {},
         networkMode: server.networkMode,
       });
       return;
@@ -131,6 +132,7 @@ taskScheduler.setTaskExecutor({
         allocatedCpuCores: server.allocatedCpuCores,
         allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
+        portBindings: server.portBindings ?? {},
         networkMode: server.networkMode,
       });
       return;

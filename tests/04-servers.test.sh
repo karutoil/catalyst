@@ -113,8 +113,46 @@ assert_http_code "$http_code" "200" "PUT /api/servers/{id}"
 assert_json_field "$body" "data.name" "$NEW_NAME" "Name should be updated"
 assert_json_field "$body" "data.allocatedMemoryMb" "4096" "Memory should be updated"
 
-# Test 5: Create Server with Port Conflict
-log_info "Test 5: Create server with conflicting port"
+# Test 5: Add server allocation
+log_info "Test 5: Add server allocation"
+ALLOC_BODY="{\"containerPort\": $((SERVER_PORT + 1)), \"hostPort\": $((SERVER_PORT + 2))}"
+response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/allocations" "$ALLOC_BODY" "Authorization: Bearer $TOKEN")
+http_code=$(parse_http_code "$response")
+body=$(parse_response "$response")
+if [ "$http_code" = "409" ]; then
+    response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/stop" "{}" "Authorization: Bearer $TOKEN")
+    sleep 2
+    response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/allocations" "$ALLOC_BODY" "Authorization: Bearer $TOKEN")
+    http_code=$(parse_http_code "$response")
+    body=$(parse_response "$response")
+fi
+assert_http_code "$http_code" "200" "POST /api/servers/{id}/allocations"
+
+response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}/allocations" "Authorization: Bearer $TOKEN")
+http_code=$(parse_http_code "$response")
+body=$(parse_response "$response")
+assert_http_code "$http_code" "200" "GET /api/servers/{id}/allocations"
+assert_json_field_exists "$body" "data[0].containerPort" "Allocations should return container port"
+
+response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/allocations/primary" "{\"containerPort\": $((SERVER_PORT + 1))}" "Authorization: Bearer $TOKEN")
+http_code=$(parse_http_code "$response")
+body=$(parse_response "$response")
+assert_http_code "$http_code" "200" "POST /api/servers/{id}/allocations/primary"
+
+response=$(http_delete "${BACKEND_URL}/api/servers/${SERVER_ID}/allocations/$((SERVER_PORT + 1))" "Authorization: Bearer $TOKEN")
+http_code=$(parse_http_code "$response")
+assert_http_code "$http_code" "400" "DELETE /api/servers/{id}/allocations (cannot remove primary)"
+
+response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/allocations/primary" "{\"containerPort\": $SERVER_PORT}" "Authorization: Bearer $TOKEN")
+response=$(http_delete "${BACKEND_URL}/api/servers/${SERVER_ID}/allocations/$((SERVER_PORT + 1))" "Authorization: Bearer $TOKEN")
+http_code=$(parse_http_code "$response")
+assert_http_code "$http_code" "200" "DELETE /api/servers/{id}/allocations"
+
+response=$(http_post "${BACKEND_URL}/api/servers/${SERVER_ID}/start" "{}" "Authorization: Bearer $TOKEN")
+sleep 2
+
+# Test 6: Create Server with Port Conflict
+log_info "Test 6: Create server with conflicting port"
 response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"name\": \"conflict-server-$(random_string)\",
     \"templateId\": \"$TEMPLATE_ID\",
@@ -130,8 +168,8 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "400" "POST /api/servers (port conflict)"
 
-# Test 6: Create Server Exceeding Node Resources
-log_info "Test 6: Create server exceeding node resources"
+# Test 7: Create Server Exceeding Node Resources
+log_info "Test 7: Create server exceeding node resources"
 response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"name\": \"huge-server-$(random_string)\",
     \"templateId\": \"$TEMPLATE_ID\",
@@ -147,8 +185,8 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "400" "POST /api/servers (exceeds resources)"
 
-# Test 7: Create Server with Missing Required Fields
-log_info "Test 7: Create server with missing fields"
+# Test 8: Create Server with Missing Required Fields
+log_info "Test 8: Create server with missing fields"
 response=$(http_post "${BACKEND_URL}/api/servers" "{
     \"name\": \"incomplete-server\"
 }" "Authorization: Bearer $TOKEN")
@@ -156,29 +194,29 @@ response=$(http_post "${BACKEND_URL}/api/servers" "{
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "400" "POST /api/servers (missing fields)"
 
-# Test 8: Get Server Files List
-log_info "Test 8: Get server files list"
+# Test 9: Get Server Files List
+log_info "Test 9: Get server files list"
 response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}/files" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "200" "GET /api/servers/{id}/files"
 
-# Test 9: Get Server Logs
-log_info "Test 9: Get server logs"
+# Test 10: Get Server Logs
+log_info "Test 10: Get server logs"
 response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}/logs" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "200" "GET /api/servers/{id}/logs"
 
-# Test 10: Get Non-existent Server
-log_info "Test 10: Get non-existent server"
+# Test 11: Get Non-existent Server
+log_info "Test 11: Get non-existent server"
 response=$(http_get "${BACKEND_URL}/api/servers/nonexistent-id" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "404" "GET /api/servers/{id} (non-existent)"
 
-# Test 11: Unauthorized Access to Another User's Server
-log_info "Test 11: Attempt unauthorized access"
+# Test 12: Unauthorized Access to Another User's Server
+log_info "Test 12: Attempt unauthorized access"
 # Create another user
 response=$(http_post "${BACKEND_URL}/api/auth/register" "{
     \"email\": \"$(random_email)\",
@@ -192,15 +230,15 @@ response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}" "Authorization: Be
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "403" "GET /api/servers/{id} (unauthorized)"
 
-# Test 12: Delete Server
-log_info "Test 12: Delete server"
+# Test 13: Delete Server
+log_info "Test 13: Delete server"
 response=$(http_delete "${BACKEND_URL}/api/servers/${SERVER_ID}" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")
 assert_http_code "$http_code" "200" "DELETE /api/servers/{id}"
 
-# Test 13: Verify Server Deleted
-log_info "Test 13: Verify server is deleted"
+# Test 14: Verify Server Deleted
+log_info "Test 14: Verify server is deleted"
 response=$(http_get "${BACKEND_URL}/api/servers/${SERVER_ID}" "Authorization: Bearer $TOKEN")
 
 http_code=$(parse_http_code "$response")

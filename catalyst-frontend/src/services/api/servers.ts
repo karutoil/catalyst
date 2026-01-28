@@ -88,4 +88,25 @@ export const serversApi = {
     const { data } = await apiClient.get<ApiResponse<any>>(`/api/servers/${id}/metrics`, { params });
     return data.data;
   },
+  allocations: async (id: string) => {
+    const { data } = await apiClient.get<ApiResponse<any>>(`/api/servers/${id}/allocations`);
+    return data.data || [];
+  },
+  addAllocation: async (id: string, payload: { containerPort: number; hostPort: number }) => {
+    const { data } = await apiClient.post<ApiResponse<any>>(`/api/servers/${id}/allocations`, payload);
+    return data.data;
+  },
+  removeAllocation: async (id: string, containerPort: number) => {
+    const { data } = await apiClient.delete<ApiResponse<void>>(
+      `/api/servers/${id}/allocations/${containerPort}`,
+    );
+    return data;
+  },
+  setPrimaryAllocation: async (id: string, containerPort: number) => {
+    const { data } = await apiClient.post<ApiResponse<any>>(
+      `/api/servers/${id}/allocations/primary`,
+      { containerPort },
+    );
+    return data.data;
+  },
 };

@@ -550,6 +550,10 @@ Core server management endpoints.
     "allocatedCpuCores": 2,
     "allocatedDiskMb": 10240,
     "primaryPort": 25565,
+    "portBindings": {
+      "25565": 25565,
+      "25575": 25575
+    },
   "networkMode": "bridge",
   "environment": {
     "EULA": "TRUE",
@@ -577,6 +581,98 @@ Core server management endpoints.
 - `400` - Missing required template variables
 - `400` - Node does not have enough resources
 - `404` - Template or node not found
+
+---
+
+### List Allocations
+
+List all port bindings for a server.
+
+**Endpoint:** `GET /api/servers/:serverId/allocations`  
+**Authentication:** Required (server.read permission or server owner)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "containerPort": 25565,
+      "hostPort": 25565,
+      "isPrimary": true
+    }
+  ]
+}
+```
+
+---
+
+### Add Allocation
+
+Add a new port binding to a server (server must be stopped).
+
+**Endpoint:** `POST /api/servers/:serverId/allocations`  
+**Authentication:** Required (server.update permission or server owner)
+
+**Request Body:**
+```json
+{
+  "containerPort": 25566,
+  "hostPort": 25570
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "containerPort": 25566,
+    "hostPort": 25570,
+    "isPrimary": false
+  }
+}
+```
+
+---
+
+### Remove Allocation
+
+Remove a non-primary port binding (server must be stopped).
+
+**Endpoint:** `DELETE /api/servers/:serverId/allocations/:containerPort`  
+**Authentication:** Required (server.update permission or server owner)
+
+**Response:** `200 OK`
+```json
+{ "success": true }
+```
+
+---
+
+### Set Primary Allocation
+
+Promote an existing allocation to primary (server must be stopped).
+
+**Endpoint:** `POST /api/servers/:serverId/allocations/primary`  
+**Authentication:** Required (server.update permission or server owner)
+
+**Request Body:**
+```json
+{
+  "containerPort": 25566
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "primaryPort": 25566
+  }
+}
+```
 
 ---
 

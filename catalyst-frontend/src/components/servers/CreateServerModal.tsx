@@ -17,6 +17,7 @@ function CreateServerModal() {
   const [cpu, setCpu] = useState('1');
   const [disk, setDisk] = useState('10240');
   const [port, setPort] = useState('25565');
+  const [portBindings, setPortBindings] = useState<string[]>([]);
   const [environment, setEnvironment] = useState<Record<string, string>>({});
   const [networkMode, setNetworkMode] = useState<'bridge' | 'mc-lan' | 'mc-lan-static'>(
     'mc-lan-static',
@@ -80,6 +81,26 @@ function CreateServerModal() {
           ? { CATALYST_NETWORK_IP: requestedIp.trim() }
           : {};
 
+      const normalizedBindings = portBindings
+        .map(binding => binding.trim())
+        .filter(Boolean)
+        .reduce<Record<number, number>>((acc, binding) => {
+          const [containerPortRaw, hostPortRaw] = binding.split(':');
+          const containerPort = Number(containerPortRaw);
+          const hostPort = Number(hostPortRaw ?? containerPortRaw);
+          if (
+            Number.isFinite(containerPort) &&
+            Number.isFinite(hostPort) &&
+            containerPort > 0 &&
+            containerPort <= 65535 &&
+            hostPort > 0 &&
+            hostPort <= 65535
+          ) {
+            acc[containerPort] = hostPort;
+          }
+          return acc;
+        }, {});
+
       const server = await serversApi.create({
         name,
         templateId,
@@ -89,6 +110,7 @@ function CreateServerModal() {
         allocatedCpuCores: Number(cpu),
         allocatedDiskMb: Number(disk),
         primaryPort: Number(port),
+        portBindings: Object.keys(normalizedBindings).length ? normalizedBindings : undefined,
         networkMode,
         environment: {
           ...environment,
@@ -115,6 +137,7 @@ function CreateServerModal() {
       setEnvironment({});
       setNetworkMode('mc-lan-static');
       setRequestedIp('');
+      setPortBindings([]);
       if (server?.id) {
         navigate(`/servers/${server.id}/console`);
       }
@@ -253,6 +276,42 @@ function CreateServerModal() {
                   min={1024}
                   max={65535}
                 />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-300">Additional port bindings</span>
+                <div className="space-y-2 text-xs text-slate-400">
+                  <p>Format: container:host (example: 25566:25570). Host defaults to container.</p>
+                  {portBindings.map((binding, index) => (
+                    <div key={`${binding}-${index}`} className="flex items-center gap-2">
+                      <input
+                        className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                        value={binding}
+                        onChange={(event) => {
+                          const next = [...portBindings];
+                          next[index] = event.target.value;
+                          setPortBindings(next);
+                        }}
+                        placeholder="25566:25570"
+                      />
+                      <button
+                        type="button"
+                        className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500"
+                        onClick={() => {
+                          setPortBindings(portBindings.filter((_, i) => i !== index));
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                    onClick={() => setPortBindings([...portBindings, ''])}
+                  >
+                    Add binding
+                  </button>
+                </div>
               </label>
               <label className="block space-y-1">
                 <span className="text-slate-300">Network</span>

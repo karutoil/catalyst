@@ -371,7 +371,12 @@ export class WebSocketGateway {
         // Update server status in database
         await this.prisma.server.update({
           where: { id: message.serverId },
-          data: { status: message.state },
+          data: {
+            status: message.state,
+            ...(message.portBindings && typeof message.portBindings === "object"
+              ? { portBindings: message.portBindings }
+              : {}),
+          },
         });
         if (message.reason) {
           await this.prisma.serverLog.create({

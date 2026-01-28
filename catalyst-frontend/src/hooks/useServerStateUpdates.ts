@@ -24,7 +24,11 @@ export function useServerStateUpdates() {
           (previous: any) => {
             if (!previous || typeof previous !== 'object') return previous;
             if (!matchesServerId(previous)) return previous;
-            return { ...previous, status: nextState };
+            return {
+              ...previous,
+              status: nextState,
+              portBindings: message.portBindings ?? previous.portBindings,
+            };
           },
         );
 
@@ -35,7 +39,13 @@ export function useServerStateUpdates() {
         queryClient.setQueriesData({ predicate: serverListPredicate }, (previous: any) => {
           if (!Array.isArray(previous)) return previous;
           return previous.map((server) =>
-            matchesServerId(server) ? { ...server, status: nextState } : server,
+            matchesServerId(server)
+              ? {
+                  ...server,
+                  status: nextState,
+                  portBindings: message.portBindings ?? server.portBindings,
+                }
+              : server,
           );
         });
 
