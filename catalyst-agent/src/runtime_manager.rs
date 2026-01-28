@@ -132,14 +132,18 @@ impl ContainerdRuntime {
         // we do not need the container runtime to allocate an interactive stdin stream.
         
         cmd.arg("-v")
-            .arg(format!("{}:{}:ro", console_fifo.dir, console_fifo.dir));
+            .arg(format!("{}:{}", console_fifo.dir, console_fifo.dir));
         cmd.arg(image);
 
         // Startup command (if provided)
         if !startup_command.is_empty() {
             // Pipe FIFO directly into the server process stdin.
             let fifo_path = shell_quote(&console_fifo.path);
-            let pipeline = format!("exec < {} ; exec {}", fifo_path, startup_command);
+            // Keep a read/write handle open to avoid EOF when the agent restarts.
+            let pipeline = format!(
+                "exec 3<> {} ; exec < {} ; exec {}",
+                fifo_path, fifo_path, startup_command
+            );
             cmd.arg("sh").arg("-c").arg(pipeline);
         }
 

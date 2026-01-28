@@ -228,6 +228,40 @@ model Server {
   ipAllocation   IpAllocation?
 }
 
+// ============================================================================
+// DATABASES
+// ============================================================================
+
+model DatabaseHost {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  host      String
+  port      Int      @default(3306)
+  username  String
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  databases ServerDatabase[]
+}
+
+model ServerDatabase {
+  id        String   @id @default(cuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  hostId    String
+  host      DatabaseHost @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  name      String
+  username  String
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([hostId, name])
+  @@unique([hostId, username])
+  @@index([serverId])
+}
+
 model Backup {
   id          String   @id @default(cuid())
   serverId    String

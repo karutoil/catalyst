@@ -40,8 +40,6 @@
 - Crash handling (restartPolicy not enforced; no exit-code reporting)
 
 **Missing**
-- Server suspension/unsuspension
-- Per-server database management
 - Secondary allocations/port bindings
 
 ---
@@ -676,6 +674,124 @@ Clear suspension and return the server to `stopped`.
 
 **Errors:**
 - `409` - Server is not suspended
+
+---
+
+### List Databases
+
+List databases provisioned for a server.
+
+**Endpoint:** `GET /api/servers/:serverId/databases`  
+**Authentication:** Required (`database.read` permission or server owner)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "db_123",
+      "name": "srv_primary",
+      "username": "uabc123",
+      "password": "psecret",
+      "host": "mysql.internal",
+      "port": 3306,
+      "hostId": "host_123",
+      "hostName": "primary-mysql",
+      "createdAt": "2026-01-28T02:05:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### Create Database
+
+Create a database for a server.
+
+**Endpoint:** `POST /api/servers/:serverId/databases`  
+**Authentication:** Required (`database.create` permission or server owner)
+
+**Request Body:**
+```json
+{
+  "hostId": "host_123",
+  "name": "server_db"
+}
+```
+
+**Response:** `201 Created`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "db_123",
+    "name": "server_db",
+    "username": "uabc123",
+    "password": "psecret",
+    "host": "mysql.internal",
+    "port": 3306,
+    "hostId": "host_123",
+    "hostName": "primary-mysql",
+    "createdAt": "2026-01-28T02:05:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `400` - Invalid hostId or name
+- `409` - Name/username already exists on host
+- `503` - Database host unavailable
+
+---
+
+### Rotate Database Password
+
+Generate a new password for a database.
+
+**Endpoint:** `POST /api/servers/:serverId/databases/:databaseId/rotate`  
+**Authentication:** Required (`database.rotate` permission or server owner)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "db_123",
+    "name": "server_db",
+    "username": "uabc123",
+    "password": "pnewsecret",
+    "host": "mysql.internal",
+    "port": 3306,
+    "hostId": "host_123",
+    "hostName": "primary-mysql",
+    "createdAt": "2026-01-28T02:05:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `503` - Database host unavailable
+
+---
+
+### Delete Database
+
+Remove a database from the panel.
+
+**Endpoint:** `DELETE /api/servers/:serverId/databases/:databaseId`  
+**Authentication:** Required (`database.delete` permission or server owner)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true
+}
+```
+
+**Errors:**
+- `503` - Database host unavailable
 
 ---
 
@@ -2442,6 +2558,9 @@ Permissions use dot notation: `resource.action`
 
 **Admin:**
 - `admin.read`, `admin.write`, `admin.*`
+
+**Database:**
+- `database.create`, `database.read`, `database.rotate`, `database.delete`
 
 ---
 

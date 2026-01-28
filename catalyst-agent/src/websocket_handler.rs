@@ -282,12 +282,6 @@ impl WebSocketHandler {
 
         let _ = self.runtime.send_input(&container_id, "\n").await;
         self.spawn_log_stream(server_id, &container_id);
-        self.emit_console_output(
-            server_id,
-            "system",
-            "[Catalyst] Console reattached after agent restart.\n",
-        )
-        .await?;
 
         Ok(())
     }

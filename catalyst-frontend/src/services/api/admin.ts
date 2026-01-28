@@ -7,6 +7,7 @@ import type {
   AdminStats,
   AdminUsersResponse,
   AuditLogsResponse,
+  DatabaseHost,
 } from '../../types/admin';
 
 type ApiResponse<T> = {
@@ -113,6 +114,43 @@ export const adminApi = {
   },
   deleteIpPool: async (poolId: string) => {
     const { data } = await apiClient.delete<ApiResponse<void>>(`/api/admin/ip-pools/${poolId}`);
+    return data;
+  },
+  listDatabaseHosts: async () => {
+    const { data } = await apiClient.get<ApiResponse<DatabaseHost[]>>('/api/admin/database-hosts');
+    return data.data || [];
+  },
+  createDatabaseHost: async (payload: {
+    name: string;
+    host: string;
+    port?: number;
+    username: string;
+    password: string;
+  }) => {
+    const { data } = await apiClient.post<ApiResponse<DatabaseHost>>(
+      '/api/admin/database-hosts',
+      payload,
+    );
+    return data.data;
+  },
+  updateDatabaseHost: async (
+    hostId: string,
+    payload: {
+      name?: string;
+      host?: string;
+      port?: number;
+      username?: string;
+      password?: string;
+    },
+  ) => {
+    const { data } = await apiClient.put<ApiResponse<DatabaseHost>>(
+      `/api/admin/database-hosts/${hostId}`,
+      payload,
+    );
+    return data.data;
+  },
+  deleteDatabaseHost: async (hostId: string) => {
+    const { data } = await apiClient.delete<ApiResponse<void>>(`/api/admin/database-hosts/${hostId}`);
     return data;
   },
 };

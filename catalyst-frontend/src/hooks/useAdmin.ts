@@ -52,3 +52,10 @@ export function useAuditLogs(params?: {
     queryFn: () => adminApi.listAuditLogs(params),
   });
 }
+
+export function useDatabaseHosts() {
+  return useQuery({
+    queryKey: ['admin-database-hosts'],
+    queryFn: adminApi.listDatabaseHosts,
+  });
+}

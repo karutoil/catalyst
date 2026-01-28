@@ -10,6 +10,7 @@ export type ServerStatus =
 
 export interface Server {
   id: string;
+  ownerId?: string;
   name: string;
   status: ServerStatus;
   nodeId: string;
