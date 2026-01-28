@@ -773,8 +773,6 @@ export async function serverRoutes(app: FastifyInstance) {
         portBindings !== undefined && portBindings !== null;
       const resolvedPortBindings =
         hasExplicitPortBindings
-      const resolvedPortBindings =
-        hasPortBindingChanges
           ? normalizePortBindings(portBindings, nextPrimaryPort)
           : parseStoredPortBindings(server.portBindings);
       const effectiveBindings =

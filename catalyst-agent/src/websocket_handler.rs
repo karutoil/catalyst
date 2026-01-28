@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -456,7 +456,9 @@ impl WebSocketHandler {
             };
             self.emit_console_output(server_id, "stderr", &format!("{}\n", reason))
                 .await?;
-            self.emit_server_state_update(server_id, "error", Some(reason.clone()))
+            // The fourth argument is an optional metadata/progress payload for the state update;
+            // we pass None here because the install failed and there is no additional data to attach.
+            self.emit_server_state_update(server_id, "error", Some(reason.clone()), None)
                 .await?;
             return Err(AgentError::InstallationError(format!(
                 "Install script failed: {}",
@@ -470,7 +472,7 @@ impl WebSocketHandler {
         }
 
         // Emit state update
-        self.emit_server_state_update(server_id, "stopped", None)
+        self.emit_server_state_update(server_id, "stopped", None, None)
             .await?;
 
         info!("Server installed successfully: {}", server_uuid);
