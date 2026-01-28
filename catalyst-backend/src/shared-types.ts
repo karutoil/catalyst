@@ -14,6 +14,7 @@ export enum ServerState {
   RUNNING = "running",
   STOPPING = "stopping",
   CRASHED = "crashed",
+  SUSPENDED = "suspended",
   ERROR = "error",
 }
 
@@ -32,6 +33,7 @@ export enum Permission {
   CONSOLE_WRITE = "console.write",
   SERVER_CREATE = "server.create",
   SERVER_DELETE = "server.delete",
+  SERVER_SUSPEND = "server.suspend",
 }
 
 // ============================================================================

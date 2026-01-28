@@ -9,6 +9,7 @@ const statuses: ServerStatus[] = [
   'stopping',
   'crashed',
   'transferring',
+  'suspended',
 ];
 
 type Props = {

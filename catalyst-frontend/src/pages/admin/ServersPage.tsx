@@ -1,14 +1,20 @@
 import { useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import AdminTabs from '../../components/admin/AdminTabs';
 import EmptyState from '../../components/shared/EmptyState';
 import { useAdminServers } from '../../hooks/useAdmin';
 import type { AdminServer } from '../../types/admin';
+import { adminApi } from '../../services/api/admin';
+import { notifyError, notifySuccess } from '../../utils/notify';
 
 const pageSize = 20;
 
 function AdminServersPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('');
+  const [actionServer, setActionServer] = useState<AdminServer | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
+  const queryClient = useQueryClient();
   const { data, isLoading } = useAdminServers({
     page,
     limit: pageSize,
@@ -22,6 +28,34 @@ function AdminServersPage() {
     () => Array.from(new Set(servers.map((server) => server.status))).sort(),
     [servers],
   );
+
+  const suspendMutation = useMutation({
+    mutationFn: (payload: { serverId: string; reason?: string }) =>
+      adminApi.suspendServer(payload.serverId, payload.reason),
+    onSuccess: () => {
+      notifySuccess('Server suspended');
+      queryClient.invalidateQueries({ queryKey: ['admin-servers'] });
+      setActionServer(null);
+      setSuspendReason('');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to suspend server';
+      notifyError(message);
+    },
+  });
+
+  const unsuspendMutation = useMutation({
+    mutationFn: (serverId: string) => adminApi.unsuspendServer(serverId),
+    onSuccess: () => {
+      notifySuccess('Server unsuspended');
+      queryClient.invalidateQueries({ queryKey: ['admin-servers'] });
+      setActionServer(null);
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to unsuspend server';
+      notifyError(message);
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -59,15 +93,16 @@ function AdminServersPage() {
       ) : servers.length ? (
         <div className="rounded-xl border border-slate-800 bg-slate-950/60">
           <div className="grid grid-cols-12 gap-3 border-b border-slate-800 px-4 py-3 text-xs uppercase text-slate-500">
-            <div className="col-span-4">Server</div>
+            <div className="col-span-3">Server</div>
             <div className="col-span-2">Status</div>
             <div className="col-span-3">Node</div>
-            <div className="col-span-3">Template</div>
+            <div className="col-span-2">Template</div>
+            <div className="col-span-2 text-right">Actions</div>
           </div>
           <div className="divide-y divide-slate-800">
             {servers.map((server: AdminServer) => (
               <div key={server.id} className="grid grid-cols-12 gap-3 px-4 py-3 text-sm text-slate-200">
-                <div className="col-span-4">
+                <div className="col-span-3">
                   <div className="font-semibold text-slate-100">{server.name}</div>
                   <div className="text-xs text-slate-500">{server.id}</div>
                 </div>
@@ -76,7 +111,29 @@ function AdminServersPage() {
                   <div className="text-slate-100">{server.node.name}</div>
                   <div className="text-xs text-slate-500">{server.node.hostname}</div>
                 </div>
-                <div className="col-span-3 text-slate-300">{server.template.name}</div>
+                <div className="col-span-2 text-slate-300">{server.template.name}</div>
+                <div className="col-span-2 flex justify-end gap-2 text-xs">
+                  {server.status === 'suspended' ? (
+                    <button
+                      className="rounded-md border border-emerald-600 px-2 py-1 text-emerald-200 hover:border-emerald-500 disabled:opacity-60"
+                      onClick={() => unsuspendMutation.mutate(server.id)}
+                      disabled={unsuspendMutation.isPending}
+                    >
+                      Unsuspend
+                    </button>
+                  ) : (
+                    <button
+                      className="rounded-md border border-rose-700 px-2 py-1 text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                      onClick={() => {
+                        setActionServer(server);
+                        setSuspendReason('');
+                      }}
+                      disabled={suspendMutation.isPending}
+                    >
+                      Suspend
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -110,6 +167,53 @@ function AdminServersPage() {
           description="No servers match the selected status filter."
         />
       )}
+      {actionServer ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-950 p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">Suspend server</h2>
+              <button
+                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                onClick={() => setActionServer(null)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 space-y-3 text-sm text-slate-100">
+              <div className="text-xs text-slate-400">Server: {actionServer.name}</div>
+              <label className="block space-y-1">
+                <span className="text-slate-300">Reason (optional)</span>
+                <input
+                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={suspendReason}
+                  onChange={(event) => setSuspendReason(event.target.value)}
+                  placeholder="e.g., Billing issue"
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2 text-xs">
+              <button
+                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                onClick={() => setActionServer(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-md bg-rose-700 px-4 py-2 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
+                onClick={() =>
+                  suspendMutation.mutate({
+                    serverId: actionServer.id,
+                    reason: suspendReason.trim() || undefined,
+                  })
+                }
+                disabled={suspendMutation.isPending}
+              >
+                Suspend
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -59,6 +59,8 @@ export interface AdminServer {
   id: string;
   name: string;
   status: string;
+  suspendedAt?: string | null;
+  suspensionReason?: string | null;
   node: AdminServerNode;
   template: AdminServerTemplate;
 }

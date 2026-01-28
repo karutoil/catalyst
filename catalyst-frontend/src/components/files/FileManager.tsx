@@ -20,7 +20,7 @@ type CreatePayload = {
 const isArchive = (name: string) =>
   name.endsWith('.tar.gz') || name.endsWith('.tgz') || name.endsWith('.zip');
 
-function FileManager({ serverId }: { serverId: string }) {
+function FileManager({ serverId, isSuspended = false }: { serverId: string; isSuspended?: boolean }) {
   const {
     path,
     setPath,
@@ -125,7 +125,10 @@ function FileManager({ serverId }: { serverId: string }) {
         openFile(entry);
       }
     },
-    onError: () => notifyError('Failed to create item'),
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to create item';
+      notifyError(message);
+    },
   });
 
   const saveMutation = useMutation({
@@ -138,7 +141,10 @@ function FileManager({ serverId }: { serverId: string }) {
       notifySuccess('File saved');
       invalidateFiles();
     },
-    onError: () => notifyError('Failed to save file'),
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to save file';
+      notifyError(message);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -154,7 +160,10 @@ function FileManager({ serverId }: { serverId: string }) {
       }
       notifySuccess('Deleted selection');
     },
-    onError: () => notifyError('Failed to delete selection'),
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to delete selection';
+      notifyError(message);
+    },
   });
 
   const uploadMutation = useMutation({
@@ -166,40 +175,55 @@ function FileManager({ serverId }: { serverId: string }) {
       setShowUpload(false);
       notifySuccess('Upload complete');
     },
-    onError: () => notifyError('Failed to upload files'),
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to upload files';
+      notifyError(message);
+    },
   });
 
   const compressMutation = useMutation({
-    mutationFn: async ({ paths, archive }: { paths: string[]; archive: string }) =>
-      filesApi.compress(serverId, { paths, archiveName: archive }),
+    mutationFn: async ({ paths, archive }: { paths: string[]; archive: string }) => {
+      return filesApi.compress(serverId, { paths, archiveName: archive });
+    },
     onSuccess: (data) => {
       invalidateFiles();
       setShowCompress(false);
       notifySuccess(data?.archivePath ? `Archive created at ${data.archivePath}` : 'Archive created');
     },
-    onError: () => notifyError('Failed to compress files'),
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to compress files';
+      notifyError(message);
+    },
   });
 
   const decompressMutation = useMutation({
-    mutationFn: async ({ archivePath, targetPath }: { archivePath: string; targetPath: string }) =>
-      filesApi.decompress(serverId, { archivePath, targetPath }),
+    mutationFn: async ({ archivePath, targetPath }: { archivePath: string; targetPath: string }) => {
+      return filesApi.decompress(serverId, { archivePath, targetPath });
+    },
     onSuccess: () => {
       invalidateFiles();
       setShowDecompress(false);
       notifySuccess('Archive extracted');
     },
-    onError: () => notifyError('Failed to extract archive'),
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to extract archive';
+      notifyError(message);
+    },
   });
 
   const permissionsMutation = useMutation({
-    mutationFn: async ({ path: targetPath, mode }: { path: string; mode: number }) =>
-      filesApi.updatePermissions(serverId, targetPath, mode),
+    mutationFn: async ({ path: targetPath, mode }: { path: string; mode: number }) => {
+      return filesApi.updatePermissions(serverId, targetPath, mode);
+    },
     onSuccess: () => {
       invalidateFiles();
       setPermissionsEntry(null);
       notifySuccess('Permissions updated');
     },
-    onError: () => notifyError('Failed to update permissions'),
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to update permissions';
+      notifyError(message);
+    },
   });
 
   const handleOpen = (entry: FileEntry) => {
@@ -358,6 +382,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 type="button"
                 className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
                 onClick={() => setShowUpload((prev) => !prev)}
+                disabled={isSuspended}
               >
                 Upload
               </button>
@@ -365,6 +390,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 type="button"
                 className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
                 onClick={() => setCreateMode('file')}
+                disabled={isSuspended}
               >
                 New file
               </button>
@@ -372,6 +398,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 type="button"
                 className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
                 onClick={() => setCreateMode('directory')}
+                disabled={isSuspended}
               >
                 New folder
               </button>
@@ -383,7 +410,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 Refresh
               </button>
             </div>
-          </div>
+        </div>
           {message ? <div className="mt-3 text-xs text-amber-300">{message}</div> : null}
           {selectedEntries.length ? (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
@@ -392,6 +419,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 type="button"
                 className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700"
                 onClick={() => setShowCompress(true)}
+                disabled={isSuspended}
               >
                 Compress
               </button>
@@ -400,6 +428,7 @@ function FileManager({ serverId }: { serverId: string }) {
                   type="button"
                   className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700"
                   onClick={() => setShowDecompress(true)}
+                  disabled={isSuspended}
                 >
                   Decompress
                 </button>
@@ -408,6 +437,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 type="button"
                 className="rounded-md border border-rose-800 px-2 py-1 text-xs text-rose-200 hover:border-rose-600"
                 onClick={() => setConfirmDelete(true)}
+                disabled={isSuspended}
               >
                 Delete
               </button>
@@ -481,7 +511,7 @@ function FileManager({ serverId }: { serverId: string }) {
               <button
                 type="submit"
                 className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                disabled={!createName.trim() || createMutation.isPending}
+                disabled={!createName.trim() || createMutation.isPending || isSuspended}
               >
                 Create
               </button>
@@ -520,7 +550,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 type="button"
                 className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
                 onClick={handleCompress}
-                disabled={!selectedEntries.length || compressMutation.isPending}
+                disabled={!selectedEntries.length || compressMutation.isPending || isSuspended}
               >
                 Create archive
               </button>
@@ -557,7 +587,7 @@ function FileManager({ serverId }: { serverId: string }) {
                 type="button"
                 className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
                 onClick={handleDecompress}
-                disabled={decompressMutation.isPending}
+                disabled={decompressMutation.isPending || isSuspended}
               >
                 Extract
               </button>
@@ -576,7 +606,7 @@ function FileManager({ serverId }: { serverId: string }) {
                   type="button"
                   className="rounded-md border border-rose-800 px-3 py-1 text-xs text-rose-200 hover:border-rose-600"
                   onClick={handleDeleteSelection}
-                  disabled={deleteMutation.isPending}
+                  disabled={deleteMutation.isPending || isSuspended}
                 >
                   Confirm delete
                 </button>
@@ -606,12 +636,34 @@ function FileManager({ serverId }: { serverId: string }) {
             onSelect={handleSelect}
             onDownload={handleDownload}
             onDelete={(entry) => {
+              if (isSuspended) {
+                notifyError('Server is suspended');
+                return;
+              }
               setSelectedPaths(new Set([entry.path]));
               setConfirmDelete(true);
             }}
-            onCompress={handleBulkCompressFromEntry}
-            onDecompress={handleBulkDecompressFromEntry}
-            onPermissions={handlePermissionsOpen}
+            onCompress={(entry) => {
+              if (isSuspended) {
+                notifyError('Server is suspended');
+                return;
+              }
+              handleBulkCompressFromEntry(entry);
+            }}
+            onDecompress={(entry) => {
+              if (isSuspended) {
+                notifyError('Server is suspended');
+                return;
+              }
+              handleBulkDecompressFromEntry(entry);
+            }}
+            onPermissions={(entry) => {
+              if (isSuspended) {
+                notifyError('Server is suspended');
+                return;
+              }
+              handlePermissionsOpen(entry);
+            }}
           />
         </div>
       </div>
@@ -637,6 +689,7 @@ function FileManager({ serverId }: { serverId: string }) {
               }}
               onClose={closeActiveFile}
               height="calc(90vh - 140px)"
+              isSuspended={isSuspended}
             />
           </div>
         </div>
@@ -698,7 +751,7 @@ function FileManager({ serverId }: { serverId: string }) {
               <button
                 type="submit"
                 className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                disabled={permissionsMutation.isPending}
+                disabled={permissionsMutation.isPending || isSuspended}
               >
                 Update
               </button>

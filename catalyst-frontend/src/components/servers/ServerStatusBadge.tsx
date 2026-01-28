@@ -8,6 +8,7 @@ const colorMap: Record<ServerStatus, string> = {
   stopping: 'bg-amber-600 text-white',
   crashed: 'bg-rose-700 text-white',
   transferring: 'bg-purple-700 text-white',
+  suspended: 'bg-rose-800 text-rose-100',
 };
 
 function ServerStatusBadge({ status }: { status: ServerStatus }) {

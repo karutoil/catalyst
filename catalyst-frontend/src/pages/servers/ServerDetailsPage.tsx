@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useServer } from '../../hooks/useServer';
 import { useServerMetrics } from '../../hooks/useServerMetrics';
@@ -20,9 +20,38 @@ import XtermConsole from '../../components/console/XtermConsole';
 import { useConsole } from '../../hooks/useConsole';
 import { useTasks } from '../../hooks/useTasks';
 import { serversApi } from '../../services/api/servers';
+import { filesApi } from '../../services/api/files';
 import { notifyError, notifySuccess } from '../../utils/notify';
+import {
+  detectConfigFormat,
+  parseConfig,
+  serializeConfig,
+  type ConfigMap,
+  type ConfigNode,
+} from '../../utils/configFormats';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../../services/api/tasks';
+
+type ConfigEntry = {
+  key: string;
+  value: string;
+  type: 'string' | 'number' | 'boolean' | 'null' | 'object';
+  children?: ConfigEntry[];
+};
+type ConfigSection = {
+  title: string;
+  entries: ConfigEntry[];
+  collapsed?: boolean;
+};
+type ConfigFileState = {
+  path: string;
+  sections: ConfigSection[];
+  format: ReturnType<typeof detectConfigFormat>;
+  error: string | null;
+  loaded: boolean;
+  viewMode: 'form' | 'raw';
+  rawContent: string;
+};
 
 const tabLabels = {
   console: 'Console',
@@ -43,10 +72,6 @@ function ServerDetailsPage() {
   const { data: tasks = [], isLoading: tasksLoading } = useTasks(serverId);
   const { isConnected } = useWebSocketStore();
   const queryClient = useQueryClient();
-  const activeTab = useMemo(() => {
-    const key = tab ?? 'console';
-    return key in tabLabels ? (key as keyof typeof tabLabels) : 'console';
-  }, [tab]);
 
   const {
     entries,
@@ -56,13 +81,28 @@ function ServerDetailsPage() {
     refetch: refetchConsole,
     clear: clearConsole,
   } = useConsole(serverId);
+
+  const isSuspended = server?.status === 'suspended';
+  const activeTab = useMemo(() => {
+    const key = tab ?? 'console';
+    return key in tabLabels ? (key as keyof typeof tabLabels) : 'console';
+  }, [tab]);
+
+  const canSend = isConnected && Boolean(serverId) && server?.status === 'running' && !isSuspended;
+  const [configFiles, setConfigFiles] = useState<ConfigFileState[]>([]);
+  const [openConfigIndex, setOpenConfigIndex] = useState(-1);
   const [command, setCommand] = useState('');
-  const canSend = isConnected && Boolean(serverId) && server?.status === 'running';
+  const [configSearch, setConfigSearch] = useState('');
+
   const pauseMutation = useMutation({
-    mutationFn: (task: { id: string; enabled: boolean }) =>
-      tasksApi.update(server.id, task.id, { enabled: !task.enabled }),
+    mutationFn: (task: { id: string; enabled: boolean }) => {
+      if (!server?.id) throw new Error('Server not loaded');
+      return tasksApi.update(server.id, task.id, { enabled: !task.enabled });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', server.id] });
+      if (server?.id) {
+        queryClient.invalidateQueries({ queryKey: ['tasks', server.id] });
+      }
       notifySuccess('Task updated');
     },
     onError: (error: any) => {
@@ -71,10 +111,41 @@ function ServerDetailsPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (taskId: string) => tasksApi.remove(server.id, taskId),
+  const configMutation = useMutation({
+    mutationFn: async (index: number) => {
+      if (!serverId) {
+        throw new Error('Missing server id');
+      }
+      const target = configFiles[index];
+      if (!target || !target.format) {
+        throw new Error('Missing config file path');
+      }
+      if (target.viewMode === 'raw') {
+        await filesApi.write(serverId, target.path, target.rawContent);
+        return;
+      }
+      const record = buildConfigRecord(target.sections);
+      const content = serializeConfig(target.format, record);
+      await filesApi.write(serverId, target.path, content);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', server.id] });
+      notifySuccess('Configuration saved');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to save config';
+      notifyError(message);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (taskId: string) => {
+      if (!server?.id) throw new Error('Server not loaded');
+      return tasksApi.remove(server.id, taskId);
+    },
+    onSuccess: () => {
+      if (server?.id) {
+        queryClient.invalidateQueries({ queryKey: ['tasks', server.id] });
+      }
       notifySuccess('Task deleted');
     },
     onError: (error: any) => {
@@ -83,15 +154,306 @@ function ServerDetailsPage() {
     },
   });
 
-  const handleSend = (event: FormEvent<HTMLFormElement>) => {
+  const normalizeEntry = (key: string, value: ConfigNode): ConfigEntry => {
+    if (isConfigMap(value)) {
+      const children = Object.entries(value).map(([childKey, childValue]) =>
+        normalizeEntry(childKey, childValue),
+      );
+      return { key, value: '', type: 'object', children };
+    }
+    if (value === null) {
+      return { key, value: '', type: 'null' };
+    }
+    if (typeof value === 'boolean') {
+      return { key, value: value ? 'true' : 'false', type: 'boolean' };
+    }
+    if (typeof value === 'number') {
+      return { key, value: String(value), type: 'number' };
+    }
+    return { key, value: String(value), type: 'string' };
+  };
+
+  const isConfigMap = (value: ConfigNode): value is ConfigMap =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+  const toSections = (record: ConfigMap): ConfigSection[] => {
+    const rootEntries: ConfigEntry[] = [];
+    const sections: ConfigSection[] = [];
+    Object.entries(record).forEach(([key, value]) => {
+      if (isConfigMap(value)) {
+        const nestedEntries = Object.entries(value).map(([childKey, childValue]) =>
+          normalizeEntry(childKey, childValue),
+        );
+        sections.push({ title: key, entries: nestedEntries, collapsed: true });
+      } else {
+        rootEntries.push(normalizeEntry(key, value));
+      }
+    });
+    if (rootEntries.length || sections.length === 0) {
+      sections.unshift({ title: 'General', entries: rootEntries, collapsed: false });
+    }
+    return sections;
+  };
+
+  const buildConfigRecord = (sections: ConfigSection[]): ConfigMap => {
+    const record: ConfigMap = {};
+    const inferType = (raw: string): ConfigEntry['type'] => {
+      const trimmed = raw.trim();
+      if (trimmed === '') return 'string';
+      if (trimmed === 'true' || trimmed === 'false') return 'boolean';
+      if (trimmed === 'null') return 'null';
+      if (!Number.isNaN(Number(trimmed))) return 'number';
+      return 'string';
+    };
+    const normalizeValue = (entry: ConfigEntry): ConfigNode => {
+      const resolvedType = entry.type === 'string' ? inferType(entry.value) : entry.type;
+      switch (resolvedType) {
+        case 'number':
+          return entry.value === '' ? 0 : Number(entry.value);
+        case 'boolean':
+          return entry.value === 'true';
+        case 'null':
+          return null;
+        case 'object': {
+          const output: ConfigMap = {};
+          (entry.children ?? []).forEach((child) => {
+            if (!child.key.trim()) return;
+            output[child.key] = normalizeValue(child);
+          });
+          return output;
+        }
+        default:
+          return entry.value;
+      }
+    };
+
+    sections.forEach((section) => {
+      const target =
+        section.title === 'General' ? record : ((record[section.title] ||= {}) as ConfigMap);
+      section.entries.forEach((entry) => {
+        if (!entry.key.trim()) return;
+        target[entry.key] = normalizeValue(entry);
+      });
+    });
+    return record;
+  };
+
+  const loadConfigFile = useCallback(async (pathValue: string) => {
+    const format = detectConfigFormat(pathValue);
+    if (!format) {
+      return {
+        path: pathValue,
+        sections: [],
+        format: null,
+        error: 'Unsupported config format.',
+        loaded: true,
+        viewMode: 'form',
+        rawContent: '',
+      } as ConfigFileState;
+    }
+    try {
+      const content = await filesApi.readText(serverId ?? '', pathValue);
+      const parsed = parseConfig(format, content);
+      const sections = toSections(parsed);
+      return {
+        path: pathValue,
+        sections,
+        format,
+        error: null,
+        loaded: true,
+        viewMode: 'form',
+        rawContent: content,
+      };
+    } catch (error: any) {
+      return {
+        path: pathValue,
+        sections: [],
+        format,
+        error: error?.message || 'Failed to load config file',
+        loaded: true,
+        viewMode: 'form',
+        rawContent: '',
+      };
+    }
+  }, [serverId]);
+
+  const filteredConfigFiles = useMemo(() => {
+    const query = configSearch.trim().toLowerCase();
+    if (!query) {
+      return configFiles;
+    }
+    const matchesEntry = (entry: ConfigEntry) => {
+      if (entry.key.toLowerCase().includes(query)) return true;
+      if (entry.value.toLowerCase().includes(query)) return true;
+      return (entry.children ?? []).some(matchesEntry);
+    };
+    return configFiles
+      .map((file) => {
+        if (file.viewMode === 'raw') {
+          return file.rawContent.toLowerCase().includes(query) ? file : null;
+        }
+        const sections = file.sections
+          .map((section) => {
+            const entries = section.entries.filter(matchesEntry);
+            if (!entries.length) return null;
+            return { ...section, entries, collapsed: false };
+          })
+          .filter(Boolean) as ConfigSection[];
+        return sections.length ? { ...file, sections } : null;
+      })
+      .filter(Boolean) as ConfigFileState[];
+  }, [configFiles, configSearch]);
+
+  const fileIndexByPath = useMemo(() => {
+    const mapping = new Map<string, number>();
+    configFiles.forEach((file, index) => {
+      mapping.set(file.path, index);
+    });
+    return mapping;
+  }, [configFiles]);
+
+  const renderValueInput = (
+    entry: ConfigEntry,
+    onValueChange: (value: string) => void,
+    className = 'w-full',
+  ) => {
+    if (entry.type === 'boolean') {
+      const checked = entry.value === 'true';
+      return (
+        <label className="relative inline-flex cursor-pointer items-center">
+          <input
+            type="checkbox"
+            className="sr-only peer"
+            checked={checked}
+            onChange={(event) => onValueChange(event.target.checked ? 'true' : 'false')}
+          />
+          <div className="h-5 w-10 rounded-full bg-slate-600 transition peer-checked:bg-sky-500">
+            <div className="h-4 w-4 translate-x-0.5 translate-y-0.5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+          </div>
+        </label>
+      );
+    }
+
+    return (
+      <input
+        type={entry.type === 'number' ? 'number' : 'text'}
+        className={`${className} rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-50 focus:border-sky-400 focus:outline-none`}
+        value={entry.value}
+        onChange={(event) => onValueChange(event.target.value)}
+        placeholder="Value"
+      />
+    );
+  };
+
+  const updateConfigEntry = useCallback(
+    (
+      fileIndex: number,
+      sectionIndex: number,
+      entryIndex: number,
+      patch: Partial<ConfigEntry>,
+      childIndex?: number,
+    ) => {
+      setConfigFiles((current) =>
+        current.map((file, idx) => {
+          if (idx !== fileIndex) return file;
+          return {
+            ...file,
+            sections: file.sections.map((section, secIdx) => {
+              if (secIdx !== sectionIndex) return section;
+              return {
+                ...section,
+                entries: section.entries.map((entry, entryIdx) => {
+                  if (entryIdx !== entryIndex) return entry;
+                  if (typeof childIndex === 'number' && entry.children) {
+                    return {
+                      ...entry,
+                      children: entry.children.map((child, childIdx) =>
+                        childIdx === childIndex ? { ...child, ...patch } : child,
+                      ),
+                    };
+                  }
+                  return { ...entry, ...patch };
+                }),
+              };
+            }),
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  const addConfigEntry = useCallback((fileIndex: number, sectionIndex: number, parentIndex?: number) => {
+    setConfigFiles((current) =>
+      current.map((file, idx) =>
+        idx === fileIndex
+          ? {
+              ...file,
+              sections: file.sections.map((section, secIdx) => {
+                if (secIdx !== sectionIndex) return section;
+                if (typeof parentIndex === 'number') {
+                  return {
+                    ...section,
+                    entries: section.entries.map((entry, entryIdx) =>
+                      entryIdx === parentIndex
+                        ? {
+                            ...entry,
+                            children: [...(entry.children ?? []), { key: '', value: '', type: 'string' }],
+                          }
+                        : entry,
+                    ),
+                  };
+                }
+                return { ...section, entries: [...section.entries, { key: '', value: '', type: 'string' }] };
+              }),
+            }
+          : file,
+      ),
+    );
+  }, []);
+
+  const removeConfigEntry = useCallback(
+    (fileIndex: number, sectionIndex: number, entryIndex: number, childIndex?: number) => {
+      setConfigFiles((current) =>
+        current.map((file, idx) =>
+          idx === fileIndex
+            ? {
+                ...file,
+                sections: file.sections.map((section, secIdx) => {
+                  if (secIdx !== sectionIndex) return section;
+                  if (typeof childIndex === 'number') {
+                    return {
+                      ...section,
+                      entries: section.entries.map((entry, entryIdx) =>
+                        entryIdx === entryIndex
+                          ? {
+                              ...entry,
+                              children: (entry.children ?? []).filter((_, childIdx) => childIdx !== childIndex),
+                            }
+                          : entry,
+                      ),
+                    };
+                  }
+                  return { ...section, entries: section.entries.filter((_, entryIdx) => entryIdx !== entryIndex) };
+                }),
+              }
+            : file,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleSend = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSend) return;
     const trimmed = command.trim();
     if (!trimmed) return;
     send(trimmed);
     setCommand('');
-  };
-  const handleReinstall = async () => {
+  }, [canSend, command, send]);
+
+  const handleReinstall = useCallback(async () => {
     if (!serverId) return;
     try {
       await serversApi.install(serverId);
@@ -100,7 +462,41 @@ function ServerDetailsPage() {
       const message = error?.response?.data?.error || 'Failed to reinstall server';
       notifyError(message);
     }
-  };
+  }, [serverId]);
+
+  useEffect(() => {
+    if (!serverId || !server || !server.template) {
+      setConfigFiles([]);
+      return;
+    }
+    const configTemplatePath = server.template?.features?.configFile;
+    const configTemplatePaths = server.template?.features?.configFiles ?? [];
+    const combinedConfigPaths = [
+      ...(configTemplatePath ? [configTemplatePath] : []),
+      ...configTemplatePaths,
+    ];
+    
+    if (combinedConfigPaths.length === 0) {
+      setConfigFiles([]);
+      return;
+    }
+    const uniquePaths = Array.from(new Set(combinedConfigPaths));
+    setConfigFiles(
+      uniquePaths.map((path) => ({
+        path,
+        sections: [],
+        format: null,
+        error: null,
+        loaded: false,
+        viewMode: 'form',
+        rawContent: '',
+      })),
+    );
+    setOpenConfigIndex(-1);
+    Promise.all(uniquePaths.map((path) => loadConfigFile(path))).then((results) => {
+      setConfigFiles(results);
+    });
+  }, [serverId, server?.template?.features?.configFile, server?.template?.features?.configFiles?.join('|'), loadConfigFile]);
 
   if (isLoading) {
     return (
@@ -132,6 +528,12 @@ function ServerDetailsPage() {
     liveDiskUsageMb != null && (liveDiskTotalMb || diskLimitMb)
       ? Math.min(100, (liveDiskUsageMb / (liveDiskTotalMb || diskLimitMb)) * 100)
       : null;
+  const configTemplatePath = server.template?.features?.configFile;
+  const configTemplatePaths = server.template?.features?.configFiles ?? [];
+  const combinedConfigPaths = [
+    ...(configTemplatePath ? [configTemplatePath] : []),
+    ...configTemplatePaths,
+  ];
 
   return (
     <div className="space-y-4">
@@ -148,6 +550,14 @@ function ServerDetailsPage() {
           </div>
           <ServerControls serverId={server.id} status={server.status} />
         </div>
+        {isSuspended ? (
+          <div className="mt-4 rounded-lg border border-rose-900 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
+            <div className="font-semibold">Server suspended</div>
+            <div className="text-rose-300">
+              {server?.suspensionReason ? `Reason: ${server.suspensionReason}` : 'No reason provided.'}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
@@ -186,26 +596,26 @@ function ServerDetailsPage() {
               <button
                 type="button"
                 className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-700"
-                 onClick={() => {
-                   clearConsole();
-                 }}
-               >
-                 Clear
-               </button>
-             </div>
-           </div>
-            <div className="px-4 py-3">
-              {consoleLoading ? <div className="mb-2 text-xs text-slate-500">Loading recent logs...</div> : null}
-              {consoleError ? (
-               <div className="mb-2 rounded-md border border-rose-900 bg-rose-950/40 px-3 py-2 text-rose-200">
-                 <div className="flex items-center justify-between gap-3">
-                   <span>Unable to load historical logs.</span>
-                   <button
-                     type="button"
-                     className="rounded-md border border-rose-700 px-2 py-1 text-[11px] text-rose-200 hover:border-rose-600"
-                     onClick={() => refetchConsole()}
-                   >
-                     Retry
+                onClick={() => {
+                  clearConsole();
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="px-4 py-3">
+            {consoleLoading ? <div className="mb-2 text-xs text-slate-500">Loading recent logs...</div> : null}
+            {consoleError ? (
+              <div className="mb-2 rounded-md border border-rose-900 bg-rose-950/40 px-3 py-2 text-rose-200">
+                <div className="flex items-center justify-between gap-3">
+                  <span>Unable to load historical logs.</span>
+                  <button
+                    type="button"
+                    className="rounded-md border border-rose-700 px-2 py-1 text-[11px] text-rose-200 hover:border-rose-600"
+                    onClick={() => refetchConsole()}
+                  >
+                    Retry
                   </button>
                 </div>
               </div>
@@ -229,18 +639,18 @@ function ServerDetailsPage() {
               </button>
             </form>
           </div>
-         </div>
-       ) : null}
+        </div>
+      ) : null}
 
       {activeTab === 'files' ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-          <FileManager serverId={server.id} />
+          <FileManager serverId={server.id} isSuspended={isSuspended} />
         </div>
       ) : null}
 
       {activeTab === 'backups' ? (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-          <BackupSection serverId={server.id} serverStatus={server.status} />
+          <BackupSection serverId={server.id} serverStatus={server.status} isSuspended={isSuspended} />
         </div>
       ) : null}
 
@@ -251,7 +661,7 @@ function ServerDetailsPage() {
               <div className="text-sm font-semibold text-slate-100">Scheduled tasks</div>
               <div className="text-xs text-slate-400">Automate restarts, backups, and commands.</div>
             </div>
-            <CreateTaskModal serverId={server.id} />
+            <CreateTaskModal serverId={server.id} disabled={isSuspended} />
           </div>
           <div className="mt-4">
             {tasksLoading ? (
@@ -275,7 +685,7 @@ function ServerDetailsPage() {
                     </div>
                     <div className="mt-2 text-xs text-slate-500">Schedule: {task.schedule}</div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      <EditTaskModal serverId={server.id} task={task} />
+                      <EditTaskModal serverId={server.id} task={task} disabled={isSuspended} />
                       <button
                         type="button"
                         className={`rounded-md border px-3 py-1 font-semibold ${
@@ -284,7 +694,7 @@ function ServerDetailsPage() {
                             : 'border-amber-600 text-amber-200 hover:border-amber-500'
                         }`}
                         onClick={() => pauseMutation.mutate(task as { id: string; enabled: boolean })}
-                        disabled={pauseMutation.isPending}
+                        disabled={pauseMutation.isPending || isSuspended}
                       >
                         {task.enabled === false ? 'Resume' : 'Pause'}
                       </button>
@@ -292,7 +702,7 @@ function ServerDetailsPage() {
                         type="button"
                         className="rounded-md border border-rose-700 px-3 py-1 font-semibold text-rose-200 hover:border-rose-500"
                         onClick={() => deleteMutation.mutate(task.id)}
-                        disabled={deleteMutation.isPending}
+                        disabled={deleteMutation.isPending || isSuspended}
                       >
                         Delete
                       </button>
@@ -305,110 +715,393 @@ function ServerDetailsPage() {
         </div>
       ) : null}
 
-       {activeTab === 'metrics' ? (
-         <div className="space-y-4">
-           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-             <ServerMetrics
-               cpu={liveMetrics?.cpuPercent ?? server?.cpuPercent ?? 0}
-               memory={liveMetrics?.memoryPercent ?? server?.memoryPercent ?? 0}
-             />
-             <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 lg:col-span-2">
-               <div className="mb-3 flex items-center justify-between">
-                 <div className="text-sm font-semibold text-slate-100">Live snapshot</div>
-                 <div className={`flex items-center gap-2 text-xs ${isConnected ? 'text-emerald-300' : 'text-slate-400'}`}>
-                   <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                   {isConnected ? 'Live' : 'Offline'}
-                 </div>
-               </div>
-               <div className="grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
-                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                   <div className="text-slate-400">Memory used</div>
-                   <div className="text-sm font-semibold text-slate-100">
-                     {liveMetrics?.memoryUsageMb ? `${liveMetrics.memoryUsageMb} MB` : 'n/a'}
-                   </div>
-                 </div>
-                  <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                    <div className="text-slate-400">Disk usage</div>
-                    <div className="text-sm font-semibold text-slate-100">
-                      {liveDiskUsageMb != null && (liveDiskTotalMb || diskLimitMb)
-                        ? `${liveDiskUsageMb} / ${liveDiskTotalMb || diskLimitMb} MB${
-                            diskPercent != null ? ` (${diskPercent.toFixed(0)}%)` : ''
-                          }`
-                        : 'n/a'}
-                    </div>
+      {activeTab === 'metrics' ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <ServerMetrics
+              cpu={liveMetrics?.cpuPercent ?? server?.cpuPercent ?? 0}
+              memory={liveMetrics?.memoryPercent ?? server?.memoryPercent ?? 0}
+            />
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 lg:col-span-2">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-100">Live snapshot</div>
+                <div className={`flex items-center gap-2 text-xs ${isConnected ? 'text-emerald-300' : 'text-slate-400'}`}>
+                  <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                  {isConnected ? 'Live' : 'Offline'}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Memory used</div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    {liveMetrics?.memoryUsageMb ? `${liveMetrics.memoryUsageMb} MB` : 'n/a'}
                   </div>
-                  <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                    <div className="text-slate-400">Disk IO (last tick)</div>
-                    <div className="text-sm font-semibold text-slate-100">
-                      {liveDiskIoMb != null ? `${liveDiskIoMb} MB` : 'n/a'}
-                    </div>
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Disk usage</div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    {liveDiskUsageMb != null && (liveDiskTotalMb || diskLimitMb)
+                      ? `${liveDiskUsageMb} / ${liveDiskTotalMb || diskLimitMb} MB${
+                          diskPercent != null ? ` (${diskPercent.toFixed(0)}%)` : ''
+                        }`
+                      : 'n/a'}
                   </div>
-                  <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                    <div className="text-slate-400">Network RX</div>
-                    <div className="text-sm font-semibold text-slate-100">
-                      {formatBytes(Number(metricsHistory?.latest?.networkRxBytes ?? 0))}
-                    </div>
-                 </div>
-                 <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                   <div className="text-slate-400">Network TX</div>
-                   <div className="text-sm font-semibold text-slate-100">
-                     {formatBytes(Number(metricsHistory?.latest?.networkTxBytes ?? 0))}
-                   </div>
-                 </div>
-               </div>
-             </div>
-           </div>
-           <ServerMetricsTrends
-             history={metricsHistory?.history ?? []}
-             latest={metricsHistory?.latest ?? null}
-             allocatedMemoryMb={server.allocatedMemoryMb ?? 0}
-           />
-         </div>
-       ) : null}
-
-      {activeTab === 'configuration' ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-            <div className="text-sm font-semibold text-slate-100">Server settings</div>
-            <div className="mt-3 space-y-2 text-sm text-slate-300">
-              <div className="flex items-center justify-between">
-                <span>Template</span>
-                <span className="text-slate-100">{server.template?.name ?? server.templateId}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Image</span>
-                <span className="text-slate-100">{server.template?.image ?? 'n/a'}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Memory</span>
-                <span className="text-slate-100">{server.allocatedMemoryMb} MB</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>CPU cores</span>
-                <span className="text-slate-100">{server.allocatedCpuCores}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Primary port</span>
-                <span className="text-slate-100">{server.primaryPort}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Network</span>
-                <span className="text-slate-100">{server.networkMode}</span>
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Disk IO (last tick)</div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    {liveDiskIoMb != null ? `${liveDiskIoMb} MB` : 'n/a'}
+                  </div>
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Network RX</div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    {formatBytes(Number(metricsHistory?.latest?.networkRxBytes ?? 0))}
+                  </div>
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Network TX</div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    {formatBytes(Number(metricsHistory?.latest?.networkTxBytes ?? 0))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-            <div className="text-sm font-semibold text-slate-100">Environment</div>
-            <div className="mt-3 space-y-2 text-xs text-slate-300">
-              {server.environment ? (
-                Object.entries(server.environment).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between gap-4">
-                    <span className="uppercase tracking-wide text-slate-400">{key}</span>
-                    <span className="text-slate-100">{String(value)}</span>
-                  </div>
-                ))
+          <ServerMetricsTrends
+            history={metricsHistory?.history ?? []}
+            latest={metricsHistory?.latest ?? null}
+            allocatedMemoryMb={server.allocatedMemoryMb ?? 0}
+          />
+        </div>
+      ) : null}
+
+      {activeTab === 'configuration' ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="text-sm font-semibold text-slate-100">Server settings</div>
+              <div className="mt-3 space-y-2 text-sm text-slate-300">
+                <div className="flex items-center justify-between">
+                  <span>Template</span>
+                  <span className="text-slate-100">{server.template?.name ?? server.templateId}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Image</span>
+                  <span className="text-slate-100">{server.template?.image ?? 'n/a'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Memory</span>
+                  <span className="text-slate-100">{server.allocatedMemoryMb} MB</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>CPU cores</span>
+                  <span className="text-slate-100">{server.allocatedCpuCores}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Primary port</span>
+                  <span className="text-slate-100">{server.primaryPort}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Network</span>
+                  <span className="text-slate-100">{server.networkMode}</span>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="text-sm font-semibold text-slate-100">Environment</div>
+              <div className="mt-3 space-y-2 text-xs text-slate-300">
+                {server.environment ? (
+                  Object.entries(server.environment).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between gap-4">
+                      <span className="uppercase tracking-wide text-slate-400">{key}</span>
+                      <span className="text-slate-100">{String(value)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-slate-500">No environment variables set.</div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-100">Config files</div>
+                <div className="text-xs text-slate-400">
+                  {combinedConfigPaths.length ? combinedConfigPaths.join(', ') : 'No config files defined in template.'}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3">
+              <input
+                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-50 focus:border-sky-400 focus:outline-none"
+                placeholder="Search config keys or values..."
+                value={configSearch}
+                onChange={(event) => setConfigSearch(event.target.value)}
+              />
+            </div>
+            <div className="mt-3 space-y-3">
+              {!combinedConfigPaths.length ? (
+                <div className="text-xs text-slate-500">Add features.configFiles to the template to enable dynamic settings.</div>
               ) : (
-                <div className="text-slate-500">No environment variables set.</div>
+                <div className="space-y-3">
+                  {filteredConfigFiles.length === 0 ? (
+                    <div className="rounded-md border border-slate-700 bg-slate-800/80 px-3 py-2 text-xs text-slate-300">
+                      No matches found.
+                    </div>
+                  ) : (
+                    filteredConfigFiles.map((configFile) => (
+                      <div key={configFile.path} className="rounded-lg border border-slate-600 bg-slate-800/90">
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs text-slate-50 hover:bg-slate-700/80"
+                        onClick={() => {
+                          if (configSearch) return;
+                          const fileIndex = fileIndexByPath.get(configFile.path) ?? -1;
+                          setOpenConfigIndex((current) => (current === fileIndex ? -1 : fileIndex));
+                        }}
+                      >
+                        <span className="font-semibold">{configFile.path}</span>
+                        <span className="rounded-full border border-slate-500 bg-slate-700/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-100">
+                          {configSearch
+                            ? 'Expanded'
+                            : openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1)
+                              ? 'Collapse'
+                              : 'Expand'}
+                        </span>
+                      </button>
+                      {configSearch || openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1) ? (
+                        <div className="border-t border-slate-600 px-3 py-3">
+                          {!configFile.loaded ? (
+                            <div className="text-xs text-slate-400">Loading config values...</div>
+                          ) : configFile.error ? (
+                            <div className="rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+                              {configFile.error}
+                            </div>
+                          ) : (
+                            <div className="space-y-3 text-xs text-slate-200">
+                              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-[11px] uppercase tracking-wide text-slate-200">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold">View mode</span>
+                                  {configSearch ? (
+                                    <span className="rounded-full border border-slate-500 bg-slate-700/80 px-2 py-0.5 text-[10px] font-semibold text-slate-100">
+                                      Filtered
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide ${
+                                      configFile.viewMode === 'form'
+                                        ? 'border-sky-400/80 bg-sky-500/30 text-sky-100'
+                                        : 'border-slate-500 text-slate-200 hover:border-slate-400'
+                                    }`}
+                                    onClick={() =>
+                                      setConfigFiles((current) =>
+                                        current.map((file, fileIdx) =>
+                                          file.path === configFile.path ? { ...file, viewMode: 'form' } : file,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    Form
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide ${
+                                      configFile.viewMode === 'raw'
+                                        ? 'border-sky-400/80 bg-sky-500/30 text-sky-100'
+                                        : 'border-slate-500 text-slate-200 hover:border-slate-400'
+                                    }`}
+                                    onClick={() =>
+                                      setConfigFiles((current) =>
+                                        current.map((file, fileIdx) =>
+                                          file.path === configFile.path ? { ...file, viewMode: 'raw' } : file,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    Raw
+                                  </button>
+                                </div>
+                              </div>
+                              {configFile.viewMode === 'raw' ? (
+                                <textarea
+                                  className="min-h-[240px] w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 font-mono text-xs text-slate-50 focus:border-sky-400 focus:outline-none"
+                                  value={configFile.rawContent}
+                                  onChange={(event) =>
+                                    setConfigFiles((current) =>
+                                      current.map((file, fileIdx) =>
+                                        file.path === configFile.path ? { ...file, rawContent: event.target.value } : file,
+                                      ),
+                                    )
+                                  }
+                                />
+                              ) : (
+                                <div className="space-y-4">
+                                  {configFile.sections.map((section, sectionIndex) => (
+                                    <div
+                                      key={`${configFile.path}-${section.title}`}
+                                      className="rounded-xl border border-slate-600 bg-slate-800/90 p-4"
+                                    >
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between text-left"
+                                        onClick={() =>
+                                          setConfigFiles((current) =>
+                                            current.map((file, fileIdx) => {
+                                              if (file.path !== configFile.path) return file;
+                                              return {
+                                                ...file,
+                                                sections: file.sections.map((sectionItem, secIdx) =>
+                                                  secIdx === sectionIndex
+                                                    ? {
+                                                        ...sectionItem,
+                                                        collapsed: !sectionItem.collapsed,
+                                                      }
+                                                    : sectionItem,
+                                                ),
+                                              };
+                                            }),
+                                          )
+                                        }
+                                      >
+                                        <div className="flex items-center gap-3 text-sm font-semibold text-slate-100">
+                                          <span className="h-2 w-2 rounded-full bg-sky-300" />
+                                          <span className="uppercase tracking-wide">{section.title}</span>
+                                        </div>
+                                        <span className="rounded-full border border-slate-500 bg-slate-700/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-100">
+                                          {section.collapsed ? 'Expand' : 'Collapse'}
+                                        </span>
+                                      </button>
+                                      {section.collapsed ? null : (
+                                        <div className="mt-4 space-y-4">
+                                          <div className="space-y-3">
+                                            {section.entries.map((entry, entryIndex) =>
+                                              entry.type === 'object' ? (
+                                                <div key={`${entry.key}-${entryIndex}`} className="p-3">
+                                                  <div className="flex items-center justify-between">
+                                                    <h4 className="text-sm font-semibold text-slate-50">{entry.key || 'Object'}</h4>
+                                                    <button
+                                                      type="button"
+                                                      className="text-[10px] font-semibold uppercase tracking-wide text-sky-300 hover:text-sky-200"
+                                                      onClick={() =>
+                                                        addConfigEntry(fileIndexByPath.get(configFile.path) ?? 0, sectionIndex, entryIndex)
+                                                      }
+                                                    >
+                                                      Add entry
+                                                    </button>
+                                                  </div>
+                                                  <div className="mt-3">
+                                                    {(entry.children ?? []).map((child, childIndex) => (
+                                                      <div
+                                                        key={`${entry.key}-${child.key}-${childIndex}`}
+                                                        className="space-y-3 border-b border-slate-700/60 px-3 py-3 last:border-b-0"
+                                                      >
+                                                        <div className="flex items-start justify-between gap-3">
+                                                          <div className="text-base font-semibold text-slate-50">
+                                                            {child.key || 'Key'}
+                                                          </div>
+                                                          <button
+                                                            type="button"
+                                                            className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-700/70 bg-rose-500/10 text-[11px] font-semibold text-rose-200 hover:border-rose-500 hover:bg-rose-500/20"
+                                                            onClick={() =>
+                                                              removeConfigEntry(
+                                                                fileIndexByPath.get(configFile.path) ?? 0,
+                                                                sectionIndex,
+                                                                entryIndex,
+                                                                childIndex,
+                                                              )
+                                                            }
+                                                          >
+                                                            ✕
+                                                          </button>
+                                                        </div>
+                                                        {renderValueInput(child, (value) =>
+                                                          updateConfigEntry(
+                                                            fileIndexByPath.get(configFile.path) ?? 0,
+                                                            sectionIndex,
+                                                            entryIndex,
+                                                            { value },
+                                                            childIndex,
+                                                          ),
+                                                        )}
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <div
+                                                  key={`${entry.key}-${entryIndex}`}
+                                                  className="space-y-3 border-b border-slate-700/60 px-3 py-3 last:border-b-0"
+                                                >
+                                                  <div className="flex items-start justify-between gap-3">
+                                                    <div className="text-base font-semibold text-slate-50">
+                                                      {entry.key || 'Key'}
+                                                    </div>
+                                                    <button
+                                                      type="button"
+                                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-700/70 bg-rose-500/10 text-[11px] font-semibold text-rose-200 hover:border-rose-500 hover:bg-rose-500/20"
+                                                      onClick={() =>
+                                                        removeConfigEntry(
+                                                          fileIndexByPath.get(configFile.path) ?? 0,
+                                                          sectionIndex,
+                                                          entryIndex,
+                                                        )
+                                                      }
+                                                    >
+                                                      ✕
+                                                    </button>
+                                                  </div>
+                                                  {renderValueInput(entry, (value) =>
+                                                    updateConfigEntry(
+                                                      fileIndexByPath.get(configFile.path) ?? 0,
+                                                      sectionIndex,
+                                                      entryIndex,
+                                                      { value },
+                                                    ),
+                                                  )}
+                                                </div>
+                                              ),
+                                            )}
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <button
+                                              type="button"
+                                              className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                                              onClick={() =>
+                                                addConfigEntry(fileIndexByPath.get(configFile.path) ?? 0, sectionIndex)
+                                              }
+                                            >
+                                              Add entry
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                                  onClick={() => configMutation.mutate(fileIndexByPath.get(configFile.path) ?? 0)}
+                                  disabled={configMutation.isPending}
+                                >
+                                  Save config
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -426,13 +1119,13 @@ function ServerDetailsPage() {
               <button
                 type="button"
                 className="rounded-md bg-amber-600 px-3 py-1 font-semibold text-white shadow hover:bg-amber-500 disabled:opacity-60"
-                disabled={server.status !== 'stopped'}
+                disabled={server.status !== 'stopped' || isSuspended}
                 onClick={handleReinstall}
               >
                 Reinstall
               </button>
-              <UpdateServerModal serverId={server.id} />
-              <TransferServerModal serverId={server.id} />
+              <UpdateServerModal serverId={server.id} disabled={isSuspended} />
+              <TransferServerModal serverId={server.id} disabled={isSuspended} />
             </div>
           </div>
           <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-4">
@@ -441,7 +1134,7 @@ function ServerDetailsPage() {
               Deleting the server removes all data and cannot be undone.
             </p>
             <div className="mt-3">
-              <DeleteServerDialog serverId={server.id} serverName={server.name} />
+              <DeleteServerDialog serverId={server.id} serverName={server.name} disabled={isSuspended} />
             </div>
           </div>
         </div>

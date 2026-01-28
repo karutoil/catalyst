@@ -21,6 +21,14 @@ export async function metricsRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+        return reply.status(423).send({
+          error: "Server is suspended",
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
+      }
+
       // Check permissions
       const access = await prisma.serverAccess.findFirst({
         where: {
@@ -95,6 +103,14 @@ export async function metricsRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+        return reply.status(423).send({
+          error: "Server is suspended",
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
       }
 
       // Check permissions

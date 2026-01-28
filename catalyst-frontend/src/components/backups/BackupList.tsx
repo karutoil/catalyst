@@ -18,10 +18,12 @@ function BackupList({
   serverId,
   backups,
   serverStatus,
+  isSuspended = false,
 }: {
   serverId: string;
   backups: BackupWithDownload[];
   serverStatus: string;
+  isSuspended?: boolean;
 }) {
   const sorted = useMemo(() => {
     const next = [...backups];
@@ -62,7 +64,7 @@ function BackupList({
                   <button
                     className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700 disabled:opacity-60"
                     onClick={backup.download}
-                    disabled={Boolean(backup.downloadProgress)}
+                    disabled={Boolean(backup.downloadProgress) || isSuspended}
                   >
                     {backup.downloadProgress ?? 'Download'}
                   </button>
@@ -70,9 +72,9 @@ function BackupList({
                 <RestoreBackupDialog
                   serverId={serverId}
                   backup={backup}
-                  disabled={serverStatus !== 'stopped'}
+                  disabled={serverStatus !== 'stopped' || isSuspended}
                 />
-                <DeleteBackupDialog serverId={serverId} backup={backup} />
+                <DeleteBackupDialog serverId={serverId} backup={backup} disabled={isSuspended} />
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-4">

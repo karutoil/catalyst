@@ -5,7 +5,15 @@ import { notifyError, notifySuccess } from '../../utils/notify';
 import type { Task } from '../../types/task';
 import { actionOptions } from './CreateTaskModal';
 
-function EditTaskModal({ serverId, task }: { serverId: string; task: Task }) {
+function EditTaskModal({
+  serverId,
+  task,
+  disabled = false,
+}: {
+  serverId: string;
+  task: Task;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(task.name);
   const [description, setDescription] = useState(task.description ?? '');
@@ -39,14 +47,17 @@ function EditTaskModal({ serverId, task }: { serverId: string; task: Task }) {
   const disableSubmit = useMemo(() => {
     if (!name.trim() || !schedule.trim()) return true;
     if (action === 'command' && !command.trim()) return true;
-    return mutation.isPending;
-  }, [action, command, name, schedule, mutation.isPending]);
+    return mutation.isPending || disabled;
+  }, [action, command, name, schedule, mutation.isPending, disabled]);
 
   return (
     <div>
       <button
-        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
-        onClick={() => setOpen(true)}
+        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700 disabled:opacity-60"
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
       >
         Edit
       </button>

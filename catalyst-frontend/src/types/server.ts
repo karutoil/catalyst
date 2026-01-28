@@ -5,7 +5,8 @@ export type ServerStatus =
   | 'starting'
   | 'stopping'
   | 'crashed'
-  | 'transferring';
+  | 'transferring'
+  | 'suspended';
 
 export interface Server {
   id: string;
@@ -26,6 +27,10 @@ export interface Server {
   template?: {
     name?: string;
     image?: string;
+    features?: {
+      configFile?: string;
+      configFiles?: string[];
+    };
   };
   cpuPercent?: number;
   memoryPercent?: number;
@@ -35,6 +40,9 @@ export interface Server {
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
   allocatedDiskMb?: number;
+  suspendedAt?: string | null;
+  suspendedByUserId?: string | null;
+  suspensionReason?: string | null;
   connection?: {
     assignedIp?: string | null;
     nodeIp?: string | null;

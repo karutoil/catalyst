@@ -60,6 +60,47 @@ export async function serverRoutes(app: FastifyInstance) {
     return { baseDir, targetPath: safePath };
   };
 
+  const isSuspensionEnforced = () => process.env.SUSPENSION_ENFORCED !== "false";
+
+  const isSuspensionDeleteBlocked = () =>
+    process.env.SUSPENSION_DELETE_POLICY === "block";
+
+  const ensureNotSuspended = (server: any, reply: FastifyReply, message?: string) => {
+    if (!isSuspensionEnforced()) {
+      return true;
+    }
+    if (!server?.suspendedAt) {
+      return true;
+    }
+    reply.status(423).send({
+      error: message || "Server is suspended",
+      suspendedAt: server.suspendedAt,
+      suspensionReason: server.suspensionReason ?? null,
+    });
+    return false;
+  };
+
+  const ensureSuspendPermission = async (
+    userId: string,
+    reply: FastifyReply,
+    message?: string
+  ) => {
+    const roles = await prisma.role.findMany({
+      where: { users: { some: { id: userId } } },
+      select: { permissions: true },
+    });
+    const permissions = roles.flatMap((role) => role.permissions);
+    if (
+      permissions.includes("*") ||
+      permissions.includes("admin.read") ||
+      permissions.includes("server.suspend")
+    ) {
+      return true;
+    }
+    reply.status(403).send({ error: message || "Admin access required" });
+    return false;
+  };
+
   const isArchiveName = (value: string) => {
     const lowered = value.toLowerCase();
     return (
@@ -424,6 +465,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       // Check permission
       if (server.ownerId !== userId) {
         const access = await prisma.serverAccess.findUnique({
@@ -558,6 +603,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       if (server.ownerId !== userId) {
         const access = await prisma.serverAccess.findUnique({
           where: { userId_serverId: { userId, serverId } },
@@ -622,6 +671,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       // Check permissions
@@ -700,6 +753,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       const access = await prisma.serverAccess.findFirst({
         where: {
           serverId,
@@ -747,6 +804,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       const access = await prisma.serverAccess.findFirst({
@@ -809,6 +870,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       const access = await prisma.serverAccess.findFirst({
         where: {
           serverId,
@@ -864,6 +929,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       const access = await prisma.serverAccess.findFirst({
@@ -934,6 +1003,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       const access = await prisma.serverAccess.findFirst({
         where: {
           serverId,
@@ -982,6 +1055,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       // Check permissions
@@ -1049,6 +1126,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       // Check permissions
       const access = await prisma.serverAccess.findFirst({
         where: {
@@ -1109,6 +1190,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       const access = await prisma.serverAccess.findFirst({
@@ -1182,6 +1267,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       // Check permissions
       const access = await prisma.serverAccess.findFirst({
         where: {
@@ -1236,6 +1325,14 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (isSuspensionEnforced() && server.suspendedAt && isSuspensionDeleteBlocked()) {
+        return reply.status(423).send({
+          error: "Server is suspended",
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
       }
 
       if (server.ownerId !== userId) {
@@ -1319,6 +1416,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       // Check permissions
@@ -1432,6 +1533,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       // Check permissions
       if (server.ownerId !== userId) {
         const access = await prisma.serverAccess.findFirst({
@@ -1530,6 +1635,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       // Check permissions
       if (server.ownerId !== userId) {
         const access = await prisma.serverAccess.findFirst({
@@ -1602,6 +1711,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       // Check permissions
@@ -1717,6 +1830,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
       // Update server
       const updated = await prisma.server.update({
         where: { id },
@@ -1747,6 +1864,10 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
       }
 
       await prisma.server.update({
@@ -1782,6 +1903,11 @@ export async function serverRoutes(app: FastifyInstance) {
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
       }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
 
       // Check if user has permission
       const serverAccess = await prisma.serverAccess.findFirst({
@@ -2014,6 +2140,135 @@ export async function serverRoutes(app: FastifyInstance) {
           message: error.message,
         });
       }
+    }
+  );
+
+  // Suspend server
+  app.post(
+    "/:serverId/suspend",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+      const { reason } = request.body as { reason?: string };
+
+      if (!(await ensureSuspendPermission(userId, reply))) {
+        return;
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { node: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (server.suspendedAt) {
+        return reply.status(409).send({ error: "Server is already suspended" });
+      }
+
+      if (server.status === "running" || server.status === "starting") {
+        const gateway = (app as any).wsGateway;
+        if (!gateway) {
+          return reply.status(500).send({ error: "WebSocket gateway not available" });
+        }
+        if (!server.node?.isOnline) {
+          return reply.status(503).send({ error: "Node is offline" });
+        }
+        await gateway.sendToAgent(server.nodeId, {
+          type: "stop_server",
+          serverId: server.id,
+          serverUuid: server.uuid,
+        });
+      }
+
+      const updated = await prisma.server.update({
+        where: { id: serverId },
+        data: {
+          status: "suspended",
+          suspendedAt: new Date(),
+          suspendedByUserId: userId,
+          suspensionReason: reason?.trim() || null,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "server.suspend",
+          resource: "server",
+          resourceId: serverId,
+          details: { reason: updated.suspensionReason ?? undefined },
+        },
+      });
+
+      await prisma.serverLog.create({
+        data: {
+          serverId,
+          stream: "system",
+          data: `Server suspended${updated.suspensionReason ? `: ${updated.suspensionReason}` : ""}`,
+        },
+      });
+
+      return reply.send({ success: true, data: updated });
+    }
+  );
+
+  // Unsuspend server
+  app.post(
+    "/:serverId/unsuspend",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+
+      if (!(await ensureSuspendPermission(userId, reply))) {
+        return;
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!server.suspendedAt) {
+        return reply.status(409).send({ error: "Server is not suspended" });
+      }
+
+      const updated = await prisma.server.update({
+        where: { id: serverId },
+        data: {
+          status: "stopped",
+          suspendedAt: null,
+          suspendedByUserId: null,
+          suspensionReason: null,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "server.unsuspend",
+          resource: "server",
+          resourceId: serverId,
+          details: {},
+        },
+      });
+
+      await prisma.serverLog.create({
+        data: {
+          serverId,
+          stream: "system",
+          data: "Server unsuspended",
+        },
+      });
+
+      return reply.send({ success: true, data: updated });
     }
   );
 }

@@ -381,6 +381,9 @@ Templates define how servers should be installed and configured.
         "PORT": "{{PORT}}"
       },
       "requiredVariables": ["MEMORY", "PORT", "EULA"],
+      "features": {
+        "configFiles": ["/server.properties", "/server-advanced.properties"]
+      },
       "createdAt": "2026-01-24T19:29:23.274Z"
     }
   ]
@@ -475,6 +478,7 @@ Core server management endpoints.
 - `stopping` - Server is shutting down
 - `crashed` - Server exited unexpectedly
 - `transferring` - Server is being moved to another node
+- `suspended` - Server is suspended (blocked from actions)
 
 ---
 
@@ -612,6 +616,66 @@ Core server management endpoints.
 ```
 
 **Note:** Server must be stopped before deletion.
+
+---
+
+### Suspend Server
+
+Suspend a server and optionally provide a reason.
+
+**Endpoint:** `POST /api/servers/:serverId/suspend`  
+**Authentication:** Required (server.suspend permission)
+
+**Request Body (optional):**
+```json
+{
+  "reason": "Billing issue"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "server123",
+    "status": "suspended",
+    "suspendedAt": "2026-01-25T02:29:17.414Z",
+    "suspendedByUserId": "user123",
+    "suspensionReason": "Billing issue"
+  }
+}
+```
+
+**Errors:**
+- `409` - Server is already suspended
+- `423` - Server is suspended (action blocked)
+
+---
+
+### Unsuspend Server
+
+Clear suspension and return the server to `stopped`.
+
+**Endpoint:** `POST /api/servers/:serverId/unsuspend`  
+**Authentication:** Required (server.suspend permission)
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "server123",
+    "status": "stopped",
+    "suspendedAt": null,
+    "suspendedByUserId": null,
+    "suspensionReason": null
+  }
+}
+```
+
+**Errors:**
+- `409` - Server is not suspended
 
 ---
 
@@ -1645,7 +1709,7 @@ Sent every 30 seconds to keep connection alive.
 }
 ```
 
-**States:** stopped, installing, starting, running, stopping, crashed
+**States:** stopped, installing, starting, running, stopping, crashed, suspended
 
 ---
 
@@ -1728,7 +1792,8 @@ Sent every 30 seconds.
   "allocatedCpuCores": 2,
   "allocatedDiskMb": 10240,
   "primaryPort": 25565,
-  "networkMode": "bridge"
+  "networkMode": "bridge",
+  "suspended": false
 }
 ```
 
@@ -1748,7 +1813,8 @@ Sent every 30 seconds.
   "allocatedCpuCores": 2,
   "allocatedDiskMb": 10240,
   "primaryPort": 25565,
-  "networkMode": "bridge"
+  "networkMode": "bridge",
+  "suspended": false
 }
 ```
 
@@ -1759,7 +1825,8 @@ Sent every 30 seconds.
 {
   "type": "stop_server",
   "serverId": "server123",
-  "serverUuid": "8fec71a3-9d19-45f7-8362-900674cde45c"
+  "serverUuid": "8fec71a3-9d19-45f7-8362-900674cde45c",
+  "suspended": false
 }
 ```
 
@@ -1770,7 +1837,8 @@ Sent every 30 seconds.
 {
   "type": "restart_server",
   "serverId": "server123",
-  "serverUuid": "8fec71a3-9d19-45f7-8362-900674cde45c"
+  "serverUuid": "8fec71a3-9d19-45f7-8362-900674cde45c",
+  "suspended": false
 }
 ```
 
@@ -2014,6 +2082,7 @@ transport.close()
 - `401` - Unauthorized (Missing or invalid token)
 - `403` - Forbidden (Insufficient permissions)
 - `404` - Not Found
+- `423` - Locked (Server suspended)
 - `429` - Too Many Requests (Rate limit exceeded)
 - `500` - Internal Server Error
 
@@ -2360,7 +2429,7 @@ Permissions use dot notation: `resource.action`
 **Server Management:**
 - `server.create`, `server.read`, `server.update`, `server.delete`
 - `server.install`, `server.start`, `server.stop`, `server.restart`, `server.kill`
-- `server.transfer`, `server.console`
+- `server.transfer`, `server.console`, `server.suspend`
 
 **File Management:**
 - `file.read`, `file.write`, `file.delete`

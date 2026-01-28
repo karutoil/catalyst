@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import type { Server } from '../../types/server';
 import ServerStatusBadge from './ServerStatusBadge';
 import ServerControls from './ServerControls';
+import { notifyError } from '../../utils/notify';
 
 const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
 const formatPercent = (value?: number | null) =>
@@ -30,6 +31,8 @@ function ServerCard({ server }: { server: Server }) {
       ? clampPercent((server.diskUsageMb / diskTotalMb) * 100)
       : null;
 
+  const isSuspended = server.status === 'suspended';
+
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -49,8 +52,16 @@ function ServerCard({ server }: { server: Server }) {
         <div className="flex items-center gap-2">
           <ServerControls serverId={server.id} status={server.status} />
           <Link
-            to={`/servers/${server.id}/console`}
-            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
+            to={isSuspended ? '#' : `/servers/${server.id}/console`}
+            className={`rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 ${
+              isSuspended ? 'cursor-not-allowed opacity-60' : 'hover:border-slate-700'
+            }`}
+            onClick={(event) => {
+              if (isSuspended) {
+                event.preventDefault();
+                notifyError('Server is suspended');
+              }
+            }}
           >
             Open console
           </Link>

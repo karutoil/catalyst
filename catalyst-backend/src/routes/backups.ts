@@ -33,6 +33,14 @@ export async function backupRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+        return reply.status(423).send({
+          error: "Server is suspended",
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
+      }
+
       // Check if node is online
       if (!server.node.isOnline) {
         return reply.status(503).send({ error: "Node is offline" });
@@ -95,6 +103,20 @@ export async function backupRoutes(app: FastifyInstance) {
       const limitNum = parseInt(limit);
       const pageNum = parseInt(page);
       const skip = (pageNum - 1) * limitNum;
+
+      if (process.env.SUSPENSION_ENFORCED !== "false") {
+        const server = await prisma.server.findUnique({
+          where: { id: serverId },
+          select: { suspendedAt: true, suspensionReason: true },
+        });
+        if (server?.suspendedAt) {
+          return reply.status(423).send({
+            error: "Server is suspended",
+            suspendedAt: server.suspendedAt,
+            suspensionReason: server.suspensionReason ?? null,
+          });
+        }
+      }
 
       const [backups, total] = await Promise.all([
         prisma.backup.findMany({
@@ -159,6 +181,20 @@ export async function backupRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Backup not found" });
       }
 
+      if (process.env.SUSPENSION_ENFORCED !== "false") {
+        const server = await prisma.server.findUnique({
+          where: { id: serverId },
+          select: { suspendedAt: true, suspensionReason: true },
+        });
+        if (server?.suspendedAt) {
+          return reply.status(423).send({
+            error: "Server is suspended",
+            suspendedAt: server.suspendedAt,
+            suspensionReason: server.suspensionReason ?? null,
+          });
+        }
+      }
+
       reply.send(backup);
     }
   );
@@ -180,6 +216,14 @@ export async function backupRoutes(app: FastifyInstance) {
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+        return reply.status(423).send({
+          error: "Server is suspended",
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
       }
 
       const backup = await prisma.backup.findFirst({
@@ -265,6 +309,14 @@ export async function backupRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Server not found" });
       }
 
+      if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+        return reply.status(423).send({
+          error: "Server is suspended",
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
+      }
+
       // Send delete request to agent if node is online
       if (server.node.isOnline) {
         const gateway = (app as any).wsGateway;
@@ -301,6 +353,20 @@ export async function backupRoutes(app: FastifyInstance) {
 
       if (!backup) {
         return reply.status(404).send({ error: "Backup not found" });
+      }
+
+      if (process.env.SUSPENSION_ENFORCED !== "false") {
+        const server = await prisma.server.findUnique({
+          where: { id: serverId },
+          select: { suspendedAt: true, suspensionReason: true },
+        });
+        if (server?.suspendedAt) {
+          return reply.status(423).send({
+            error: "Server is suspended",
+            suspendedAt: server.suspendedAt,
+            suspensionReason: server.suspensionReason ?? null,
+          });
+        }
       }
 
       // Check if backup file exists locally; otherwise request from agent.

@@ -71,6 +71,7 @@ export async function templateRoutes(app: FastifyInstance) {
         sendSignalTo,
         variables,
         installScript,
+        configFile,
         supportedPorts,
         allocatedMemoryMb,
         allocatedCpuCores,
@@ -109,7 +110,7 @@ export async function templateRoutes(app: FastifyInstance) {
           supportedPorts,
           allocatedMemoryMb,
           allocatedCpuCores,
-          features: features || {},
+          features: { ...(features || {}), ...(configFile ? { configFile } : {}) },
         },
       });
 

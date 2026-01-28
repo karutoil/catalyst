@@ -12,7 +12,7 @@ export const actionOptions: Array<{ value: Task['action']; label: string }> = [
   { value: 'command', label: 'Send command' },
 ];
 
-function CreateTaskModal({ serverId }: { serverId: string }) {
+function CreateTaskModal({ serverId, disabled = false }: { serverId: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -49,15 +49,18 @@ function CreateTaskModal({ serverId }: { serverId: string }) {
   const disableSubmit = useMemo(() => {
     if (!name.trim() || !schedule.trim()) return true;
     if (action === 'command' && !command.trim()) return true;
-    return mutation.isPending;
-  }, [action, command, name, schedule, mutation.isPending]);
+    return mutation.isPending || disabled;
+  }, [action, command, name, schedule, mutation.isPending, disabled]);
 
   return (
     <div>
       <button
         type="button"
-        className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500"
-        onClick={() => setOpen(true)}
+        className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
       >
         Create task
       </button>

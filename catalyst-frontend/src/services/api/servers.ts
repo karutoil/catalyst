@@ -67,6 +67,16 @@ export const serversApi = {
     const { data } = await apiClient.post<ApiResponse<void>>(`/api/servers/${id}/install`);
     return data;
   },
+  suspend: async (id: string, reason?: string) => {
+    const { data } = await apiClient.post<ApiResponse<void>>(`/api/servers/${id}/suspend`, {
+      reason,
+    });
+    return data;
+  },
+  unsuspend: async (id: string) => {
+    const { data } = await apiClient.post<ApiResponse<void>>(`/api/servers/${id}/unsuspend`);
+    return data;
+  },
   logs: async (id: string, params?: { lines?: number; stream?: string }) => {
     const { data } = await apiClient.get<ApiResponse<ServerLogs>>(
       `/api/servers/${id}/logs`,

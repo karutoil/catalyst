@@ -208,6 +208,10 @@ impl WebSocketHandler {
             AgentError::InvalidRequest("Missing action".to_string())
         })?;
 
+        if msg["suspended"].as_bool().unwrap_or(false) {
+            return Err(AgentError::InvalidRequest("Server is suspended".to_string()));
+        }
+
         let server_id = msg["serverId"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing serverId".to_string())
         })?;

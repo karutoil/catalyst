@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { backupsApi } from '../../services/api/backups';
 import { notifyError, notifySuccess } from '../../utils/notify';
 
-function CreateBackupModal({ serverId }: { serverId: string }) {
+function CreateBackupModal({ serverId, disabled = false }: { serverId: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const queryClient = useQueryClient();
@@ -26,8 +26,11 @@ function CreateBackupModal({ serverId }: { serverId: string }) {
     <div>
       <button
         type="button"
-        className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
-        onClick={() => setOpen(true)}
+        className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
       >
         Create Backup
       </button>
@@ -64,13 +67,13 @@ function CreateBackupModal({ serverId }: { serverId: string }) {
               >
                 Cancel
               </button>
-              <button
-                className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                onClick={() => mutation.mutate()}
-                disabled={mutation.isPending}
-              >
-                Create
-              </button>
+                <button
+                  className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  onClick={() => mutation.mutate()}
+                  disabled={mutation.isPending || disabled}
+                >
+                  Create
+                </button>
             </div>
           </div>
         </div>

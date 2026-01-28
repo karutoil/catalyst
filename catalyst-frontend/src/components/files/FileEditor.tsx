@@ -13,6 +13,7 @@ type Props = {
   isLoading: boolean;
   isSaving: boolean;
   isDirty: boolean;
+  isSuspended?: boolean;
   onChange: (value: string) => void;
   onSave: () => void;
   onDownload?: () => void;
@@ -50,6 +51,7 @@ function FileEditor({
   isLoading,
   isSaving,
   isDirty,
+  isSuspended = false,
   onChange,
   onSave,
   onDownload,
@@ -72,11 +74,12 @@ function FileEditor({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {isDirty ? <span className="text-amber-300">Unsaved changes</span> : null}
+          {isSuspended ? <span className="text-rose-300">Suspended</span> : null}
           <button
             type="button"
             className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700 disabled:opacity-60"
             onClick={onReset}
-            disabled={!isDirty || isSaving || isLoading}
+            disabled={!isDirty || isSaving || isLoading || isSuspended}
           >
             Revert
           </button>
@@ -94,7 +97,7 @@ function FileEditor({
             type="button"
             className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
             onClick={onSave}
-            disabled={!isDirty || isSaving || isLoading}
+            disabled={!isDirty || isSaving || isLoading || isSuspended}
           >
             Save
           </button>

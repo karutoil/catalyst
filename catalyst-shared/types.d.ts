@@ -4,10 +4,12 @@
  */
 export declare enum ServerState {
     STOPPED = "stopped",
+    INSTALLING = "installing",
     STARTING = "starting",
     RUNNING = "running",
     STOPPING = "stopping",
     CRASHED = "crashed",
+    SUSPENDED = "suspended",
     ERROR = "error"
 }
 export declare enum NetworkMode {
@@ -23,7 +25,8 @@ export declare enum Permission {
     CONSOLE_READ = "console.read",
     CONSOLE_WRITE = "console.write",
     SERVER_CREATE = "server.create",
-    SERVER_DELETE = "server.delete"
+    SERVER_DELETE = "server.delete",
+    SERVER_SUSPEND = "server.suspend"
 }
 export interface EnvironmentVariable {
     name: string;
@@ -52,6 +55,8 @@ export interface ServerTemplate {
         restartOnExit?: boolean;
         maxInstances?: number;
         iconUrl?: string;
+        configFile?: string;
+    configFiles?: string[];
     };
 }
 export interface ServerInstance {

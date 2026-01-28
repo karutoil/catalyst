@@ -4,7 +4,15 @@ import { backupsApi } from '../../services/api/backups';
 import { notifyError, notifySuccess } from '../../utils/notify';
 import type { Backup } from '../../types/backup';
 
-function DeleteBackupDialog({ serverId, backup }: { serverId: string; backup: Backup }) {
+function DeleteBackupDialog({
+  serverId,
+  backup,
+  disabled = false,
+}: {
+  serverId: string;
+  backup: Backup;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -25,7 +33,10 @@ function DeleteBackupDialog({ serverId, backup }: { serverId: string; backup: Ba
     <div>
       <button
         className="rounded-md border border-rose-700 px-3 py-1 text-xs font-semibold text-rose-200 hover:border-rose-500 disabled:opacity-60"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
       >
         Delete
       </button>
@@ -46,7 +57,7 @@ function DeleteBackupDialog({ serverId, backup }: { serverId: string; backup: Ba
               <button
                 className="rounded-md bg-rose-700 px-4 py-2 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
                 onClick={() => mutation.mutate()}
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || disabled}
               >
                 Delete
               </button>

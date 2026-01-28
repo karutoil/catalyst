@@ -6,9 +6,10 @@ import { notifyError, notifySuccess } from '../../utils/notify';
 
 type Props = {
   serverId: string;
+  disabled?: boolean;
 };
 
-function TransferServerModal({ serverId }: Props) {
+function TransferServerModal({ serverId, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const [targetNodeId, setTargetNodeId] = useState('');
   const queryClient = useQueryClient();
@@ -34,8 +35,11 @@ function TransferServerModal({ serverId }: Props) {
   return (
     <div>
       <button
-        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
-        onClick={() => setOpen(true)}
+        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700 disabled:opacity-60"
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
       >
         Transfer
       </button>
@@ -77,13 +81,13 @@ function TransferServerModal({ serverId }: Props) {
               >
                 Cancel
               </button>
-              <button
-                className="rounded-md bg-purple-600 px-4 py-2 font-semibold text-white shadow hover:bg-purple-500 disabled:opacity-60"
-                onClick={() => mutation.mutate()}
-                disabled={mutation.isPending || !targetNodeId || !nodes.length}
-              >
-                Transfer
-              </button>
+                <button
+                  className="rounded-md bg-purple-600 px-4 py-2 font-semibold text-white shadow hover:bg-purple-500 disabled:opacity-60"
+                  onClick={() => mutation.mutate()}
+                  disabled={mutation.isPending || !targetNodeId || !nodes.length || disabled}
+                >
+                  Transfer
+                </button>
             </div>
           </div>
         </div>

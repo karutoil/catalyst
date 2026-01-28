@@ -59,9 +59,13 @@ taskScheduler.setTaskExecutor({
           where: { id: task.serverId },
           include: { template: true },
         })
-      : null;
+        : null;
     if (!server) {
       logger.warn({ taskId: task.id }, "Scheduled task server not found");
+      return;
+    }
+    if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+      logger.warn({ taskId: task.id, serverId: server.id }, "Scheduled task blocked: server suspended");
       return;
     }
     const serverDir = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
