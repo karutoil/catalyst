@@ -15,12 +15,22 @@ export interface StateTransition {
 export class ServerStateMachine {
   // Define allowed state transitions
   private static readonly TRANSITIONS: Map<ServerState, ServerState[]> = new Map([
-    [ServerState.STOPPED, [ServerState.INSTALLING, ServerState.STARTING, ServerState.ERROR]],
+    [
+      ServerState.STOPPED,
+      [ServerState.INSTALLING, ServerState.STARTING, ServerState.ERROR, ServerState.SUSPENDED],
+    ],
     [ServerState.INSTALLING, [ServerState.STOPPED, ServerState.ERROR]],
-    [ServerState.STARTING, [ServerState.RUNNING, ServerState.ERROR, ServerState.STOPPED]],
-    [ServerState.RUNNING, [ServerState.STOPPING, ServerState.CRASHED, ServerState.ERROR]],
+    [
+      ServerState.STARTING,
+      [ServerState.RUNNING, ServerState.ERROR, ServerState.STOPPED, ServerState.SUSPENDED],
+    ],
+    [
+      ServerState.RUNNING,
+      [ServerState.STOPPING, ServerState.CRASHED, ServerState.ERROR, ServerState.SUSPENDED],
+    ],
     [ServerState.STOPPING, [ServerState.STOPPED, ServerState.ERROR]],
     [ServerState.CRASHED, [ServerState.STARTING, ServerState.STOPPED]],
+    [ServerState.SUSPENDED, [ServerState.STOPPED, ServerState.STARTING, ServerState.ERROR]],
     [ServerState.ERROR, [ServerState.STOPPED]],
   ]);
 
@@ -56,7 +66,7 @@ export class ServerStateMachine {
    * Check if server can be started
    */
   static canStart(currentState: ServerState): boolean {
-    return [ServerState.STOPPED, ServerState.CRASHED].includes(currentState);
+    return [ServerState.STOPPED, ServerState.CRASHED, ServerState.SUSPENDED].includes(currentState);
   }
 
   /**

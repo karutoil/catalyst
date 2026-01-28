@@ -108,6 +108,10 @@ function TemplateDetailsPage() {
                 {template.allocatedCpuCores} CPU · {template.allocatedMemoryMb} MB
               </span>
             </div>
+            <div className="flex items-center justify-between gap-4">
+              <span>Config file(s)</span>
+              <span className="text-slate-100">{template.features?.configFiles?.length ? template.features.configFiles.join(', ') : template.features?.configFile ?? 'n/a'}</span>
+            </div>
           </div>
         </div>
 

@@ -9,10 +9,12 @@
 
 export enum ServerState {
   STOPPED = "stopped",
+  INSTALLING = "installing",
   STARTING = "starting",
   RUNNING = "running",
   STOPPING = "stopping",
   CRASHED = "crashed",
+  SUSPENDED = "suspended",
   ERROR = "error",
 }
 
@@ -31,6 +33,7 @@ export enum Permission {
   CONSOLE_WRITE = "console.write",
   SERVER_CREATE = "server.create",
   SERVER_DELETE = "server.delete",
+  SERVER_SUSPEND = "server.suspend",
 }
 
 // ============================================================================
@@ -65,6 +68,8 @@ export interface ServerTemplate {
     restartOnExit?: boolean;
     maxInstances?: number;
     iconUrl?: string;
+    configFile?: string;
+    configFiles?: string[];
   };
 }
 

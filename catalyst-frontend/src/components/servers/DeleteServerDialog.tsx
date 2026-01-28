@@ -6,9 +6,10 @@ import { notifyError, notifySuccess } from '../../utils/notify';
 type Props = {
   serverId: string;
   serverName: string;
+  disabled?: boolean;
 };
 
-function DeleteServerDialog({ serverId, serverName }: Props) {
+function DeleteServerDialog({ serverId, serverName, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -24,8 +25,11 @@ function DeleteServerDialog({ serverId, serverName }: Props) {
   return (
     <div>
       <button
-        className="rounded-md bg-rose-700 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-rose-600"
-        onClick={() => setOpen(true)}
+        className="rounded-md bg-rose-700 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
       >
         Delete
       </button>
@@ -47,7 +51,7 @@ function DeleteServerDialog({ serverId, serverName }: Props) {
               <button
                 className="rounded-md bg-rose-700 px-4 py-2 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
                 onClick={() => mutation.mutate()}
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || disabled}
               >
                 Delete
               </button>

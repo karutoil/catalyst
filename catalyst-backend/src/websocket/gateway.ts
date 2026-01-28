@@ -359,6 +359,15 @@ export class WebSocketGateway {
         }
         await this.routeConsoleToSubscribers(message.serverId, message);
       } else if (message.type === "server_state_update") {
+        if (process.env.SUSPENSION_ENFORCED !== "false") {
+          const current = await this.prisma.server.findUnique({
+            where: { id: message.serverId },
+            select: { suspendedAt: true },
+          });
+          if (current?.suspendedAt) {
+            return;
+          }
+        }
         // Update server status in database
         await this.prisma.server.update({
           where: { id: message.serverId },
@@ -500,10 +509,24 @@ export class WebSocketGateway {
           );
         }
 
+        if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+          return client.socket.socket.send(
+            JSON.stringify({
+              type: "error",
+              error: "SERVER_SUSPENDED",
+            })
+          );
+        }
+
         // Route to agent
         const agent = this.agents.get(server.nodeId);
         if (agent && agent.socket.socket.readyState === 1) {
-          agent.socket.socket.send(JSON.stringify(event));
+          agent.socket.socket.send(
+            JSON.stringify({
+              ...event,
+              suspended: Boolean(server.suspendedAt),
+            })
+          );
         } else {
           return client.socket.socket.send(
             JSON.stringify({
@@ -551,6 +574,17 @@ export class WebSocketGateway {
               JSON.stringify({
                 type: "error",
                 error: ErrorCodes.PERMISSION_DENIED,
+              })
+            );
+          }
+          return;
+        }
+        if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+          if (client.socket.socket.readyState === 1) {
+            client.socket.socket.send(
+              JSON.stringify({
+                type: "error",
+                error: "SERVER_SUSPENDED",
               })
             );
           }

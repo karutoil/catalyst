@@ -36,6 +36,8 @@ function TemplateEditModal({ template }: { template: Template }) {
     template.sendSignalTo === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM',
   );
   const [installScript, setInstallScript] = useState(template.installScript ?? '');
+  const [configFile, setConfigFile] = useState(template.features?.configFile ?? '');
+  const [configFiles, setConfigFiles] = useState<string[]>(template.features?.configFiles ?? []);
   const [supportedPorts, setSupportedPorts] = useState(
     template.supportedPorts?.length ? template.supportedPorts.join(', ') : '25565',
   );
@@ -84,6 +86,8 @@ function TemplateEditModal({ template }: { template: Template }) {
     setStopCommand(template.stopCommand);
     setSendSignalTo(template.sendSignalTo === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM');
     setInstallScript(template.installScript ?? '');
+    setConfigFile(template.features?.configFile ?? '');
+    setConfigFiles(template.features?.configFiles ?? (template.features?.configFile ? [template.features.configFile] : []));
     setSupportedPorts(
       template.supportedPorts?.length ? template.supportedPorts.join(', ') : '25565',
     );
@@ -111,12 +115,11 @@ function TemplateEditModal({ template }: { template: Template }) {
         sendSignalTo,
         variables: buildVariables(),
         installScript: installScript || undefined,
-        supportedPorts: parsedPorts,
-        allocatedMemoryMb: Number(allocatedMemoryMb),
-        allocatedCpuCores: Number(allocatedCpuCores),
         features: {
           ...(template.features ?? {}),
           iconUrl: iconUrl || undefined,
+          ...(configFile ? { configFile } : {}),
+          ...(configFiles.length ? { configFiles } : {}),
         },
       }),
     onSuccess: () => {
@@ -229,6 +232,30 @@ function TemplateEditModal({ template }: { template: Template }) {
                   />
                 </label>
               </div>
+              <label className="block space-y-1">
+                <span className="text-slate-300">Config file path (optional)</span>
+                <input
+                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={configFile}
+                  onChange={(event) => setConfigFile(event.target.value)}
+                  placeholder="/config/server.properties"
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-300">Config files (optional)</span>
+                <input
+                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={configFiles.join(', ')}
+                  onChange={(event) => {
+                    const next = event.target.value
+                      .split(',')
+                      .map((entry) => entry.trim())
+                      .filter(Boolean);
+                    setConfigFiles(next);
+                  }}
+                  placeholder="/config/server.properties, /config/extra.yml"
+                />
+              </label>
               <label className="block space-y-1">
                 <span className="text-slate-300">Startup command</span>
                 <textarea

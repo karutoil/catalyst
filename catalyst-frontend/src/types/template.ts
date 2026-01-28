@@ -25,6 +25,8 @@ export interface Template {
   allocatedCpuCores: number;
   features?: {
     iconUrl?: string;
+    configFile?: string;
+    configFiles?: string[];
     [key: string]: any;
   };
 }

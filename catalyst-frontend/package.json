@@ -10,7 +10,9 @@
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
     "test": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:screenshots": "playwright test screenshot-crawl",
+    "test:screenshots:headed": "playwright test screenshot-crawl --headed"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

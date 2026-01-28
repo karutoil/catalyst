@@ -68,6 +68,7 @@
   "allocatedCpuCores": 1,
   "features": {
     "restartOnExit": true,
-    "maxInstances": 50
+    "maxInstances": 50,
+    "configFiles": ["/app/.env", "/app/config.json"]
   }
 }

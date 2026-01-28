@@ -8,9 +8,10 @@ import { notifyError, notifySuccess } from '../../utils/notify';
 
 type Props = {
   serverId: string;
+  disabled?: boolean;
 };
 
-function UpdateServerModal({ serverId }: Props) {
+function UpdateServerModal({ serverId, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const [memory, setMemory] = useState('1024');
   const [cpu, setCpu] = useState('1');
@@ -85,8 +86,11 @@ function UpdateServerModal({ serverId }: Props) {
   return (
     <div>
       <button
-        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
-        onClick={() => setOpen(true)}
+        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700 disabled:opacity-60"
+        onClick={() => {
+          if (!disabled) setOpen(true);
+        }}
+        disabled={disabled}
       >
         Update
       </button>
@@ -157,13 +161,13 @@ function UpdateServerModal({ serverId }: Props) {
               >
                 Cancel
               </button>
-              <button
-                className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                onClick={() => mutation.mutate()}
-                disabled={mutation.isPending || (isRunning && isShrink)}
-              >
-                Save changes
-              </button>
+                <button
+                  className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  onClick={() => mutation.mutate()}
+                  disabled={mutation.isPending || (isRunning && isShrink) || disabled}
+                >
+                  Save changes
+                </button>
             </div>
           </div>
         </div>

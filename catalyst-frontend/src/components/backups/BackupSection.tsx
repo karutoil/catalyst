@@ -19,7 +19,15 @@ const formatProgress = (progress?: { loaded: number; total?: number }) => {
   return `Downloading ${formatBytes(progress.loaded)}`;
 };
 
-function BackupSection({ serverId, serverStatus }: { serverId: string; serverStatus: string }) {
+function BackupSection({
+  serverId,
+  serverStatus,
+  isSuspended = false,
+}: {
+  serverId: string;
+  serverStatus: string;
+  isSuspended?: boolean;
+}) {
   const [page, setPage] = useState(1);
   const { progressByBackup, setProgress, clearProgress } = useBackupDownloadStore();
   const { data, isLoading, isError } = useBackups(serverId, { page, limit: 10 });
@@ -58,7 +66,7 @@ function BackupSection({ serverId, serverStatus }: { serverId: string; serverSta
           <h2 className="text-lg font-semibold text-slate-100">Backups</h2>
           <p className="text-xs text-slate-400">Create, restore, and manage server backups.</p>
         </div>
-        <CreateBackupModal serverId={serverId} />
+        <CreateBackupModal serverId={serverId} disabled={isSuspended} />
       </div>
 
       {isLoading ? (
@@ -95,11 +103,12 @@ function BackupSection({ serverId, serverStatus }: { serverId: string; serverSta
             serverId={serverId}
             backups={backups.map((backup) => ({
               ...backup,
-              download: () => handleDownload(backup.id, backup.name),
-              downloadProgress: formatProgress(progressByBackup[`${progressKeyPrefix}${backup.id}`]),
-            }))}
-            serverStatus={serverStatus}
-          />
+                download: isSuspended ? undefined : () => handleDownload(backup.id, backup.name),
+                downloadProgress: formatProgress(progressByBackup[`${progressKeyPrefix}${backup.id}`]),
+              }))}
+              serverStatus={serverStatus}
+              isSuspended={isSuspended}
+            />
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-10 text-center text-sm text-slate-400">

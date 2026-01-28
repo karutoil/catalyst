@@ -54,13 +54,13 @@ function RestoreBackupDialog({
               >
                 Cancel
               </button>
-              <button
-                className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                onClick={() => mutation.mutate()}
-                disabled={mutation.isPending}
-              >
-                Restore
-              </button>
+                <button
+                  className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  onClick={() => mutation.mutate()}
+                  disabled={mutation.isPending || disabled}
+                >
+                  Restore
+                </button>
             </div>
           </div>
         </div>

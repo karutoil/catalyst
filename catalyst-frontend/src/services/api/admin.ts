@@ -74,6 +74,16 @@ export const adminApi = {
     const { data } = await apiClient.get<AdminServersResponse>('/api/admin/servers', { params });
     return data;
   },
+  suspendServer: async (serverId: string, reason?: string) => {
+    const { data } = await apiClient.post<ApiResponse<void>>(`/api/servers/${serverId}/suspend`, {
+      reason,
+    });
+    return data;
+  },
+  unsuspendServer: async (serverId: string) => {
+    const { data } = await apiClient.post<ApiResponse<void>>(`/api/servers/${serverId}/unsuspend`);
+    return data;
+  },
   listAuditLogs: async (params?: {
     page?: number;
     limit?: number;

@@ -13,11 +13,20 @@ export async function taskRoutes(app: FastifyInstance) {
   ) => {
     const server = await prisma.server.findUnique({
       where: { id: serverId },
-      select: { ownerId: true },
+      select: { ownerId: true, suspendedAt: true, suspensionReason: true },
     });
 
     if (!server) {
       reply.status(404).send({ error: 'Server not found' });
+      return false;
+    }
+
+    if (process.env.SUSPENSION_ENFORCED !== 'false' && server.suspendedAt) {
+      reply.status(423).send({
+        error: 'Server is suspended',
+        suspendedAt: server.suspendedAt,
+        suspensionReason: server.suspensionReason ?? null,
+      });
       return false;
     }
 
@@ -115,6 +124,18 @@ export async function taskRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
       const { serverId } = request.params as { serverId: string };
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        select: { suspendedAt: true, suspensionReason: true },
+      });
+
+      if (process.env.SUSPENSION_ENFORCED !== 'false' && server?.suspendedAt) {
+        return reply.status(423).send({
+          error: 'Server is suspended',
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
+      }
 
       // Check server access
       const serverAccess = await prisma.serverAccess.findFirst({
@@ -146,6 +167,18 @@ export async function taskRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
       const { serverId, taskId } = request.params as { serverId: string; taskId: string };
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        select: { suspendedAt: true, suspensionReason: true },
+      });
+
+      if (process.env.SUSPENSION_ENFORCED !== 'false' && server?.suspendedAt) {
+        return reply.status(423).send({
+          error: 'Server is suspended',
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
+      }
 
       // Check server access
       const serverAccess = await prisma.serverAccess.findFirst({

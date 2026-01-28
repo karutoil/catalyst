@@ -1,14 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { serversApi } from '../../services/api/servers';
 import { notifyError, notifySuccess } from '../../utils/notify';
+import type { ServerStatus } from '../../types/server';
 
 type Props = {
   serverId: string;
-  status: string;
+  status: ServerStatus;
 };
 
 function ServerControls({ serverId, status }: Props) {
   const queryClient = useQueryClient();
+  const isSuspended = status === 'suspended';
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -52,28 +54,28 @@ function ServerControls({ serverId, status }: Props) {
     <div className="flex flex-wrap gap-2 text-xs">
       <button
         className="rounded-md bg-emerald-600 px-3 py-1 font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-60"
-        disabled={start.isPending || status === 'running'}
+        disabled={start.isPending || status === 'running' || isSuspended}
         onClick={() => start.mutate()}
       >
         Start
       </button>
       <button
         className="rounded-md bg-slate-700 px-3 py-1 font-semibold text-white shadow hover:bg-slate-600 disabled:opacity-60"
-        disabled={stop.isPending || status === 'stopped'}
+        disabled={stop.isPending || status === 'stopped' || isSuspended}
         onClick={() => stop.mutate()}
       >
         Stop
       </button>
       <button
         className="rounded-md bg-sky-600 px-3 py-1 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-        disabled={restart.isPending}
+        disabled={restart.isPending || isSuspended}
         onClick={() => restart.mutate()}
       >
         Restart
       </button>
       <button
         className="rounded-md bg-rose-700 px-3 py-1 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
-        disabled={kill.isPending}
+        disabled={kill.isPending || isSuspended}
         onClick={() => kill.mutate()}
       >
         Kill

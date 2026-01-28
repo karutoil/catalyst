@@ -34,7 +34,7 @@ function ServerFilesPage() {
           Unable to load server details.
         </div>
       ) : (
-        <FileManager serverId={serverId} />
+        <FileManager serverId={serverId} isSuspended={server?.status === 'suspended'} />
       )}
     </div>
   );

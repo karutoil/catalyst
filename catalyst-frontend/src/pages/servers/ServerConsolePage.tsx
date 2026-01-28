@@ -20,7 +20,8 @@ function ServerConsolePage() {
   const outputRef = useRef<HTMLDivElement | null>(null);
 
   const title = server?.name ?? serverId ?? 'Unknown server';
-  const canSend = Boolean(serverId) && isConnected && server?.status === 'running';
+  const isSuspended = server?.status === 'suspended';
+  const canSend = Boolean(serverId) && isConnected && server?.status === 'running' && !isSuspended;
 
   useEffect(() => {
     if (!outputRef.current || !autoScroll) return;
@@ -59,6 +60,11 @@ function ServerConsolePage() {
             {server?.status ? <ServerStatusBadge status={server.status} /> : null}
           </div>
           <p className="text-sm text-slate-400">Real-time output and command input.</p>
+          {isSuspended ? (
+            <div className="mt-2 rounded-md border border-rose-900 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+              Server suspended. Console input is disabled.
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span
@@ -127,7 +133,13 @@ function ServerConsolePage() {
             className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
             value={command}
             onChange={(event) => setCommand(event.target.value)}
-            placeholder={canSend ? 'Type a command and press Enter' : 'Connect to send commands'}
+            placeholder={
+              isSuspended
+                ? 'Server suspended'
+                : canSend
+                  ? 'Type a command and press Enter'
+                  : 'Connect to send commands'
+            }
             disabled={!canSend}
           />
           <button
