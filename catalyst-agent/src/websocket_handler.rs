@@ -9,12 +9,14 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::connect_async;
 use futures::{SinkExt, StreamExt};
 use futures::stream::SplitSink;
+use uuid::Uuid;
 use sha2::{Digest, Sha256};
-use base64::Engine;
 use tracing::{info, error, warn, debug};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
+use base64::Engine;
 
 use crate::{AgentConfig, ContainerdRuntime, FileManager, StorageManager, AgentError, AgentResult};
 
@@ -31,6 +33,7 @@ pub struct WebSocketHandler {
     write: Arc<RwLock<Option<Arc<tokio::sync::Mutex<WsWrite>>>>>,
     active_log_streams: Arc<RwLock<HashSet<String>>>,
     monitor_tasks: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    active_uploads: Arc<RwLock<HashMap<String, tokio::fs::File>>>,
 }
 
 impl Clone for WebSocketHandler {
@@ -43,6 +46,7 @@ impl Clone for WebSocketHandler {
             write: self.write.clone(),
             active_log_streams: self.active_log_streams.clone(),
             monitor_tasks: self.monitor_tasks.clone(),
+            active_uploads: self.active_uploads.clone(),
         }
     }
 }
@@ -62,6 +66,7 @@ impl WebSocketHandler {
             write: Arc::new(RwLock::new(None)),
             active_log_streams: Arc::new(RwLock::new(HashSet::new())),
             monitor_tasks: Arc::new(RwLock::new(HashMap::new())),
+            active_uploads: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -122,6 +127,11 @@ impl WebSocketHandler {
             warn!("Failed to restore console writers: {}", e);
         }
 
+        // Reconcile server states to prevent drift after reconnection
+        if let Err(e) = self.reconcile_server_states().await {
+            warn!("Failed to reconcile server states: {}", e);
+        }
+
         // Start heartbeat task
         let write_clone = write.clone();
         tokio::spawn(async move {
@@ -135,6 +145,29 @@ impl WebSocketHandler {
                 if let Ok(mut w) = write_clone.try_lock() {
                     let _ = w.send(Message::Text(heartbeat.to_string())).await;
                 }
+            }
+        });
+
+        // Start periodic state reconciliation task (every 5 minutes)
+        // This catches any status drift that may occur
+        let handler_clone = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(300));
+            loop {
+                interval.tick().await;
+                debug!("Running periodic state reconciliation");
+                if let Err(e) = handler_clone.reconcile_server_states().await {
+                    warn!("Periodic reconciliation failed: {}", e);
+                }
+            }
+        });
+
+        // Start global event monitor for instant state syncing
+        // This provides real-time state updates with zero polling
+        let handler_clone = self.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handler_clone.monitor_global_events().await {
+                error!("Global event monitor failed: {}", e);
             }
         });
 
@@ -198,7 +231,11 @@ impl WebSocketHandler {
             Some("create_backup") => self.handle_create_backup(&msg, write).await?,
             Some("restore_backup") => self.handle_restore_backup(&msg, write).await?,
             Some("delete_backup") => self.handle_delete_backup(&msg, write).await?,
+            Some("download_backup_start") => self.handle_download_backup_start(&msg, write).await?,
             Some("download_backup") => self.handle_download_backup(&msg, write).await?,
+            Some("upload_backup_start") => self.handle_upload_backup_start(&msg, write).await?,
+            Some("upload_backup_chunk") => self.handle_upload_backup_chunk(&msg, write).await?,
+            Some("upload_backup_complete") => self.handle_upload_backup_complete(&msg, write).await?,
             Some("resize_storage") => self.handle_resize_storage(&msg, write).await?,
             Some("resume_console") => self.resume_console(&msg).await?,
             Some("node_handshake_response") => {
@@ -1209,6 +1246,50 @@ impl WebSocketHandler {
         Ok(())
     }
 
+    async fn handle_download_backup_start(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let request_id = msg["requestId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing requestId".to_string())
+        })?;
+        let server_id = msg["serverId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing serverId".to_string())
+        })?;
+        let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing backupPath".to_string())
+        })?;
+
+        let backup_file = PathBuf::from(backup_path);
+        if !backup_file.exists() {
+            let event = json!({
+                "type": "backup_download_response",
+                "requestId": request_id,
+                "serverId": server_id,
+                "success": false,
+                "error": "Backup file not found",
+            });
+            let mut w = write.lock().await;
+            w.send(Message::Text(event.to_string()))
+                .await
+                .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+            return Ok(());
+        }
+
+        let event = json!({
+            "type": "backup_download_response",
+            "requestId": request_id,
+            "serverId": server_id,
+            "success": true,
+        });
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+        Ok(())
+    }
+
     async fn handle_download_backup(
         &self,
         msg: &Value,
@@ -1303,6 +1384,97 @@ impl WebSocketHandler {
                 .map_err(|e| AgentError::NetworkError(e.to_string()))?;
         }
 
+        Ok(())
+    }
+
+    async fn handle_upload_backup_start(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let request_id = msg["requestId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing requestId".to_string())
+        })?;
+        let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing backupPath".to_string())
+        })?;
+        let backup_file = PathBuf::from(backup_path);
+        if let Some(parent) = backup_file.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let file = tokio::fs::File::create(&backup_file).await?;
+        self.active_uploads
+            .write()
+            .await
+            .insert(request_id.to_string(), file);
+
+        let event = json!({
+            "type": "backup_upload_response",
+            "requestId": request_id,
+            "success": true,
+        });
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn handle_upload_backup_chunk(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let request_id = msg["requestId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing requestId".to_string())
+        })?;
+        let data = msg["data"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing data".to_string())
+        })?;
+        let chunk = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|_| AgentError::InvalidRequest("Invalid chunk data".to_string()))?;
+
+        let mut uploads = self.active_uploads.write().await;
+        let file = uploads.get_mut(request_id).ok_or_else(|| {
+            AgentError::InvalidRequest("Unknown upload request".to_string())
+        })?;
+        file.write_all(&chunk).await?;
+
+        let event = json!({
+            "type": "backup_upload_chunk_response",
+            "requestId": request_id,
+            "success": true,
+        });
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn handle_upload_backup_complete(
+        &self,
+        msg: &Value,
+        write: &Arc<tokio::sync::Mutex<WsWrite>>,
+    ) -> AgentResult<()> {
+        let request_id = msg["requestId"].as_str().ok_or_else(|| {
+            AgentError::InvalidRequest("Missing requestId".to_string())
+        })?;
+        let mut uploads = self.active_uploads.write().await;
+        if let Some(mut file) = uploads.remove(request_id) {
+            file.flush().await?;
+        }
+
+        let event = json!({
+            "type": "backup_upload_response",
+            "requestId": request_id,
+            "success": true,
+        });
+        let mut w = write.lock().await;
+        w.send(Message::Text(event.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
         Ok(())
     }
 
@@ -1458,6 +1630,255 @@ impl WebSocketHandler {
                 .map_err(|e| AgentError::NetworkError(e.to_string()))?;
         }
 
+        Ok(())
+    }
+
+    /// Reconcile server states by checking actual container status and updating backend
+    /// This prevents status drift when containers exit unexpectedly or agent reconnects
+    pub async fn reconcile_server_states(&self) -> AgentResult<()> {
+        debug!("Starting server state reconciliation");
+        
+        let containers = self.runtime.list_containers().await?;
+        let writer = { self.write.read().await.clone() };
+        let Some(ws) = writer else {
+            debug!("No WebSocket connection, skipping reconciliation");
+            return Ok(());
+        };
+
+        let container_count = containers.len();
+
+        // Build map of running containers by name/ID
+        let mut running_containers = HashSet::new();
+        let mut found_uuids = Vec::new();
+        for container in &containers {
+            let container_name = normalize_container_name(&container.names);
+            if !container_name.is_empty() {
+                found_uuids.push(container_name.clone());
+                if container.status.contains("Up") {
+                    running_containers.insert(container_name);
+                }
+            }
+        }
+
+        // Report state for all known containers
+        for container in containers {
+            let server_uuid = normalize_container_name(&container.names);
+            if server_uuid.is_empty() {
+                continue;
+            }
+
+            let is_running = container.status.contains("Up");
+            let state = if is_running { "running" } else { "stopped" };
+            
+            // If container is stopped, try to get exit code
+            let exit_code = if !is_running {
+                self.runtime.get_container_exit_code(&container.id).await.ok().flatten()
+            } else {
+                None
+            };
+
+            info!("Reconciling container: name='{}', uuid='{}', status='{}', state='{}'", 
+                  container.names, server_uuid, container.status, state);
+
+            let msg = json!({
+                "type": "server_state_sync",
+                "serverUuid": server_uuid,
+                "containerId": server_uuid,  // Use container name (CUID), not internal container ID
+                "state": state,
+                "exitCode": exit_code,
+                "timestamp": chrono::Utc::now().timestamp_millis(),
+            });
+
+            let mut w = ws.lock().await;
+            if let Err(err) = w.send(Message::Text(msg.to_string())).await {
+                warn!("Failed to send state sync: {}", err);
+                break;
+            }
+        }
+
+        // Send reconciliation complete message so backend knows which servers are missing
+        let complete_msg = json!({
+            "type": "server_state_sync_complete",
+            "nodeId": self.config.server.node_id,
+            "foundContainers": found_uuids,
+            "timestamp": chrono::Utc::now().timestamp_millis(),
+        });
+
+        let mut w = ws.lock().await;
+        if let Err(err) = w.send(Message::Text(complete_msg.to_string())).await {
+            warn!("Failed to send reconciliation complete: {}", err);
+        }
+
+        info!("Server state reconciliation complete: {} containers checked", container_count);
+        Ok(())
+    }
+
+    /// Monitor all container events and sync state changes instantly
+    /// This eliminates the need for periodic polling by using event-driven updates
+    async fn monitor_global_events(&self) -> AgentResult<()> {
+        info!("Starting global container event monitor for instant state syncing");
+
+        loop {
+            // Subscribe to all events
+            let mut event_stream = match self.runtime.subscribe_to_all_events().await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    error!("Failed to subscribe to global events: {}. Retrying in 10s...", e);
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    continue;
+                }
+            };
+
+            let stdout = match event_stream.stdout.take() {
+                Some(out) => out,
+                None => {
+                    error!("Failed to capture event stream stdout. Retrying in 10s...");
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    continue;
+                }
+            };
+
+            let stderr = event_stream.stderr.take();
+
+            // Spawn task to log stderr
+            if let Some(stderr) = stderr {
+                tokio::spawn(async move {
+                    let mut reader = tokio::io::BufReader::new(stderr).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        if !line.trim().is_empty() {
+                            error!("nerdctl events stderr: {}", line);
+                        }
+                    }
+                });
+            }
+
+            let mut reader = tokio::io::BufReader::new(stdout).lines();
+
+            // Read events line by line (JSON format)
+            while let Ok(Some(line)) = reader.next_line().await {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+
+                // Parse JSON event
+                let event: Value = match serde_json::from_str(line) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("Failed to parse event JSON: {}", e);
+                        continue;
+                    }
+                };
+
+                // Extract container name and event type
+                let container_name = event
+                    .get("Actor")
+                    .and_then(|a| a.get("Attributes"))
+                    .and_then(|attrs| attrs.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("");
+
+                let event_type = event.get("status").and_then(|s| s.as_str()).unwrap_or("");
+
+                if container_name.is_empty() || event_type.is_empty() {
+                    continue;
+                }
+
+                // Only sync on state-changing events
+                match event_type {
+                    "start" | "die" | "stop" | "kill" | "pause" | "unpause" => {
+                        debug!("Container {} event: {}", container_name, event_type);
+                        
+                        // Give the container a moment to stabilize state
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        
+                        // Sync this specific container's state
+                        if let Err(e) = self.sync_container_state(container_name).await {
+                            warn!("Failed to sync state for {}: {}", container_name, e);
+                        }
+                    }
+                    "remove" | "destroy" => {
+                        // Container has been removed - report as stopped immediately
+                        debug!("Container {} removed/destroyed", container_name);
+                        if let Err(e) = self.sync_removed_container_state(container_name).await {
+                            warn!("Failed to sync removed state for {}: {}", container_name, e);
+                        }
+                    }
+                    _ => {
+                        // Ignore other events like "create", "exec_create", etc.
+                    }
+                }
+            }
+
+            // Stream ended, restart
+            warn!("Global event stream ended, restarting in 5s...");
+            let _ = event_stream.wait().await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    /// Sync a specific container's state to the backend
+    async fn sync_container_state(&self, container_name: &str) -> AgentResult<()> {
+        let writer = { self.write.read().await.clone() };
+        let Some(ws) = writer else {
+            return Ok(()); // No connection, skip
+        };
+
+        // Check if container exists first
+        if !self.runtime.container_exists(container_name).await {
+            // Container doesn't exist - treat as stopped/removed
+            return self.sync_removed_container_state(container_name).await;
+        }
+
+        // Check if container is running and get its state
+        let is_running = self.runtime.is_container_running(container_name).await.unwrap_or(false);
+        let state = if is_running { "running" } else { "stopped" };
+        
+        let exit_code = if !is_running {
+            self.runtime.get_container_exit_code(container_name).await.ok().flatten()
+        } else {
+            None
+        };
+
+        let msg = json!({
+            "type": "server_state_sync",
+            "serverUuid": container_name,
+            "containerId": container_name,
+            "state": state,
+            "exitCode": exit_code,
+            "timestamp": chrono::Utc::now().timestamp_millis(),
+        });
+
+        let mut w = ws.lock().await;
+        w.send(Message::Text(msg.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+
+        debug!("Synced state for {}: {}", container_name, state);
+        Ok(())
+    }
+
+    /// Sync state for a removed/destroyed container (report as stopped)
+    async fn sync_removed_container_state(&self, container_name: &str) -> AgentResult<()> {
+        let writer = { self.write.read().await.clone() };
+        let Some(ws) = writer else {
+            return Ok(()); // No connection, skip
+        };
+
+        let msg = json!({
+            "type": "server_state_sync",
+            "serverUuid": container_name,
+            "containerId": container_name,
+            "state": "stopped",
+            "timestamp": chrono::Utc::now().timestamp_millis(),
+        });
+
+        let mut w = ws.lock().await;
+        w.send(Message::Text(msg.to_string()))
+            .await
+            .map_err(|e| AgentError::NetworkError(e.to_string()))?;
+
+        debug!("Synced removed container {} as stopped", container_name);
         Ok(())
     }
 

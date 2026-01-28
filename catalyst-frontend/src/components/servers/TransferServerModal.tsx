@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { serversApi } from '../../services/api/servers';
+import type { BackupStorageMode } from '../../types/server';
 import { useNodes } from '../../hooks/useNodes';
 import { notifyError, notifySuccess } from '../../utils/notify';
 
@@ -12,11 +13,15 @@ type Props = {
 function TransferServerModal({ serverId, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const [targetNodeId, setTargetNodeId] = useState('');
+  const [transferMode, setTransferMode] = useState<BackupStorageMode>('local');
   const queryClient = useQueryClient();
   const { data: nodes = [], isLoading: nodesLoading } = useNodes();
 
   const mutation = useMutation({
-    mutationFn: () => serversApi.transfer(serverId, { targetNodeId }),
+    mutationFn: () => serversApi.transfer(serverId, {
+      targetNodeId,
+      transferMode,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['server', serverId] });
       queryClient.invalidateQueries({ queryKey: ['servers'] });
@@ -70,6 +75,19 @@ function TransferServerModal({ serverId, disabled = false }: Props) {
                       {n.name}
                     </option>
                   ))}
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-300">Transfer storage</span>
+                <select
+                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={transferMode}
+                  onChange={(e) => setTransferMode(e.target.value as BackupStorageMode)}
+                  disabled={disabled}
+                >
+                  <option value="local">Shared filesystem</option>
+                  <option value="s3">S3</option>
+                  <option value="stream">Stream</option>
                 </select>
               </label>
               <p className="text-xs text-slate-400">Transferring will reschedule workloads on the selected node.</p>

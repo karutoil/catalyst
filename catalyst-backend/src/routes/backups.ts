@@ -2,13 +2,16 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import * as fs from "fs/promises";
 import { PassThrough } from "stream";
+import {
+  resolveBackupStorageMode,
+  buildBackupPaths,
+  openStorageStream,
+  deleteBackupFromStorage,
+} from "../services/backup-storage";
 
 export async function backupRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
   const BACKUP_DIR = process.env.BACKUP_DIR || "/var/lib/catalyst/backups";
-
-  // Ensure backup directory exists
-  await fs.mkdir(BACKUP_DIR, { recursive: true });
 
   const buildServerDir = (serverUuid: string) => {
     const serverDir = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
@@ -49,17 +52,25 @@ export async function backupRoutes(app: FastifyInstance) {
       // Generate backup name
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const backupName = name || `backup-${timestamp}`;
-
+      const mode = resolveBackupStorageMode(server);
+      const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode);
       const serverDir = buildServerDir(server.uuid);
-      const backupPath = `${BACKUP_DIR}/${server.uuid}/${backupName}.tar.gz`;
+
+      if (mode === "s3" && !storageKey) {
+        return reply.status(500).send({ error: "Missing S3 storage key" });
+      }
 
       const backupRecord = await prisma.backup.create({
         data: {
           serverId: server.id,
           name: backupName,
-          path: backupPath,
+          path: storagePath,
+          storageMode: mode,
           sizeMb: 0,
-          metadata: {},
+          metadata: {
+            agentPath,
+            storageKey,
+          },
         },
       });
 
@@ -71,7 +82,7 @@ export async function backupRoutes(app: FastifyInstance) {
         serverUuid: server.uuid,
         serverDir,
         backupName,
-        backupPath,
+        backupPath: agentPath,
         backupId: backupRecord.id,
       });
 
@@ -251,13 +262,32 @@ export async function backupRoutes(app: FastifyInstance) {
 
       const serverDir = buildServerDir(server.uuid);
 
-      // Send restore request to agent
       const gateway = (app as any).wsGateway;
+      let restorePath = backup.path;
+      if (backup.storageMode === "s3") {
+        const { storageKey } = backup.metadata as { storageKey?: string };
+        if (!storageKey) {
+          return reply.status(500).send({ error: "Missing S3 storage key" });
+        }
+        const tmpPath = `${BACKUP_DIR}/${server.uuid}/${backup.name}.tar.gz`;
+        await fs.mkdir(`${BACKUP_DIR}/${server.uuid}`, { recursive: true });
+        const { stream } = await openStorageStream(backup);
+        await new Promise<void>((resolve, reject) => {
+          const writeStream = require("fs").createWriteStream(tmpPath);
+          stream.pipe(writeStream);
+          stream.on("error", reject);
+          writeStream.on("finish", () => resolve());
+          writeStream.on("error", reject);
+        });
+        restorePath = tmpPath;
+      }
+
+      // Send restore request to agent
       const success = await gateway.sendToAgent(server.nodeId, {
         type: "restore_backup",
         serverId: server.id,
         serverUuid: server.uuid,
-        backupPath: backup.path,
+        backupPath: restorePath,
         backupId: backup.id,
         serverDir,
       });
@@ -317,15 +347,12 @@ export async function backupRoutes(app: FastifyInstance) {
         });
       }
 
-      // Send delete request to agent if node is online
-      if (server.node.isOnline) {
-        const gateway = (app as any).wsGateway;
-        await gateway.sendToAgent(server.nodeId, {
-          type: "delete_backup",
-          serverId: server.id,
-          backupPath: backup.path,
-        });
-      }
+      const gateway = (app as any).wsGateway;
+      await deleteBackupFromStorage(gateway, backup, {
+        id: server.id,
+        nodeId: server.nodeId,
+        node: server.node,
+      });
 
       // Delete backup record
       await prisma.backup.delete({ where: { id: backupId } });
@@ -366,6 +393,23 @@ export async function backupRoutes(app: FastifyInstance) {
             suspendedAt: server.suspendedAt,
             suspensionReason: server.suspensionReason ?? null,
           });
+        }
+      }
+
+      if (backup.storageMode === "s3") {
+        try {
+          const { stream, contentLength } = await openStorageStream(backup);
+          if (contentLength) {
+            reply.header("Content-Length", contentLength.toString());
+          }
+          reply.header("Content-Type", "application/gzip");
+          reply.header(
+            "Content-Disposition",
+            `attachment; filename="${backup.name}.tar.gz"`,
+          );
+          return reply.send(stream);
+        } catch (error: any) {
+          return reply.status(500).send({ error: error?.message || "Failed to download backup" });
         }
       }
 
@@ -414,12 +458,24 @@ export async function backupRoutes(app: FastifyInstance) {
         reply.send(stream);
 
         try {
+          const agentPath =
+            (backup.metadata as { agentPath?: string })?.agentPath || backup.path;
+          const response = await gateway.requestFromAgent(server.nodeId, {
+            type: "download_backup_start",
+            serverId: server.id,
+            backupPath: agentPath,
+          });
+          const requestId = response?.requestId as string | undefined;
+          if (!requestId) {
+            throw new Error("Missing download requestId");
+          }
           await gateway.streamBinaryFromAgent(
             server.nodeId,
             {
               type: "download_backup",
               serverId: server.id,
-              backupPath: backup.path,
+              backupPath: agentPath,
+              requestId,
             },
             (chunk: Buffer) => {
               bytesWritten += chunk.length;

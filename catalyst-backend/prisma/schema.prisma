@@ -208,6 +208,11 @@ model Server {
   
   // Configuration
   environment    Json     @default("{}")
+
+  // Backups
+  backupStorageMode   String   @default("local") // local, s3, stream
+  backupRetentionCount Int     @default(0)
+  backupRetentionDays  Int     @default(0)
   
   // Crash detection & auto-restart
   restartPolicy  String   @default("on-failure") // always, on-failure, never
@@ -224,6 +229,7 @@ model Server {
   logs           ServerLog[]
   metrics        ServerMetrics[]
   backups        Backup[]
+  databases      ServerDatabase[]
   scheduledTasks ScheduledTask[]
   alerts         Alert[]
   ipAllocation   IpAllocation?
@@ -269,6 +275,7 @@ model Backup {
   server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
   name        String
   path        String   // File path on disk or S3 URL
+  storageMode String   @default("local")
   sizeMb      Float
   compressed  Boolean  @default(true)
   checksum    String?  // SHA256 checksum for integrity

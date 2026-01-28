@@ -1089,6 +1089,26 @@ impl ContainerdRuntime {
 
         Ok(child)
     }
+
+    /// Subscribe to all container events in the namespace
+    /// Returns events with format: container_name status (e.g., "server-uuid start")
+    pub async fn subscribe_to_all_events(&self) -> AgentResult<tokio::process::Child> {
+        debug!("Subscribing to all container events in namespace: {}", self.namespace);
+
+        // Use JSON format which is more reliable than custom formats
+        let child = Command::new("nerdctl")
+            .arg("--namespace")
+            .arg(&self.namespace)
+            .arg("events")
+            .arg("--format")
+            .arg("json")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| AgentError::ContainerError(format!("Failed to spawn global events stream: {}", e)))?;
+
+        Ok(child)
+    }
 }
 
 fn create_fifo(path: &Path) -> std::io::Result<()> {

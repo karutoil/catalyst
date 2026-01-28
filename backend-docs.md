@@ -33,8 +33,8 @@
 - Server lifecycle, templates, RBAC, metrics, SFTP, backups (local), tasks, alerts, IPAM pools
 
 **Partial**
-- Transfers (assumes shared storage; no cross-node copy)
-- Backups (no retention rules or remote storage)
+- Transfers (supports shared storage, S3, and stream strategies)
+- Backups (local, stream, and S3 with retention rules)
 - Scheduler (nextRunAt is approximate; no catch-up)
 - File archives (backend-only; agent compress/decompress not implemented)
 - Crash handling (restartPolicy enforced; exit-code reporting)
@@ -1018,7 +1018,8 @@ Move a server to another node.
 **Request Body:**
 ```json
 {
-  "targetNodeId": "node456"
+  "targetNodeId": "node456",
+  "transferMode": "stream"
 }
 ```
 
@@ -1045,7 +1046,7 @@ Move a server to another node.
 1. Validate server is stopped
 2. Check target node resources
 3. Create backup on source node
-4. Transfer backup to target node
+4. Transfer backup to target node (shared filesystem, S3, or stream)
 5. Restore on target node
 6. Update server.nodeId in database
 
@@ -1053,6 +1054,33 @@ Move a server to another node.
 - `400` - Server must be stopped
 - `400` - Target node offline or insufficient resources
 - `400` - Server already on target node
+- `400` - Invalid transferMode
+
+---
+
+### Update Backup Settings
+
+**Endpoint:** `PATCH /api/servers/:serverId/backup-settings`  
+**Authentication:** Required (server.update permission)
+
+**Body:**
+```json
+{
+  "storageMode": "s3",
+  "retentionCount": 5,
+  "retentionDays": 14
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "backupStorageMode": "s3",
+  "backupRetentionCount": 5,
+  "backupRetentionDays": 14
+}
+```
 
 ---
 
@@ -1358,6 +1386,11 @@ Extract a tar.gz archive.
 
 **Endpoint:** `POST /api/servers/:serverId/backups`  
 **Authentication:** Required (backup.create permission)
+
+**Storage Modes:**
+- `local` - Store backups on the node and backend file system.
+- `s3` - Upload backups to S3-compatible object storage.
+- `stream` - Stream backups to backend-managed storage for transfer workflows.
 
 **Request Body:**
 ```json

@@ -9,6 +9,7 @@ export type ServerStatus =
   | 'suspended';
 
 export type RestartPolicy = 'always' | 'on-failure' | 'never';
+export type BackupStorageMode = 'local' | 's3' | 'stream';
 
 export interface Server {
   id: string;
@@ -44,6 +45,9 @@ export interface Server {
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
   allocatedDiskMb?: number;
+  backupStorageMode?: BackupStorageMode;
+  backupRetentionCount?: number;
+  backupRetentionDays?: number;
   restartPolicy?: RestartPolicy;
   crashCount?: number;
   maxCrashCount?: number;
@@ -91,6 +95,7 @@ export interface UpdateServerPayload {
 
 export interface TransferServerPayload {
   targetNodeId: string;
+  transferMode?: BackupStorageMode;
 }
 
 export type ServerAllocation = {

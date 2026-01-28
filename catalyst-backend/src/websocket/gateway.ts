@@ -218,6 +218,28 @@ export class WebSocketGateway {
         return;
       }
 
+      if (message.type === "backup_upload_response") {
+        const pending = message.requestId
+          ? this.pendingAgentRequests.get(message.requestId)
+          : undefined;
+        if (pending) {
+          clearTimeout(pending.timeout);
+          if (message.success === false) {
+            pending.reject(new Error(message.error || "Backup upload failed"));
+          } else {
+            pending.resolve(message);
+          }
+          this.pendingAgentRequests.delete(message.requestId);
+        } else {
+          this.logger.warn({ requestId: message.requestId }, "No pending upload request");
+        }
+        return;
+      }
+
+      if (message.type === "backup_upload_chunk_response") {
+        return;
+      }
+
       if (message.type === "backup_download_chunk") {
         const pending = message.requestId
           ? this.pendingAgentRequests.get(message.requestId)
@@ -471,7 +493,7 @@ export class WebSocketGateway {
           if (!restartSent) {
             this.autoRestartingServers.delete(server.id);
             await this.prisma.server.update({
-
+              where: { id: server.id },
               data: { status: ServerState.CRASHED },
             });
             this.logger.warn({ serverId: server.id }, "Auto-restart failed to send to agent");
@@ -484,42 +506,228 @@ export class WebSocketGateway {
 
         // Route to clients
         await this.routeToClients(message.serverId, message);
+      } else if (message.type === "server_state_sync") {
+        // State reconciliation from agent - updates status to match actual container state
+        // Container name is the server ID (CUID), not the UUID field
+        this.logger.info(
+          { serverId: message.serverUuid, state: message.state, containerId: message.containerId },
+          "Received state sync message"
+        );
+
+        const server = await this.prisma.server.findUnique({
+          where: { id: message.serverUuid },  // Container name is server.id (CUID), not server.uuid
+        });
+
+        if (!server) {
+          this.logger.warn(`State sync for unknown server ID: ${message.serverUuid}`);
+          return;
+        }
+
+        // Check if server is suspended - don't update suspended servers
+        if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+          return;
+        }
+
+        // Only update if state is different to avoid unnecessary writes
+        if (server.status !== message.state) {
+          this.logger.info(
+            { serverId: server.id, oldStatus: server.status, newStatus: message.state },
+            "State reconciliation: updating server status"
+          );
+
+          const updateData: Record<string, any> = {
+            status: message.state,
+          };
+
+          if (typeof message.exitCode === "number") {
+            updateData.lastExitCode = message.exitCode;
+          }
+
+          await this.prisma.server.update({
+            where: { id: server.id },
+            data: updateData,
+          });
+
+          // Log the reconciliation event
+          await this.prisma.serverLog.create({
+            data: {
+              serverId: server.id,
+              stream: "system",
+              data: `[State Sync] Status reconciled to ${message.state}`,
+            },
+          });
+
+          // Notify clients of the state change
+          await this.routeToClients(server.id, {
+            type: "server_state_update",
+            serverId: server.id,
+            state: message.state,
+            timestamp: message.timestamp || Date.now(),
+          });
+        }
+      } else if (message.type === "server_state_sync_complete") {
+        // Reconciliation completed - check for servers that should exist but weren't found
+        const nodeId = message.nodeId;
+        const foundContainers = Array.isArray(message.foundContainers) 
+          ? new Set(message.foundContainers) 
+          : new Set();
+
+        this.logger.debug(
+          { nodeId, foundCount: foundContainers.size },
+          "Received state sync completion"
+        );
+
+        // Find all servers that should be on this node
+        const serversOnNode = await this.prisma.server.findMany({
+          where: { 
+            nodeId,
+            // Only check servers that aren't already in terminal states
+            status: {
+              notIn: [ServerState.STOPPED, ServerState.ERROR]
+            }
+          },
+          select: { id: true, uuid: true, status: true, suspendedAt: true }
+        });
+
+        // Check which servers are missing (container not found)
+        for (const server of serversOnNode) {
+          // Skip suspended servers
+          if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+            continue;
+          }
+
+          // Container name is server.id (CUID), not server.uuid
+          if (!foundContainers.has(server.id)) {
+            // Server should exist but container wasn't found - mark as stopped
+            this.logger.info(
+              { serverId: server.id, uuid: server.uuid, previousStatus: server.status },
+              "Marking missing server as stopped during reconciliation"
+            );
+
+            await this.prisma.server.update({
+              where: { id: server.id },
+              data: { status: ServerState.STOPPED }
+            });
+
+            await this.prisma.serverLog.create({
+              data: {
+                serverId: server.id,
+                stream: "system",
+                data: `[State Sync] Container not found during reconciliation, marked as stopped`
+              }
+            });
+
+            // Notify clients
+            await this.routeToClients(server.id, {
+              type: "server_state_update",
+              serverId: server.id,
+              state: ServerState.STOPPED,
+              timestamp: Date.now(),
+            });
+          }
+        }
       } else if (message.type === "backup_complete") {
         const server = await this.prisma.server.findUnique({
           where: { id: message.serverId },
+          include: { node: true },
         });
 
         if (!server) {
           return;
         }
 
-        if (message.backupId) {
-          const updated = await this.prisma.backup.update({
-            where: { id: message.backupId },
-            data: {
-              path: message.backupPath,
-              sizeMb: Number(message.sizeMb) || 0,
-              checksum: message.checksum ?? null,
-            },
-          });
-          if (message.sizeMb !== undefined) {
-            this.logger.info(
-              { backupId: message.backupId, sizeMb: updated.sizeMb },
-              "Backup updated from agent",
-            );
+        const backupRecord = message.backupId
+          ? await this.prisma.backup.findUnique({ where: { id: message.backupId } })
+          : await this.prisma.backup.findFirst({
+              where: {
+                serverId: message.serverId,
+                name: message.backupName,
+              },
+              orderBy: { createdAt: "desc" },
+            });
+
+        if (!backupRecord) {
+          return;
+        }
+
+        const mode = backupRecord.storageMode || "local";
+        const agentPath =
+          (backupRecord.metadata as any)?.agentPath ?? message.backupPath ?? backupRecord.path;
+
+        if (mode === "s3") {
+          try {
+            const { streamAgentBackupToS3 } = await import("../services/backup-storage");
+            const storageKey = (backupRecord.metadata as any)?.storageKey;
+            if (storageKey) {
+              await streamAgentBackupToS3(
+                this,
+                server.nodeId,
+                server.id,
+                agentPath,
+                storageKey,
+              );
+            }
+          } catch (error) {
+            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to S3");
           }
-        } else {
-          await this.prisma.backup.updateMany({
-            where: {
-              serverId: message.serverId,
-              name: message.backupName,
-            },
-            data: {
-              path: message.backupPath,
-              sizeMb: Number(message.sizeMb) || 0,
-              checksum: message.checksum ?? null,
-            },
+        } else if (mode === "stream") {
+          try {
+            const { streamAgentBackupToLocal } = await import("../services/backup-storage");
+            await streamAgentBackupToLocal(
+              this,
+              server.nodeId,
+              server.id,
+              agentPath,
+              backupRecord.path,
+            );
+          } catch (error) {
+            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to fetch stream backup");
+          }
+        }
+
+        const updated = await this.prisma.backup.update({
+          where: { id: backupRecord.id },
+          data: {
+            sizeMb: Number(message.sizeMb) || backupRecord.sizeMb,
+            checksum: message.checksum ?? backupRecord.checksum,
+          },
+        });
+        this.logger.info(
+          { backupId: backupRecord.id, sizeMb: updated.sizeMb },
+          "Backup updated from agent",
+        );
+
+        const retentionCount = server.backupRetentionCount ?? 0;
+        const retentionDays = server.backupRetentionDays ?? 0;
+        if (retentionCount > 0 || retentionDays > 0) {
+          const cutoff =
+            retentionDays > 0
+              ? new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
+              : null;
+          const backups = await this.prisma.backup.findMany({
+            where: { serverId: message.serverId },
+            orderBy: { createdAt: "desc" },
           });
+          const byCount = retentionCount > 0 ? backups.slice(retentionCount) : [];
+          const byAge = cutoff ? backups.filter((backup) => backup.createdAt < cutoff) : [];
+          const toDelete = new Map(
+            [...byCount, ...byAge].map((backup) => [backup.id, backup]),
+          );
+          if (toDelete.size) {
+            for (const backup of toDelete.values()) {
+              try {
+                const { deleteBackupFromStorage } = await import("../services/backup-storage");
+                await deleteBackupFromStorage(this, backup, {
+                  id: server.id,
+                  nodeId: server.nodeId,
+                  node: { isOnline: server.node?.isOnline ?? false },
+                });
+                await this.prisma.backup.delete({ where: { id: backup.id } });
+              } catch (error) {
+                this.logger.warn({ err: error, backupId: backup.id }, "Failed to enforce retention");
+              }
+            }
+          }
         }
 
         await this.routeToClients(message.serverId, message);

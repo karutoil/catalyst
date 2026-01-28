@@ -7,6 +7,7 @@ import type {
   CreateServerPayload,
   ServerLogs,
   RestartPolicy,
+  BackupStorageMode,
 } from '../../types/server';
 
 type ApiResponse<T> = {
@@ -124,6 +125,20 @@ export const serversApi = {
     const { data } = await apiClient.post<ApiResponse<any>>(
       `/api/servers/${id}/reset-crash-count`,
       {},
+    );
+    return data;
+  },
+  updateBackupSettings: async (
+    id: string,
+    payload: {
+      storageMode?: BackupStorageMode;
+      retentionCount?: number;
+      retentionDays?: number;
+    },
+  ) => {
+    const { data } = await apiClient.patch<ApiResponse<any>>(
+      `/api/servers/${id}/backup-settings`,
+      payload,
     );
     return data;
   },

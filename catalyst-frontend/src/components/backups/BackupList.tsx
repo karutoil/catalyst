@@ -77,11 +77,17 @@ function BackupList({
                 <DeleteBackupDialog serverId={serverId} backup={backup} disabled={isSuspended} />
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-4">
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300 sm:grid-cols-5">
               <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
                 <div className="text-slate-400">Size</div>
                 <div className="text-sm font-semibold text-slate-100">
                   {formatBackupSize(toNumber(backup.sizeMb))}
+                </div>
+              </div>
+              <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                <div className="text-slate-400">Storage</div>
+                <div className="text-sm font-semibold text-slate-100">
+                  {backup.storageMode ?? 'local'}
                 </div>
               </div>
               <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">

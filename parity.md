@@ -71,20 +71,20 @@ Catalyst is missing several core Wings-equivalent features across backend, agent
 
 ### Phase 5 — Transfers & Backups (Multi-Storage Modes)
 **Backend**
-- [ ] Implement storage abstraction for backups: `local`, `s3`, `stream`.
-- [ ] Add config section for S3 (endpoint, bucket, region, creds, path style).
-- [ ] Transfer pipeline: create backup -> move/copy to target storage -> restore on target.
-- [ ] Update backup download endpoint to route based on storage mode.
-- [ ] Add backup retention/rotation rules per server.
+- [x] Implement storage abstraction for backups: `local`, `s3`, `stream`.
+- [x] Add config section for S3 (endpoint, bucket, region, creds, path style).
+- [x] Transfer pipeline: create backup -> move/copy to target storage -> restore on target.
+- [x] Update backup download endpoint to route based on storage mode.
+- [x] Add backup retention/rotation rules per server.
 
 **Agent**
-- [ ] For `stream` mode: support binary stream send/receive for backup chunks.
-- [ ] For `local` mode: ensure backup path and permissions exist.
-- [ ] For `s3` mode: optionally allow agent to upload if backend opts out (config flag).
+- [x] For `stream` mode: support binary stream send/receive for backup chunks.
+- [x] For `local` mode: ensure backup path and permissions exist.
+- [x] For `s3` mode: optionally allow agent to upload if backend opts out (config flag).
 
 **Frontend**
-- [ ] Backup settings UI (retention rules, storage mode). 
-- [ ] Transfer modal updates (storage/strategy selection if admin).
+- [x] Backup settings UI (retention rules, storage mode). 
+- [x] Transfer modal updates (storage/strategy selection if admin).
 
 ### Phase 6 — Scheduler Accuracy & Reliability
 **Backend**

@@ -130,10 +130,10 @@ const buildConnectionInfo = (
   };
 };
 
-const withConnectionInfo = (server: any, fallbackNode?: { publicAddress?: string }) => ({
-  ...server,
-  connection: buildConnectionInfo(server, fallbackNode),
-});
+  const withConnectionInfo = (server: any, fallbackNode?: { publicAddress?: string }) => ({
+    ...server,
+    connection: buildConnectionInfo(server, fallbackNode),
+  });
 
 export async function serverRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
@@ -2695,16 +2695,91 @@ export async function serverRoutes(app: FastifyInstance) {
     }
   );
 
+  // Update backup settings
+  app.patch(
+    "/:id/backup-settings",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
+      const { storageMode, retentionCount, retentionDays } = request.body as {
+        storageMode?: string;
+        retentionCount?: number;
+        retentionDays?: number;
+      };
+
+      const validModes = ["local", "s3", "stream"];
+      if (storageMode && !validModes.includes(storageMode)) {
+        return reply.status(400).send({
+          error: `Invalid storage mode. Must be one of: ${validModes.join(", ")}`,
+        });
+      }
+
+      if (
+        retentionCount !== undefined &&
+        (!Number.isFinite(retentionCount) || retentionCount < 0 || retentionCount > 1000)
+      ) {
+        return reply.status(400).send({ error: "retentionCount must be between 0 and 1000" });
+      }
+
+      if (
+        retentionDays !== undefined &&
+        (!Number.isFinite(retentionDays) || retentionDays < 0 || retentionDays > 3650)
+      ) {
+        return reply.status(400).send({ error: "retentionDays must be between 0 and 3650" });
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
+      const updated = await prisma.server.update({
+        where: { id },
+        data: {
+          backupStorageMode: storageMode || server.backupStorageMode,
+          backupRetentionCount:
+            retentionCount !== undefined ? retentionCount : server.backupRetentionCount,
+          backupRetentionDays:
+            retentionDays !== undefined ? retentionDays : server.backupRetentionDays,
+        },
+      });
+
+      reply.send({
+        success: true,
+        backupStorageMode: updated.backupStorageMode,
+        backupRetentionCount: updated.backupRetentionCount,
+        backupRetentionDays: updated.backupRetentionDays,
+      });
+    }
+  );
+
   // Transfer server to another node
   app.post(
     "/:id/transfer",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { id } = request.params as { id: string };
-      const { targetNodeId } = request.body as { targetNodeId: string };
+      const { targetNodeId, transferMode } = request.body as {
+        targetNodeId: string;
+        transferMode?: string;
+      };
 
       if (!targetNodeId) {
         return reply.status(400).send({ error: "targetNodeId is required" });
+      }
+
+      const transferModes = ["local", "s3", "stream"];
+      if (transferMode && !transferModes.includes(transferMode)) {
+        return reply.status(400).send({
+          error: `Invalid transferMode. Must be one of: ${transferModes.join(", ")}`,
+        });
       }
 
       // Get server with current node
@@ -2827,17 +2902,35 @@ export async function serverRoutes(app: FastifyInstance) {
         });
 
         const backupName = `transfer-${Date.now()}`;
+        const mode = transferMode || server.backupStorageMode || "local";
+        const { buildBackupPaths, buildTransferBackupPath } = await import("../services/backup-storage");
+        const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode);
+        if (mode === "s3" && !storageKey) {
+          throw new Error("Missing S3 storage key");
+        }
+        const transferPath = buildTransferBackupPath(server.uuid, backupName);
+
+        const backupRecord = await prisma.backup.create({
+          data: {
+            serverId: server.id,
+            name: backupName,
+            path: mode === "stream" || mode === "s3" ? transferPath : storagePath,
+            storageMode: mode,
+            sizeMb: 0,
+            metadata: { agentPath, storageKey, transferPath },
+          },
+        });
+
         await wsGateway.sendToAgent(server.nodeId, {
           type: "create_backup",
           serverId: id,
           backupName,
+          backupPath: agentPath,
+          backupId: backupRecord.id,
         });
 
         // Wait a moment for backup to be created (in production, use proper async handling)
         await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        // Step 2: Get backup path (simplified - in production, wait for backup_complete message)
-        const backupPath = `/var/lib/catalyst/backups/${id}/${backupName}.tar.gz`;
 
         await prisma.serverLog.create({
           data: {
@@ -2847,12 +2940,27 @@ export async function serverRoutes(app: FastifyInstance) {
           },
         });
 
-        // Step 3: In a real implementation, transfer the backup file to target node
-        // For now, we assume both nodes share storage or have network access
-        // In production, you would:
-        // - Upload backup to S3/object storage
-        // - Or use rsync/scp between nodes
-        // - Or stream directly via WebSocket
+        const backupPath = mode === "stream" || mode === "s3" ? transferPath : storagePath;
+
+        if (mode === "s3") {
+          const { openStorageStream, uploadStreamToAgent } = await import("../services/backup-storage");
+          const { stream } = await openStorageStream({
+            path: storagePath,
+            storageMode: "s3",
+            metadata: { storageKey },
+          });
+          await uploadStreamToAgent(wsGateway, targetNodeId, id, transferPath, stream);
+        }
+
+        if (mode === "stream") {
+          const { openStorageStream, uploadStreamToAgent } = await import("../services/backup-storage");
+          const { stream } = await openStorageStream({
+            path: backupPath,
+            storageMode: "local",
+            metadata: { storageKey },
+          });
+          await uploadStreamToAgent(wsGateway, targetNodeId, id, transferPath, stream);
+        }
 
         await prisma.serverLog.create({
           data: {
@@ -2871,12 +2979,14 @@ export async function serverRoutes(app: FastifyInstance) {
           },
         });
 
-        // In production, trigger restore via agent on target node
-        // await wsGateway.sendToAgent(targetNodeId, {
-        //   type: 'restore_backup',
-        //   serverId: id,
-        //   backupPath: remoteBackupPath
-        // });
+        await wsGateway.sendToAgent(targetNodeId, {
+          type: "restore_backup",
+          serverId: id,
+          serverUuid: server.uuid,
+          backupPath: backupPath,
+          backupId: backupRecord.id,
+          serverDir: `${process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers"}/${server.uuid}`,
+        });
 
         // Step 5: Update server's nodeId and reassign IP if using IPAM
         await prisma.$transaction(async (tx) => {

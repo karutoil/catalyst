@@ -5,6 +5,7 @@ export interface Backup {
   serverId: string;
   name: string;
   path: string;
+  storageMode?: 'local' | 's3' | 'stream';
   sizeMb: number;
   checksum?: string | null;
   compressed?: boolean;
