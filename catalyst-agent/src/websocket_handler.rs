@@ -113,6 +113,12 @@ impl WebSocketHandler {
 
         info!("Handshake sent");
 
+        // Restore console writers for any running containers
+        // This is critical after reconnection to prevent console soft-lock
+        if let Err(e) = self.runtime.restore_console_writers().await {
+            warn!("Failed to restore console writers: {}", e);
+        }
+
         // Start heartbeat task
         let write_clone = write.clone();
         tokio::spawn(async move {
@@ -594,6 +600,7 @@ impl WebSocketHandler {
 
             let network_mode = msg.get("networkMode")
                 .and_then(|v| v.as_str());
+            let port_bindings_value = msg.get("portBindings");
 
             let environment = msg.get("environment")
                 .and_then(|v| v.as_object())
@@ -659,6 +666,24 @@ impl WebSocketHandler {
                 .or_else(|| env_map.get("AERO_NETWORK_IP"))
                 .map(|value| value.as_str());
 
+            let mut port_bindings = HashMap::new();
+            if let Some(map) = port_bindings_value.and_then(|value| value.as_object()) {
+                for (container_port, host_port) in map {
+                    let container_port = container_port.parse::<u16>().map_err(|_| {
+                        AgentError::InvalidRequest("Invalid portBindings container port".to_string())
+                    })?;
+                    let host_port = host_port.as_u64().ok_or_else(|| {
+                        AgentError::InvalidRequest("Invalid portBindings host port".to_string())
+                    })?;
+                    if host_port == 0 || host_port > u16::MAX as u64 {
+                        return Err(AgentError::InvalidRequest(
+                            "Invalid portBindings host port".to_string(),
+                        ));
+                    }
+                    port_bindings.insert(container_port, host_port as u16);
+                }
+            }
+
             // Create and start container
             self.runtime.create_container(
                 server_id,
@@ -669,6 +694,7 @@ impl WebSocketHandler {
                 cpu_cores,
                 &server_dir,
                 primary_port,
+                &port_bindings,
                 network_mode,
                 network_ip,
             ).await?;
@@ -696,7 +722,7 @@ impl WebSocketHandler {
             }
 
             // Emit state update
-            self.emit_server_state_update(server_id, "running", None)
+            self.emit_server_state_update(server_id, "running", None, Some(port_bindings.clone()))
                 .await?;
 
             info!("Server started successfully: {}", server_id);
@@ -707,7 +733,7 @@ impl WebSocketHandler {
             let reason = format!("Start failed: {}", err);
             let _ = self.emit_console_output(server_id, "stderr", &format!("[Catalyst] {}\n", reason))
                 .await;
-            let _ = self.emit_server_state_update(server_id, "error", Some(reason)).await;
+            let _ = self.emit_server_state_update(server_id, "error", Some(reason), None).await;
         }
 
         result
@@ -726,7 +752,7 @@ impl WebSocketHandler {
         match self.runtime.start_container(&container_id).await {
             Ok(()) => {
                 self.spawn_log_stream(server_id, &container_id);
-                self.emit_server_state_update(server_id, "running", None)
+                self.emit_server_state_update(server_id, "running", None, None)
                     .await?;
                 Ok(())
             }
@@ -734,7 +760,7 @@ impl WebSocketHandler {
                 let reason = format!("Start failed: {}", err);
                 let _ = self.emit_console_output(server_id, "stderr", &format!("[Catalyst] {}\n", reason))
                     .await;
-                let _ = self.emit_server_state_update(server_id, "error", Some(reason)).await;
+                let _ = self.emit_server_state_update(server_id, "error", Some(reason), None).await;
                 Err(err)
             }
         }
@@ -764,7 +790,7 @@ impl WebSocketHandler {
             self.runtime.remove_container(&container_id).await?;
         }
 
-        self.emit_server_state_update(server_id, "stopped", None)
+        self.emit_server_state_update(server_id, "stopped", None, None)
             .await?;
 
         Ok(())
@@ -787,7 +813,7 @@ impl WebSocketHandler {
             self.runtime.remove_container(&container_id).await?;
         }
 
-        self.emit_server_state_update(server_id, "crashed", Some("Killed by agent".to_string()))
+        self.emit_server_state_update(server_id, "crashed", Some("Killed by agent".to_string()), None)
             .await?;
 
         Ok(())
@@ -1217,6 +1243,7 @@ impl WebSocketHandler {
         server_id: &str,
         state: &str,
         reason: Option<String>,
+        port_bindings: Option<HashMap<u16, u16>>,
     ) -> AgentResult<()> {
         let msg = json!({
             "type": "server_state_update",
@@ -1224,6 +1251,7 @@ impl WebSocketHandler {
             "state": state,
             "timestamp": chrono::Utc::now().timestamp_millis(),
             "reason": reason,
+            "portBindings": port_bindings,
         });
 
         debug!("Emitting state update: {}", msg);

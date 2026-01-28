@@ -18,6 +18,7 @@ export interface Server {
   nodeName?: string;
   primaryPort?: number;
   primaryIp?: string | null;
+  portBindings?: Record<number, number>;
   networkMode?: string;
   environment?: Record<string, string>;
   node?: {
@@ -67,6 +68,7 @@ export interface CreateServerPayload {
   allocatedCpuCores: number;
   allocatedDiskMb: number;
   primaryPort: number;
+  portBindings?: Record<number, number>;
   networkMode?: string;
   environment: Record<string, string>;
 }
@@ -76,11 +78,19 @@ export interface UpdateServerPayload {
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
   allocatedDiskMb?: number;
+  primaryPort?: number;
+  portBindings?: Record<number, number>;
 }
 
 export interface TransferServerPayload {
   targetNodeId: string;
 }
+
+export type ServerAllocation = {
+  containerPort: number;
+  hostPort: number;
+  isPrimary: boolean;
+};
 
 export interface ServerMetrics {
   cpuPercent: number;

@@ -61,6 +61,7 @@ impl ContainerdRuntime {
         cpu_cores: u64,
         data_dir: &str,
         port: u16,
+        port_bindings: &HashMap<u16, u16>,
         network_mode: Option<&str>,
         network_ip: Option<&str>,
     ) -> AgentResult<String> {
@@ -115,7 +116,16 @@ impl ContainerdRuntime {
 
         // Port mapping (only if not using host network)
         if network_mode != Some("host") {
-            cmd.arg("-p").arg(format!("0.0.0.0:{}:{}", port, port));
+            if port_bindings.is_empty() {
+                // Backend contract: empty portBindings should still bind the primary port.
+                // Use an ephemeral host port while exposing the primary container port.
+                cmd.arg("-p").arg(format!("0.0.0.0::{}", port));
+            } else {
+                for (container_port, host_port) in port_bindings {
+                    cmd.arg("-p")
+                        .arg(format!("0.0.0.0:{}:{}", host_port, container_port));
+                }
+            }
         }
 
         // Set environment variables
@@ -187,17 +197,24 @@ impl ContainerdRuntime {
             }
         };
 
-        // Configure firewall to allow the port, if we have a concrete container IP
+        // Configure firewall to allow the ports, if we have a concrete container IP
         if let Some(container_ip) = container_ip_opt {
-            info!(
-                "Configuring firewall for port {} (container IP: {})",
-                port, container_ip
-            );
-            if let Err(e) = FirewallManager::allow_port(port, &container_ip).await {
-                error!("Failed to configure firewall: {}", e);
-                // Don't fail container creation if firewall config fails
+            let ports_to_open: Vec<u16> = if port_bindings.is_empty() {
+                vec![port]
             } else {
-                info!("✓ Firewall configured for port {}", port);
+                port_bindings.values().copied().collect()
+            };
+            for host_port in ports_to_open {
+                info!(
+                    "Configuring firewall for port {} (container IP: {})",
+                    host_port, container_ip
+                );
+                if let Err(e) = FirewallManager::allow_port(host_port, &container_ip).await {
+                    error!("Failed to configure firewall: {}", e);
+                    // Don't fail container creation if firewall config fails
+                } else {
+                    info!("✓ Firewall configured for port {}", host_port);
+                }
             }
         }
 
@@ -759,6 +776,65 @@ impl ContainerdRuntime {
         }
 
         Ok(true)
+    }
+
+    /// Restore console writers for all running containers
+    /// This should be called after reconnecting to ensure console input works
+    pub async fn restore_console_writers(&self) -> AgentResult<()> {
+        info!("Restoring console writers for running containers");
+
+        let containers = self.list_containers().await?;
+        let mut restored = 0;
+        let mut failed = 0;
+
+        for container in containers {
+            if !container.status.contains("Up") {
+                continue;
+            }
+
+            let fifo_path = PathBuf::from("/tmp/catalyst-console")
+                .join(&container.id)
+                .join("stdin");
+
+            if !fifo_path.exists() {
+                debug!(
+                    "No FIFO found for container {}, skipping console restoration",
+                    container.id
+                );
+                continue;
+            }
+
+            // Remove existing writer if it exists (it may be stale)
+            {
+                let mut writers = self.console_writers.lock().await;
+                writers.remove(&container.id);
+            }
+
+            // Reattach the console writer
+            match self
+                .attach_console_writer(&container.id, fifo_path.to_string_lossy().into_owned())
+                .await
+            {
+                Ok(_) => {
+                    info!("Restored console writer for container: {}", container.id);
+                    restored += 1;
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to restore console writer for {}: {}",
+                        container.id, e
+                    );
+                    failed += 1;
+                }
+            }
+        }
+
+        info!(
+            "Console writer restoration complete: {} restored, {} failed",
+            restored, failed
+        );
+
+        Ok(())
     }
 
     async fn write_to_console_fifo(&self, container_id: &str, input: &str) -> AgentResult<bool> {

@@ -145,6 +145,10 @@ curl -X POST http://localhost:3000/api/servers \
     "allocatedCpuCores": 2,
     "allocatedDiskMb": 10240,
     "primaryPort": 25565,
+    "portBindings": {
+      "25565": 25565,
+      "25575": 25575
+    },
     "networkMode": "bridge",
     "environment": {
       "MEMORY": "2048",

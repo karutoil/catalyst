@@ -112,6 +112,10 @@ function ServerDetailsPage() {
   const [configSearch, setConfigSearch] = useState('');
   const [databaseHostId, setDatabaseHostId] = useState('');
   const [databaseName, setDatabaseName] = useState('');
+  const [allocations, setAllocations] = useState<{ containerPort: number; hostPort: number; isPrimary: boolean }[]>([]);
+  const [allocationsError, setAllocationsError] = useState<string | null>(null);
+  const [newContainerPort, setNewContainerPort] = useState('');
+  const [newHostPort, setNewHostPort] = useState('');
 
   const createDatabaseMutation = useMutation({
     mutationFn: () => {
@@ -208,6 +212,76 @@ function ServerDetailsPage() {
     },
     onError: (error: any) => {
       const message = error?.response?.data?.error || error?.message || 'Failed to save config';
+      notifyError(message);
+    },
+  });
+
+  const loadAllocations = useCallback(async () => {
+    if (!serverId) return;
+    try {
+      const data = await serversApi.allocations(serverId);
+      setAllocations(data || []);
+      setAllocationsError(null);
+    } catch (error: any) {
+      const message = error?.response?.data?.error || 'Unable to load allocations';
+      setAllocationsError(message);
+    }
+  }, [serverId]);
+
+  const addAllocationMutation = useMutation({
+    mutationFn: async () => {
+      if (!serverId) throw new Error('Missing server id');
+      const containerPort = Number(newContainerPort);
+      const hostPort = Number(newHostPort || newContainerPort);
+      if (!Number.isFinite(containerPort) || containerPort <= 0) {
+        throw new Error('Invalid container port');
+      }
+      if (!Number.isFinite(hostPort) || hostPort <= 0) {
+        throw new Error('Invalid host port');
+      }
+      return serversApi.addAllocation(serverId, { containerPort, hostPort });
+    },
+    onSuccess: () => {
+      notifySuccess('Allocation added');
+      setNewContainerPort('');
+      setNewHostPort('');
+      loadAllocations();
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to add allocation';
+      notifyError(message);
+    },
+  });
+
+  const removeAllocationMutation = useMutation({
+    mutationFn: async (containerPort: number) => {
+      if (!serverId) throw new Error('Missing server id');
+      return serversApi.removeAllocation(serverId, containerPort);
+    },
+    onSuccess: () => {
+      notifySuccess('Allocation removed');
+      loadAllocations();
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to remove allocation';
+      notifyError(message);
+    },
+  });
+
+  const setPrimaryMutation = useMutation({
+    mutationFn: async (containerPort: number) => {
+      if (!serverId) throw new Error('Missing server id');
+      return serversApi.setPrimaryAllocation(serverId, containerPort);
+    },
+    onSuccess: () => {
+      notifySuccess('Primary allocation updated');
+      loadAllocations();
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to update primary allocation';
       notifyError(message);
     },
   });
@@ -572,6 +646,10 @@ function ServerDetailsPage() {
       setConfigFiles(results);
     });
   }, [serverId, server?.template?.features?.configFile, server?.template?.features?.configFiles?.join('|'), loadConfigFile]);
+
+  useEffect(() => {
+    loadAllocations();
+  }, [loadAllocations]);
 
   if (isLoading) {
     return (
@@ -1291,36 +1369,139 @@ function ServerDetailsPage() {
       ) : null}
 
       {activeTab === 'settings' ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-            <div className="text-sm font-semibold text-slate-100">Maintenance</div>
-            <p className="mt-2 text-xs text-slate-400">
-              Reinstalling will re-run the template install script and may overwrite files.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-100">Port allocations</div>
+                <div className="text-xs text-slate-400">Add or remove host-to-container bindings.</div>
+              </div>
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                {server.status === 'stopped' ? 'Stopped' : 'Stop server to edit'}
+              </span>
+            </div>
+            {allocationsError ? (
+              <div className="mt-3 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+                {allocationsError}
+              </div>
+            ) : null}
+            <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+              <input
+                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                value={newContainerPort}
+                onChange={(event) => setNewContainerPort(event.target.value)}
+                placeholder="Container port"
+                type="number"
+                min={1}
+                max={65535}
+                disabled={server.status !== 'stopped' || isSuspended}
+              />
+              <input
+                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                value={newHostPort}
+                onChange={(event) => setNewHostPort(event.target.value)}
+                placeholder="Host port (optional)"
+                type="number"
+                min={1}
+                max={65535}
+                disabled={server.status !== 'stopped' || isSuspended}
+              />
               <button
                 type="button"
-                className="rounded-md bg-amber-600 px-3 py-1 font-semibold text-white shadow hover:bg-amber-500 disabled:opacity-60"
-                disabled={server.status !== 'stopped' || isSuspended}
-                onClick={handleReinstall}
+                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                onClick={() => addAllocationMutation.mutate()}
+                disabled={server.status !== 'stopped' || isSuspended || addAllocationMutation.isPending}
               >
-                Reinstall
+                Add allocation
               </button>
-              <UpdateServerModal serverId={server.id} disabled={isSuspended} />
-              <TransferServerModal serverId={server.id} disabled={isSuspended} />
+            </div>
+            <div className="mt-4 space-y-2 text-xs">
+              {allocations.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-4 py-4 text-center text-slate-400">
+                  No allocations configured.
+                </div>
+              ) : (
+                allocations.map((allocation) => (
+                  <div
+                    key={`${allocation.containerPort}-${allocation.hostPort}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-slate-100">
+                        {allocation.containerPort} → {allocation.hostPort}
+                      </span>
+                      {allocation.isPrimary ? (
+                        <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+                          Primary
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                        onClick={() => setPrimaryMutation.mutate(allocation.containerPort)}
+                        disabled={
+                          allocation.isPrimary ||
+                          server.status !== 'stopped' ||
+                          isSuspended ||
+                          setPrimaryMutation.isPending
+                        }
+                      >
+                        Make primary
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                        onClick={() => removeAllocationMutation.mutate(allocation.containerPort)}
+                        disabled={
+                          allocation.isPrimary ||
+                          server.status !== 'stopped' ||
+                          isSuspended ||
+                          removeAllocationMutation.isPending
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-          <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-4">
-            <div className="text-sm font-semibold text-rose-100">Danger zone</div>
-            <p className="mt-2 text-xs text-rose-200">
-              Deleting the server removes all data and cannot be undone.
-            </p>
-            <div className="mt-3">
-              <DeleteServerDialog serverId={server.id} serverName={server.name} disabled={isSuspended} />
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="text-sm font-semibold text-slate-100">Maintenance</div>
+              <p className="mt-2 text-xs text-slate-400">
+                Reinstalling will re-run the template install script and may overwrite files.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  className="rounded-md bg-amber-600 px-3 py-1 font-semibold text-white shadow hover:bg-amber-500 disabled:opacity-60"
+                  disabled={server.status !== 'stopped' || isSuspended}
+                  onClick={handleReinstall}
+                >
+                  Reinstall
+                </button>
+                <UpdateServerModal serverId={server.id} disabled={isSuspended} />
+                <TransferServerModal serverId={server.id} disabled={isSuspended} />
+              </div>
+            </div>
+            <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-4">
+              <div className="text-sm font-semibold text-rose-100">Danger zone</div>
+              <p className="mt-2 text-xs text-rose-200">
+                Deleting the server removes all data and cannot be undone.
+              </p>
+              <div className="mt-3">
+                <DeleteServerDialog serverId={server.id} serverName={server.name} disabled={isSuspended} />
+              </div>
             </div>
           </div>
         </div>
       ) : null}
+
     </div>
   );
 }

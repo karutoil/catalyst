@@ -21,6 +21,99 @@ import {
   rotateDatabasePassword,
 } from "../services/mysql";
 
+const MAX_PORT = 65535;
+
+const parsePortValue = (value: unknown) => {
+  const parsed = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(parsed)) return null;
+  const port = Number(parsed);
+  if (!Number.isInteger(port) || port <= 0 || port > MAX_PORT) {
+    return null;
+  }
+  return port;
+};
+
+const parseStoredPortBindings = (value: unknown): Record<number, number> => {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const bindings: Record<number, number> = {};
+  for (const [containerKey, hostValue] of Object.entries(value as Record<string, unknown>)) {
+    const containerPort = parsePortValue(containerKey);
+    const hostPort = parsePortValue(hostValue);
+    if (!containerPort || !hostPort) {
+      continue;
+    }
+    bindings[containerPort] = hostPort;
+  }
+  return bindings;
+};
+
+const normalizePortBindings = (value: unknown, primaryPort: number) => {
+  const bindings: Record<number, number> = {};
+  const usedHostPorts = new Set<number>();
+
+  if (value && typeof value === "object") {
+    for (const [containerKey, hostValue] of Object.entries(value as Record<string, unknown>)) {
+      const containerPort = parsePortValue(containerKey);
+      const hostPort = parsePortValue(hostValue);
+      if (!containerPort || !hostPort) {
+        throw new Error("Invalid port binding value");
+      }
+      if (usedHostPorts.has(hostPort)) {
+        throw new Error(`Host port ${hostPort} appears multiple times in port bindings`);
+      }
+      usedHostPorts.add(hostPort);
+      bindings[containerPort] = hostPort;
+    }
+  }
+
+  const primaryHostPort = bindings[primaryPort];
+  if (!primaryHostPort) {
+    bindings[primaryPort] = primaryPort;
+  }
+
+  return bindings;
+};
+
+const collectUsedHostPorts = (
+  servers: Array<{
+    id: string;
+    primaryPort?: number | null;
+    portBindings?: unknown;
+    networkMode?: string | null;
+  }>,
+  excludeId?: string
+) => {
+  const used = new Set<number>();
+  for (const server of servers) {
+    if (excludeId && server.id === excludeId) {
+      continue;
+    }
+    if (shouldUseIpam(server.networkMode ?? undefined)) {
+      continue;
+    }
+    const bindings = parseStoredPortBindings(server.portBindings);
+    const hostPorts = Object.values(bindings);
+    if (hostPorts.length > 0) {
+      hostPorts.forEach((port) => used.add(port));
+      continue;
+    }
+    const fallbackPort = parsePortValue(server.primaryPort ?? undefined);
+    if (fallbackPort) {
+      used.add(fallbackPort);
+    }
+  }
+  return used;
+};
+
+const resolvePrimaryHostPort = (server: any) => {
+  const primaryPort = parsePortValue(server?.primaryPort ?? undefined);
+  if (!primaryPort) return null;
+  const bindings = parseStoredPortBindings(server?.portBindings);
+  return bindings[primaryPort] ?? primaryPort;
+};
+
 const buildConnectionInfo = (
   server: any,
   fallbackNode?: { publicAddress?: string }
@@ -33,7 +126,7 @@ const buildConnectionInfo = (
     assignedIp,
     nodeIp,
     host,
-    port: server.primaryPort ?? null,
+    port: resolvePrimaryHostPort(server),
   };
 };
 
@@ -209,6 +302,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores,
         allocatedDiskMb,
         primaryPort,
+        portBindings,
         networkMode,
         environment,
       } = request.body as {
@@ -221,6 +315,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores: number;
         allocatedDiskMb: number;
         primaryPort: number;
+        portBindings?: Record<number, number>;
         networkMode?: string;
         environment: Record<string, string>;
       };
@@ -239,6 +334,10 @@ export async function serverRoutes(app: FastifyInstance) {
         primaryPort === undefined
       ) {
         return reply.status(400).send({ error: "Missing required fields" });
+      }
+      const validatedPrimaryPort = parsePortValue(primaryPort);
+      if (!validatedPrimaryPort) {
+        return reply.status(400).send({ error: "Invalid primary port" });
       }
 
       // Validate template exists and get variables
@@ -303,9 +402,12 @@ export async function serverRoutes(app: FastifyInstance) {
         include: {
           servers: {
             select: {
+              id: true,
               allocatedMemoryMb: true,
               allocatedCpuCores: true,
               primaryPort: true,
+              portBindings: true,
+              networkMode: true,
             },
           },
         },
@@ -347,15 +449,18 @@ export async function serverRoutes(app: FastifyInstance) {
         });
       }
 
-      // Check port conflict
-      const portConflict = node.servers.find((s) => s.primaryPort === primaryPort);
-      if (portConflict) {
-        return reply.status(400).send({
-          error: `Port ${primaryPort} is already in use on this node`,
-        });
-      }
-
       const desiredNetworkMode = networkMode || "mc-lan-static";
+      const resolvedPortBindings = normalizePortBindings(portBindings, validatedPrimaryPort);
+
+      if (!shouldUseIpam(desiredNetworkMode)) {
+        const usedPorts = collectUsedHostPorts(node.servers);
+        const conflictPort = Object.values(resolvedPortBindings).find((port) => usedPorts.has(port));
+        if (conflictPort) {
+          return reply.status(400).send({
+            error: `Port ${conflictPort} is already in use on this node`,
+          });
+        }
+      }
       const requestedIp =
         resolvedEnvironment?.CATALYST_NETWORK_IP &&
         String(resolvedEnvironment.CATALYST_NETWORK_IP).trim().length > 0
@@ -378,7 +483,8 @@ export async function serverRoutes(app: FastifyInstance) {
               allocatedMemoryMb,
               allocatedCpuCores,
               allocatedDiskMb,
-              primaryPort,
+              primaryPort: validatedPrimaryPort,
+              portBindings: resolvedPortBindings,
               networkMode: desiredNetworkMode,
               environment: resolvedEnvironment,
             },
@@ -570,6 +676,8 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedMemoryMb,
         allocatedCpuCores,
         allocatedDiskMb,
+        primaryPort,
+        portBindings,
       } = request.body as {
         name?: string;
         description?: string;
@@ -577,13 +685,17 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedMemoryMb?: number;
         allocatedCpuCores?: number;
         allocatedDiskMb?: number;
+        primaryPort?: number;
+        portBindings?: Record<number, number>;
       };
 
       // Can only update resources if server is stopped
       if (
         (allocatedMemoryMb !== undefined ||
           allocatedCpuCores !== undefined ||
-          allocatedDiskMb !== undefined) &&
+          allocatedDiskMb !== undefined ||
+          primaryPort !== undefined ||
+          portBindings !== undefined) &&
         server.status !== "stopped"
       ) {
         return reply.status(409).send({
@@ -604,9 +716,13 @@ export async function serverRoutes(app: FastifyInstance) {
             id: { not: serverId },
           },
           select: {
+            id: true,
             allocatedMemoryMb: true,
             allocatedCpuCores: true,
             allocatedDiskMb: true,
+            primaryPort: true,
+            portBindings: true,
+            networkMode: true,
           },
         });
 
@@ -649,6 +765,45 @@ export async function serverRoutes(app: FastifyInstance) {
         }
       }
 
+      const nextPrimaryPort = primaryPort ?? server.primaryPort;
+      if (!parsePortValue(nextPrimaryPort)) {
+        return reply.status(400).send({ error: "Invalid primary port" });
+      }
+      const hasExplicitPortBindings =
+        portBindings !== undefined && portBindings !== null;
+      const resolvedPortBindings =
+        hasExplicitPortBindings
+      const resolvedPortBindings =
+        hasPortBindingChanges
+          ? normalizePortBindings(portBindings, nextPrimaryPort)
+          : parseStoredPortBindings(server.portBindings);
+      const effectiveBindings =
+        Object.keys(resolvedPortBindings).length > 0
+          ? resolvedPortBindings
+          : normalizePortBindings({}, nextPrimaryPort);
+
+      if (!shouldUseIpam(server.networkMode ?? undefined)) {
+        const siblingServers = await prisma.server.findMany({
+          where: {
+            nodeId: server.nodeId,
+            id: { not: serverId },
+          },
+          select: {
+            id: true,
+            primaryPort: true,
+            portBindings: true,
+            networkMode: true,
+          },
+        });
+        const usedPorts = collectUsedHostPorts(siblingServers, serverId);
+        const conflictPort = Object.values(effectiveBindings).find((port) => usedPorts.has(port));
+        if (conflictPort) {
+          return reply.status(400).send({
+            error: `Port ${conflictPort} is already in use on this node`,
+          });
+        }
+      }
+
       const updated = await prisma.server.update({
         where: { id: serverId },
         data: {
@@ -658,6 +813,8 @@ export async function serverRoutes(app: FastifyInstance) {
           allocatedMemoryMb: allocatedMemoryMb ?? server.allocatedMemoryMb,
           allocatedCpuCores: allocatedCpuCores ?? server.allocatedCpuCores,
           allocatedDiskMb: allocatedDiskMb ?? server.allocatedDiskMb,
+          primaryPort: nextPrimaryPort,
+          portBindings: effectiveBindings,
         },
       });
 
@@ -1869,6 +2026,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores: server.allocatedCpuCores,
         allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
+        portBindings: parseStoredPortBindings(server.portBindings),
       });
 
       if (!success) {
@@ -1978,6 +2136,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores: server.allocatedCpuCores,
         allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
+        portBindings: parseStoredPortBindings(server.portBindings),
         networkMode: server.networkMode,
       });
 
@@ -2165,6 +2324,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores: server.allocatedCpuCores,
         allocatedDiskMb: server.allocatedDiskMb,
         primaryPort: server.primaryPort,
+        portBindings: parseStoredPortBindings(server.portBindings),
         networkMode: server.networkMode,
       });
 
@@ -2173,6 +2333,281 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       reply.send({ success: true, message: "Restart command sent to agent" });
+    }
+  );
+
+  // List port allocations
+  app.get(
+    "/:serverId/allocations",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: {
+          node: true,
+          access: true,
+        },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
+      const hasAccess =
+        server.ownerId === userId || server.access.some((access) => access.userId === userId);
+      if (!hasAccess) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      const bindings = parseStoredPortBindings(server.portBindings);
+
+      const allocations = Object.entries(bindings)
+        .map(([containerPort, hostPort]) => ({
+          containerPort: Number(containerPort),
+          hostPort,
+          isPrimary: Number(containerPort) === server.primaryPort,
+        }))
+        .sort((a, b) => a.containerPort - b.containerPort);
+
+      if (!allocations.length && server.primaryPort) {
+        allocations.push({
+          containerPort: server.primaryPort,
+          hostPort: server.primaryPort,
+          isPrimary: true,
+        });
+      }
+
+      reply.send({ success: true, data: allocations });
+    }
+  );
+
+  // Add allocation
+  app.post(
+    "/:serverId/allocations",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { containerPort, hostPort } = request.body as {
+        containerPort: number;
+        hostPort: number;
+      };
+      const userId = request.user.userId;
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { access: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
+      const hasAccess =
+        server.ownerId === userId ||
+        server.access.some((access) => access.userId === userId);
+      if (!hasAccess) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      if (server.status !== "stopped") {
+        return reply.status(409).send({
+          error: "Server must be stopped to update allocations",
+        });
+      }
+
+      const parsedContainerPort = parsePortValue(containerPort);
+      const parsedHostPort = parsePortValue(hostPort);
+      if (!parsedContainerPort || !parsedHostPort) {
+        return reply.status(400).send({ error: "Invalid port value" });
+      }
+
+      const bindings = parseStoredPortBindings(server.portBindings);
+      if (bindings[parsedContainerPort]) {
+        return reply.status(409).send({ error: "Allocation already exists for container port" });
+      }
+
+      const usedHostPorts = new Set(Object.values(bindings));
+      if (!bindings[server.primaryPort]) {
+        const primaryHostPort = parsePortValue(server.primaryPort ?? undefined);
+        if (primaryHostPort) {
+          usedHostPorts.add(primaryHostPort);
+        }
+      }
+      const isPrimaryBinding =
+        parsedContainerPort === server.primaryPort && parsedHostPort === server.primaryPort;
+      if (!isPrimaryBinding && usedHostPorts.has(parsedHostPort)) {
+        return reply.status(409).send({ error: "Host port already assigned to allocation" });
+      }
+
+      if (!shouldUseIpam(server.networkMode ?? undefined)) {
+        const siblingServers = await prisma.server.findMany({
+          where: {
+            nodeId: server.nodeId,
+            id: { not: serverId },
+          },
+          select: {
+            id: true,
+            primaryPort: true,
+            portBindings: true,
+            networkMode: true,
+          },
+        });
+        const usedPorts = collectUsedHostPorts(siblingServers, serverId);
+        if (usedPorts.has(parsedHostPort)) {
+          return reply.status(400).send({
+            error: `Port ${parsedHostPort} is already in use on this node`,
+          });
+        }
+      }
+
+      bindings[parsedContainerPort] = parsedHostPort;
+      const updated = await prisma.server.update({
+        where: { id: serverId },
+        data: {
+          portBindings: bindings,
+        },
+      });
+
+      reply.send({
+        success: true,
+        data: {
+          containerPort: parsedContainerPort,
+          hostPort: parsedHostPort,
+          isPrimary: parsedContainerPort === updated.primaryPort,
+        },
+      });
+    }
+  );
+
+  // Remove allocation
+  app.delete(
+    "/:serverId/allocations/:containerPort",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId, containerPort } = request.params as {
+        serverId: string;
+        containerPort: string;
+      };
+      const userId = request.user.userId;
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { access: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
+      const hasAccess =
+        server.ownerId === userId ||
+        server.access.some((access) => access.userId === userId);
+      if (!hasAccess) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      if (server.status !== "stopped") {
+        return reply.status(409).send({
+          error: "Server must be stopped to update allocations",
+        });
+      }
+
+      const parsedContainerPort = parsePortValue(containerPort);
+      if (!parsedContainerPort) {
+        return reply.status(400).send({ error: "Invalid port value" });
+      }
+
+      if (parsedContainerPort === server.primaryPort) {
+        return reply.status(400).send({ error: "Cannot remove primary allocation" });
+      }
+
+      const bindings = parseStoredPortBindings(server.portBindings);
+      if (!bindings[parsedContainerPort]) {
+        return reply.status(404).send({ error: "Allocation not found" });
+      }
+
+      delete bindings[parsedContainerPort];
+
+      await prisma.server.update({
+        where: { id: serverId },
+        data: { portBindings: bindings },
+      });
+
+      reply.send({ success: true });
+    }
+  );
+
+  // Set primary allocation
+  app.post(
+    "/:serverId/allocations/primary",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { containerPort } = request.body as { containerPort: number };
+      const userId = request.user.userId;
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { access: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
+      const hasAccess =
+        server.ownerId === userId ||
+        server.access.some((access) => access.userId === userId);
+      if (!hasAccess) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      if (server.status !== "stopped") {
+        return reply.status(409).send({
+          error: "Server must be stopped to update allocations",
+        });
+      }
+
+      const parsedContainerPort = parsePortValue(containerPort);
+      if (!parsedContainerPort) {
+        return reply.status(400).send({ error: "Invalid port value" });
+      }
+
+      const bindings = parseStoredPortBindings(server.portBindings);
+      if (!bindings[parsedContainerPort]) {
+        return reply.status(404).send({ error: "Allocation not found" });
+      }
+
+      const updated = await prisma.server.update({
+        where: { id: serverId },
+        data: { primaryPort: parsedContainerPort },
+      });
+
+      reply.send({
+        success: true,
+        data: {
+          primaryPort: updated.primaryPort,
+        },
+      });
     }
   );
 

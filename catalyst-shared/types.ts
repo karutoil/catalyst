@@ -169,6 +169,7 @@ export namespace WsEvent {
     state: ServerState;
     timestamp: number;
     reason?: string;
+    portBindings?: Record<number, number>;
   }
 
   export interface HealthReport {

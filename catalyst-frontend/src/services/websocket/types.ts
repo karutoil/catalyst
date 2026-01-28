@@ -13,12 +13,13 @@ export type WebSocketMessage =
       timestamp?: number | string;
     }
   | {
-      type: 'server_state_update' | 'server_state';
-      serverId: string;
-      state: string;
-      reason?: string;
-      timestamp?: number | string;
-    }
+    type: 'server_state_update' | 'server_state';
+    serverId: string;
+    state: string;
+    reason?: string;
+    timestamp?: number | string;
+    portBindings?: Record<number, number>;
+  }
   | {
       type: 'resource_stats';
       serverId: string;
