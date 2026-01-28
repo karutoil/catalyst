@@ -24,8 +24,6 @@
 - Crash handling (restartPolicy not enforced; no exit-code reporting)
 
 **Missing**
-- Server suspension/unsuspension
-- Per-server database management
 - Secondary allocations/port bindings
 
 ## Quick Start

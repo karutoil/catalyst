@@ -34,6 +34,10 @@ export enum Permission {
   SERVER_CREATE = "server.create",
   SERVER_DELETE = "server.delete",
   SERVER_SUSPEND = "server.suspend",
+  DATABASE_CREATE = "database.create",
+  DATABASE_READ = "database.read",
+  DATABASE_DELETE = "database.delete",
+  DATABASE_ROTATE = "database.rotate",
 }
 
 // ============================================================================

@@ -19,8 +19,12 @@ import EditTaskModal from '../../components/tasks/EditTaskModal';
 import XtermConsole from '../../components/console/XtermConsole';
 import { useConsole } from '../../hooks/useConsole';
 import { useTasks } from '../../hooks/useTasks';
+import { useServerDatabases } from '../../hooks/useServerDatabases';
+import { useDatabaseHosts } from '../../hooks/useAdmin';
+import { useAuthStore } from '../../stores/authStore';
 import { serversApi } from '../../services/api/servers';
 import { filesApi } from '../../services/api/files';
+import { databasesApi } from '../../services/api/databases';
 import { notifyError, notifySuccess } from '../../utils/notify';
 import {
   detectConfigFormat,
@@ -58,6 +62,7 @@ const tabLabels = {
   files: 'Files',
   backups: 'Backups',
   tasks: 'Tasks',
+  databases: 'Databases',
   metrics: 'Metrics',
   configuration: 'Configuration',
   settings: 'Settings',
@@ -70,7 +75,11 @@ function ServerDetailsPage() {
   const liveMetrics = useServerMetrics(serverId, server?.allocatedMemoryMb);
   const { data: metricsHistory } = useServerMetricsHistory(serverId);
   const { data: tasks = [], isLoading: tasksLoading } = useTasks(serverId);
+  const { data: databases = [], isLoading: databasesLoading, isError: databasesError } =
+    useServerDatabases(serverId);
+  const { data: databaseHosts = [] } = useDatabaseHosts();
   const { isConnected } = useWebSocketStore();
+  const { user } = useAuthStore();
   const queryClient = useQueryClient();
 
   const {
@@ -89,10 +98,76 @@ function ServerDetailsPage() {
   }, [tab]);
 
   const canSend = isConnected && Boolean(serverId) && server?.status === 'running' && !isSuspended;
+  const canManageDatabases =
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.read') ||
+    user?.permissions?.includes('database.create') ||
+    user?.permissions?.includes('database.read') ||
+    user?.permissions?.includes('database.rotate') ||
+    user?.permissions?.includes('database.delete') ||
+    Boolean(server && user?.id && server.ownerId === user.id);
   const [configFiles, setConfigFiles] = useState<ConfigFileState[]>([]);
   const [openConfigIndex, setOpenConfigIndex] = useState(-1);
   const [command, setCommand] = useState('');
   const [configSearch, setConfigSearch] = useState('');
+  const [databaseHostId, setDatabaseHostId] = useState('');
+  const [databaseName, setDatabaseName] = useState('');
+
+  const createDatabaseMutation = useMutation({
+    mutationFn: () => {
+      if (!server?.id) throw new Error('Server not loaded');
+      if (!databaseHostId) throw new Error('Database host required');
+      return databasesApi.create(server.id, {
+        hostId: databaseHostId,
+        name: databaseName.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      if (server?.id) {
+        queryClient.invalidateQueries({ queryKey: ['server-databases', server.id] });
+      }
+      setDatabaseName('');
+      notifySuccess('Database created');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to create database';
+      notifyError(message);
+    },
+  });
+
+  const rotateDatabaseMutation = useMutation({
+    mutationFn: (databaseId: string) => {
+      if (!server?.id) throw new Error('Server not loaded');
+      return databasesApi.rotatePassword(server.id, databaseId);
+    },
+    onSuccess: () => {
+      if (server?.id) {
+        queryClient.invalidateQueries({ queryKey: ['server-databases', server.id] });
+      }
+      notifySuccess('Database password rotated');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to rotate password';
+      notifyError(message);
+    },
+  });
+
+  const deleteDatabaseMutation = useMutation({
+    mutationFn: (databaseId: string) => {
+      if (!server?.id) throw new Error('Server not loaded');
+      return databasesApi.remove(server.id, databaseId);
+    },
+    onSuccess: () => {
+      if (server?.id) {
+        queryClient.invalidateQueries({ queryKey: ['server-databases', server.id] });
+      }
+      notifySuccess('Database deleted');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to delete database';
+      notifyError(message);
+    },
+  });
 
   const pauseMutation = useMutation({
     mutationFn: (task: { id: string; enabled: boolean }) => {
@@ -712,6 +787,113 @@ function ServerDetailsPage() {
               </div>
             )}
           </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'databases' ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-100">Databases</div>
+              <div className="text-xs text-slate-400">
+                Create and manage per-server database credentials.
+              </div>
+            </div>
+            {canManageDatabases ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <select
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={databaseHostId}
+                  onChange={(event) => setDatabaseHostId(event.target.value)}
+                  disabled={isSuspended}
+                >
+                  <option value="">Select host</option>
+                  {databaseHosts.map((host) => (
+                    <option key={host.id} value={host.id}>
+                      {host.name} ({host.host}:{host.port})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={databaseName}
+                  onChange={(event) => setDatabaseName(event.target.value)}
+                  placeholder="database_name"
+                  disabled={isSuspended}
+                />
+                <button
+                  type="button"
+                  className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  onClick={() => createDatabaseMutation.mutate()}
+                  disabled={!databaseHostId || createDatabaseMutation.isPending || isSuspended}
+                >
+                  Create
+                </button>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400">No database permissions assigned.</div>
+            )}
+          </div>
+
+          {databasesLoading ? (
+            <div className="mt-4 text-sm text-slate-400">Loading databases...</div>
+          ) : databasesError ? (
+            <div className="mt-4 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+              Unable to load databases.
+            </div>
+          ) : databases.length === 0 ? (
+            <div className="mt-4 rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-8 text-center text-sm text-slate-400">
+              No databases created yet.
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3 text-xs">
+              {databases.map((database) => (
+                <div
+                  key={database.id}
+                  className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-100">{database.name}</div>
+                      <div className="text-xs text-slate-400">
+                        Host: {database.hostName} ({database.host}:{database.port})
+                      </div>
+                    </div>
+                    {canManageDatabases ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                          onClick={() => rotateDatabaseMutation.mutate(database.id)}
+                          disabled={rotateDatabaseMutation.isPending || isSuspended}
+                        >
+                          Rotate password
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-rose-700 px-2 py-1 text-xs text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                          onClick={() => deleteDatabaseMutation.mutate(database.id)}
+                          disabled={deleteDatabaseMutation.isPending || isSuspended}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                    <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                      <div className="text-slate-400">Username</div>
+                      <div className="font-semibold text-slate-100">{database.username}</div>
+                    </div>
+                    <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                      <div className="text-slate-400">Password</div>
+                      <div className="font-semibold text-slate-100">{database.password}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : null}
 

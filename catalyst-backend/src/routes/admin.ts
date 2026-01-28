@@ -977,4 +977,175 @@ export async function adminRoutes(app: FastifyInstance) {
       reply.send({ success: true });
     }
   );
+
+  // Database hosts: list
+  app.get(
+    '/database-hosts',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const hosts = await prisma.databaseHost.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+
+      reply.send({ success: true, data: hosts });
+    }
+  );
+
+  // Database hosts: create
+  app.post(
+    '/database-hosts',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { name, host, port, username, password } = request.body as {
+        name: string;
+        host: string;
+        port?: number;
+        username: string;
+        password: string;
+      };
+
+      if (!name || !host || !username || !password) {
+        return reply.status(400).send({ error: 'name, host, username, and password are required' });
+      }
+
+      if (name.trim().length < 3) {
+        return reply.status(400).send({ error: 'name must be at least 3 characters' });
+      }
+
+      if (port !== undefined && port <= 0) {
+        return reply.status(400).send({ error: 'port must be a positive number' });
+      }
+
+      try {
+        const created = await prisma.databaseHost.create({
+          data: {
+            name: name.trim(),
+            host: host.trim(),
+            port: port ?? (Number(process.env.DATABASE_HOST_PORT_DEFAULT) || 3306),
+            username: username.trim(),
+            password,
+          },
+        });
+
+        await createAuditLog(user.userId, {
+          action: 'database.host.create',
+          resource: 'database_host',
+          resourceId: created.id,
+          details: { name: created.name, host: created.host, port: created.port },
+        });
+
+        reply.status(201).send({ success: true, data: created });
+      } catch (error: any) {
+        return reply.status(409).send({ error: 'Database host name already exists' });
+      }
+    }
+  );
+
+  // Database hosts: update
+  app.put(
+    '/database-hosts/:hostId',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { hostId } = request.params as { hostId: string };
+      const { name, host, port, username, password } = request.body as {
+        name?: string;
+        host?: string;
+        port?: number;
+        username?: string;
+        password?: string;
+      };
+
+      const existing = await prisma.databaseHost.findUnique({
+        where: { id: hostId },
+      });
+
+      if (!existing) {
+        return reply.status(404).send({ error: 'Database host not found' });
+      }
+
+      if (name !== undefined && name.trim().length < 3) {
+        return reply.status(400).send({ error: 'name must be at least 3 characters' });
+      }
+
+      if (port !== undefined && port <= 0) {
+        return reply.status(400).send({ error: 'port must be a positive number' });
+      }
+
+      try {
+        const updated = await prisma.databaseHost.update({
+          where: { id: hostId },
+          data: {
+            name: name !== undefined ? name.trim() : existing.name,
+            host: host !== undefined ? host.trim() : existing.host,
+            port: port ?? existing.port,
+            username: username !== undefined ? username.trim() : existing.username,
+            password: password ?? existing.password,
+          },
+        });
+
+        await createAuditLog(user.userId, {
+          action: 'database.host.update',
+          resource: 'database_host',
+          resourceId: updated.id,
+          details: { name: updated.name, host: updated.host, port: updated.port },
+        });
+
+        reply.send({ success: true, data: updated });
+      } catch (error: any) {
+        return reply.status(409).send({ error: 'Database host name already exists' });
+      }
+    }
+  );
+
+  // Database hosts: delete
+  app.delete(
+    '/database-hosts/:hostId',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { hostId } = request.params as { hostId: string };
+
+      const databasesCount = await prisma.serverDatabase.count({
+        where: { hostId },
+      });
+
+      if (databasesCount > 0) {
+        return reply.status(409).send({ error: 'Database host has active databases' });
+      }
+
+      const deleted = await prisma.databaseHost.delete({ where: { id: hostId } });
+
+      await createAuditLog(user.userId, {
+        action: 'database.host.delete',
+        resource: 'database_host',
+        resourceId: hostId,
+        details: { name: deleted.name },
+      });
+
+      reply.send({ success: true });
+    }
+  );
 }

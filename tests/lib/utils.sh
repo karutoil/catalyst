@@ -287,7 +287,13 @@ cleanup_nerdctl_containers() {
 cleanup_processes() {
     local pattern="$1"
     log_info "Cleaning up processes matching: $pattern"
-    pkill -f "$pattern" 2>/dev/null || true
+    local pids
+    pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        for pid in $pids; do
+            kill "$pid" 2>/dev/null || true
+        done
+    fi
 }
 
 # Random data generators

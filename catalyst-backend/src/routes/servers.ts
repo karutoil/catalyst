@@ -14,6 +14,12 @@ import {
   releaseIpForServer,
   shouldUseIpam,
 } from "../utils/ipam";
+import {
+  DatabaseProvisioningError,
+  dropDatabase,
+  provisionDatabase,
+  rotateDatabasePassword,
+} from "../services/mysql";
 
 const buildConnectionInfo = (
   server: any,
@@ -108,6 +114,84 @@ export async function serverRoutes(app: FastifyInstance) {
       lowered.endsWith(".tgz") ||
       lowered.endsWith(".zip")
     );
+  };
+
+  const ensureDatabasePermission = async (
+    serverId: string,
+    userId: string,
+    reply: FastifyReply,
+    permission: string,
+    message: string
+  ) => {
+    const server = await prisma.server.findUnique({
+      where: { id: serverId },
+      select: { ownerId: true, suspendedAt: true, suspensionReason: true },
+    });
+
+    if (!server) {
+      reply.status(404).send({ error: "Server not found" });
+      return false;
+    }
+
+    if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+      reply.status(423).send({
+        error: "Server is suspended",
+        suspendedAt: server.suspendedAt,
+        suspensionReason: server.suspensionReason ?? null,
+      });
+      return false;
+    }
+
+    if (server.ownerId === userId) {
+      return true;
+    }
+
+    const access = await prisma.serverAccess.findFirst({
+      where: {
+        serverId,
+        userId,
+        permissions: { has: permission },
+      },
+    });
+
+    if (access) {
+      return true;
+    }
+
+    const roles = await prisma.role.findMany({
+      where: { users: { some: { id: userId } } },
+      select: { permissions: true },
+    });
+    const rolePermissions = roles.flatMap((role) => role.permissions);
+    if (rolePermissions.includes("*") || rolePermissions.includes("admin.read")) {
+      return true;
+    }
+
+    reply.status(403).send({ error: message });
+    return false;
+
+    return true;
+  };
+
+  const generateSafeIdentifier = (prefix: string, length = 10) => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let id = "";
+    for (let i = 0; i < length; i += 1) {
+      id += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return `${prefix}${id}`;
+  };
+
+  const isValidDatabaseIdentifier = (value: string) => {
+    return /^[a-z][a-z0-9_]+$/.test(value) && value.length >= 3 && value.length <= 32;
+  };
+
+  const toDatabaseIdentifier = (value: string) => {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "_")
+      .replace(/_{2,}/g, "_")
+      .replace(/^_+|_+$/g, "");
   };
 
   // Create server
@@ -1395,6 +1479,302 @@ export async function serverRoutes(app: FastifyInstance) {
       });
 
       reply.send({ success: true, data: permissions });
+    }
+  );
+
+  // List server databases
+  app.get(
+    "/:serverId/databases",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+
+      const canAccess = await ensureDatabasePermission(
+        serverId,
+        userId,
+        reply,
+        "database.read",
+        "You do not have permission to view databases for this server"
+      );
+      if (!canAccess) {
+        return;
+      }
+
+      const databases = await prisma.serverDatabase.findMany({
+        where: { serverId },
+        include: {
+          host: {
+            select: {
+              id: true,
+              name: true,
+              host: true,
+              port: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      reply.send({
+        success: true,
+        data: databases.map((db) => ({
+          id: db.id,
+          name: db.name,
+          username: db.username,
+          password: db.password,
+          host: db.host.host,
+          port: db.host.port,
+          hostId: db.hostId,
+          hostName: db.host.name,
+          createdAt: db.createdAt,
+        })),
+      });
+    }
+  );
+
+  // Create server database
+  app.post(
+    "/:serverId/databases",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+      const { name, hostId } = request.body as { name?: string; hostId: string };
+
+      const canAccess = await ensureDatabasePermission(
+        serverId,
+        userId,
+        reply,
+        "database.create",
+        "You do not have permission to create databases for this server"
+      );
+      if (!canAccess) {
+        return;
+      }
+
+      if (!hostId) {
+        return reply.status(400).send({ error: "hostId is required" });
+      }
+
+      const host = await prisma.databaseHost.findUnique({
+        where: { id: hostId },
+      });
+
+      if (!host) {
+        return reply.status(404).send({ error: "Database host not found" });
+      }
+
+      const normalizedName = name ? toDatabaseIdentifier(name.trim()) : "";
+      const databaseName =
+        normalizedName.length >= 3 ? normalizedName : generateSafeIdentifier("srv_", 12);
+
+      if (!isValidDatabaseIdentifier(databaseName)) {
+        return reply.status(400).send({
+          error: "Database name must start with a letter and use only lowercase letters, numbers, and underscores (max 32 chars)",
+        });
+      }
+
+      const databaseUsername = generateSafeIdentifier("u", 12);
+      const databasePassword = generateSafeIdentifier("p", 24);
+
+      if (!isValidDatabaseIdentifier(databaseUsername)) {
+        return reply.status(500).send({ error: "Generated database username is invalid" });
+      }
+
+      if (databasePassword.length < 16) {
+        return reply.status(500).send({ error: "Generated database password is too short" });
+      }
+
+      try {
+        await provisionDatabase(host, databaseName, databaseUsername, databasePassword);
+        const database = await prisma.serverDatabase.create({
+          data: {
+            serverId,
+            hostId,
+            name: databaseName,
+            username: databaseUsername,
+            password: databasePassword,
+          },
+        });
+
+        await prisma.auditLog.create({
+          data: {
+            userId,
+            action: "database.create",
+            resource: "server",
+            resourceId: serverId,
+            details: {
+              hostId,
+              name: database.name,
+            },
+          },
+        });
+
+        reply.status(201).send({
+          success: true,
+          data: {
+            id: database.id,
+            name: database.name,
+            username: database.username,
+            password: database.password,
+            host: host.host,
+            port: host.port,
+            hostId: host.id,
+            hostName: host.name,
+            createdAt: database.createdAt,
+          },
+        });
+      } catch (error: any) {
+        if (error instanceof DatabaseProvisioningError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        return reply.status(500).send({ error: "Database provisioning failed" });
+      }
+    }
+  );
+
+  // Rotate server database password
+  app.post(
+    "/:serverId/databases/:databaseId/rotate",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId, databaseId } = request.params as {
+        serverId: string;
+        databaseId: string;
+      };
+      const userId = request.user.userId;
+
+      const canAccess = await ensureDatabasePermission(
+        serverId,
+        userId,
+        reply,
+        "database.rotate",
+        "You do not have permission to rotate database credentials"
+      );
+      if (!canAccess) {
+        return;
+      }
+
+      const database = await prisma.serverDatabase.findFirst({
+        where: { id: databaseId, serverId },
+        include: {
+          host: {
+            select: { id: true, name: true, host: true, port: true },
+          },
+        },
+      });
+
+      if (!database) {
+        return reply.status(404).send({ error: "Database not found" });
+      }
+
+      const nextPassword = generateSafeIdentifier("p", 24);
+
+      try {
+        await rotateDatabasePassword(database.host, database.username, nextPassword);
+      } catch (error: any) {
+        if (error instanceof DatabaseProvisioningError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        return reply.status(500).send({ error: "Database password rotation failed" });
+      }
+
+      const updated = await prisma.serverDatabase.update({
+        where: { id: database.id },
+        data: { password: nextPassword },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "database.rotate",
+          resource: "server",
+          resourceId: serverId,
+          details: {
+            databaseId: database.id,
+            name: database.name,
+          },
+        },
+      });
+
+      reply.send({
+        success: true,
+        data: {
+          id: updated.id,
+          name: updated.name,
+          username: updated.username,
+          password: updated.password,
+          host: database.host.host,
+          port: database.host.port,
+          hostId: database.host.id,
+          hostName: database.host.name,
+          createdAt: updated.createdAt,
+        },
+      });
+    }
+  );
+
+  // Delete server database
+  app.delete(
+    "/:serverId/databases/:databaseId",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId, databaseId } = request.params as {
+        serverId: string;
+        databaseId: string;
+      };
+      const userId = request.user.userId;
+
+      const canAccess = await ensureDatabasePermission(
+        serverId,
+        userId,
+        reply,
+        "database.delete",
+        "You do not have permission to delete databases for this server"
+      );
+      if (!canAccess) {
+        return;
+      }
+
+      const database = await prisma.serverDatabase.findFirst({
+        where: { id: databaseId, serverId },
+      });
+
+      if (!database) {
+        return reply.status(404).send({ error: "Database not found" });
+      }
+
+      const host = await prisma.databaseHost.findUnique({
+        where: { id: database.hostId },
+      });
+
+      if (!host) {
+        return reply.status(404).send({ error: "Database host not found" });
+      }
+
+      try {
+        await dropDatabase(host, database.name, database.username);
+      } catch (error: any) {
+        if (error instanceof DatabaseProvisioningError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        return reply.status(500).send({ error: "Database deletion failed" });
+      }
+
+      await prisma.serverDatabase.delete({ where: { id: database.id } });
+
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "database.delete",
+          resource: "server",
+          resourceId: serverId,
+          details: { databaseId },
+        },
+      });
+
+      reply.send({ success: true });
     }
   );
 
