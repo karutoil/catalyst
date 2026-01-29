@@ -333,6 +333,9 @@ _Inferred request fields are extracted from route handler typings and may omit i
 - query:
   - type?: string
   - enabled?: string
+  - target?: "server" | "node" | "global"
+  - targetId?: string
+  - scope?: "mine" | "all" (admin-only for "all")
 
 **Responses**
 - 200: Default Response
@@ -349,6 +352,11 @@ _Inferred request fields are extracted from route handler typings and may omit i
   - conditions: any
   - actions: any
   - enabled?: boolean
+
+**Notes**
+- Non-admin users can only create server-scoped rules for servers they can access.
+- Global and node targets require admin permissions.
+- Server-scoped rule access is governed by per-server alert permissions (alert.read/create/update/delete).
 
 **Responses**
 - 200: Default Response
@@ -403,6 +411,10 @@ _Inferred request fields are extracted from route handler typings and may omit i
   - type?: string
   - severity?: string
   - resolved?: string
+  - scope?: "mine" | "all" (admin-only for "all")
+
+**Notes**
+- Non-admin users are scoped to their own alerts unless `scope=all` (admin only).
 
 **Responses**
 - 200: Default Response
@@ -420,7 +432,8 @@ _Inferred request fields are extracted from route handler typings and may omit i
 
 **Inferred Request Fields**
 - params: none
-- query: none
+- query:
+  - scope?: "mine" | "all" (admin-only for "all")
 - body: none
 
 **Responses**
@@ -648,6 +661,7 @@ _Inferred request fields are extracted from route handler typings and may omit i
   - allocatedCpuCores: number
   - allocatedDiskMb: number
   - primaryPort: number
+  - primaryIp?: string | null
   - portBindings?: Record<number
   - networkMode?: string
   - environment: Record<string
@@ -761,7 +775,16 @@ _Inferred request fields are extracted from route handler typings and may omit i
 **Inferred Request Fields**
 - params: none
 - query: none
-- body: none
+- body:
+  - name?: string
+  - description?: string
+  - environment?: Record<string
+  - allocatedMemoryMb?: number
+  - allocatedCpuCores?: number
+  - allocatedDiskMb?: number
+  - primaryPort?: number
+  - primaryIp?: string | null
+  - portBindings?: Record<number
 
 **Responses**
 - 200: Default Response

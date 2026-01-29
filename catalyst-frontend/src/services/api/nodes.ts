@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { NodeInfo, NodeMetricsResponse, NodeStats } from '../../types/node';
+import type { NodeInfo, NodeMetricsResponse, NodeStats, NodeAllocation } from '../../types/node';
 
 type ApiResponse<T> = {
   success: boolean;
@@ -70,5 +70,39 @@ export const nodesApi = {
       { params: { networkName, limit } },
     );
     return data.data || [];
+  },
+  allocations: async (nodeId: string, params?: { search?: string; serverId?: string }) => {
+    const { data } = await apiClient.get<ApiResponse<NodeAllocation[]>>(
+      `/api/nodes/${nodeId}/allocations`,
+      { params },
+    );
+    return data.data || [];
+  },
+  createAllocations: async (
+    nodeId: string,
+    payload: { ip: string; ports: string; alias?: string; notes?: string },
+  ) => {
+    const { data } = await apiClient.post<ApiResponse<{ created: number }>>(
+      `/api/nodes/${nodeId}/allocations`,
+      payload,
+    );
+    return data.data;
+  },
+  updateAllocation: async (
+    nodeId: string,
+    allocationId: string,
+    payload: { alias?: string; notes?: string },
+  ) => {
+    const { data } = await apiClient.patch<ApiResponse<NodeAllocation>>(
+      `/api/nodes/${nodeId}/allocations/${allocationId}`,
+      payload,
+    );
+    return data.data;
+  },
+  deleteAllocation: async (nodeId: string, allocationId: string) => {
+    const { data } = await apiClient.delete<ApiResponse<void>>(
+      `/api/nodes/${nodeId}/allocations/${allocationId}`,
+    );
+    return data;
   },
 };

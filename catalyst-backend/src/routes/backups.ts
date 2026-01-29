@@ -52,13 +52,16 @@ export async function backupRoutes(app: FastifyInstance) {
       // Generate backup name
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const backupName = name || `backup-${timestamp}`;
-      const mode = resolveBackupStorageMode(server);
-      const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode);
+       const mode = resolveBackupStorageMode(server);
+       const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode, server);
       const serverDir = buildServerDir(server.uuid);
 
-      if (mode === "s3" && !storageKey) {
-        return reply.status(500).send({ error: "Missing S3 storage key" });
-      }
+       if (mode === "s3" && !storageKey) {
+         return reply.status(500).send({ error: "Missing S3 storage key" });
+       }
+       if (mode === "sftp" && !storageKey) {
+         return reply.status(500).send({ error: "Missing SFTP storage key" });
+       }
 
       const backupRecord = await prisma.backup.create({
         data: {
@@ -264,23 +267,25 @@ export async function backupRoutes(app: FastifyInstance) {
 
       const gateway = (app as any).wsGateway;
       let restorePath = backup.path;
-      if (backup.storageMode === "s3") {
-        const { storageKey } = backup.metadata as { storageKey?: string };
-        if (!storageKey) {
-          return reply.status(500).send({ error: "Missing S3 storage key" });
-        }
-        const tmpPath = `${BACKUP_DIR}/${server.uuid}/${backup.name}.tar.gz`;
-        await fs.mkdir(`${BACKUP_DIR}/${server.uuid}`, { recursive: true });
-        const { stream } = await openStorageStream(backup);
-        await new Promise<void>((resolve, reject) => {
-          const writeStream = require("fs").createWriteStream(tmpPath);
-          stream.pipe(writeStream);
-          stream.on("error", reject);
-          writeStream.on("finish", () => resolve());
-          writeStream.on("error", reject);
-        });
-        restorePath = tmpPath;
-      }
+      if (backup.storageMode === "s3" || backup.storageMode === "sftp") {
+         const { storageKey } = backup.metadata as { storageKey?: string };
+         if (!storageKey) {
+           return reply
+             .status(500)
+             .send({ error: `Missing ${backup.storageMode?.toUpperCase() || "remote"} storage key` });
+         }
+         const tmpPath = `${BACKUP_DIR}/${server.uuid}/${backup.name}.tar.gz`;
+         await fs.mkdir(`${BACKUP_DIR}/${server.uuid}`, { recursive: true });
+         const { stream } = await openStorageStream(backup, server);
+         await new Promise<void>((resolve, reject) => {
+           const writeStream = require("fs").createWriteStream(tmpPath);
+           stream.pipe(writeStream);
+           stream.on("error", reject);
+           writeStream.on("finish", () => resolve());
+           writeStream.on("error", reject);
+         });
+         restorePath = tmpPath;
+       }
 
       // Send restore request to agent
       const success = await gateway.sendToAgent(server.nodeId, {
@@ -348,11 +353,13 @@ export async function backupRoutes(app: FastifyInstance) {
       }
 
       const gateway = (app as any).wsGateway;
-      await deleteBackupFromStorage(gateway, backup, {
-        id: server.id,
-        nodeId: server.nodeId,
-        node: server.node,
-      });
+       await deleteBackupFromStorage(gateway, backup, {
+         id: server.id,
+         nodeId: server.nodeId,
+         node: server.node,
+         backupS3Config: (server as any).backupS3Config,
+         backupSftpConfig: (server as any).backupSftpConfig,
+       });
 
       // Delete backup record
       await prisma.backup.delete({ where: { id: backupId } });
@@ -382,23 +389,26 @@ export async function backupRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Backup not found" });
       }
 
-      if (process.env.SUSPENSION_ENFORCED !== "false") {
-        const server = await prisma.server.findUnique({
-          where: { id: serverId },
-          select: { suspendedAt: true, suspensionReason: true },
-        });
-        if (server?.suspendedAt) {
-          return reply.status(423).send({
-            error: "Server is suspended",
-            suspendedAt: server.suspendedAt,
-            suspensionReason: server.suspensionReason ?? null,
-          });
-        }
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        include: { node: true },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
       }
 
-      if (backup.storageMode === "s3") {
+      if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+        return reply.status(423).send({
+          error: "Server is suspended",
+          suspendedAt: server.suspendedAt,
+          suspensionReason: server.suspensionReason ?? null,
+        });
+      }
+
+      if (backup.storageMode === "s3" || backup.storageMode === "sftp") {
         try {
-          const { stream, contentLength } = await openStorageStream(backup);
+          const { stream, contentLength } = await openStorageStream(backup, server);
           if (contentLength) {
             reply.header("Content-Length", contentLength.toString());
           }

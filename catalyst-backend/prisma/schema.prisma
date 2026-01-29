@@ -24,6 +24,8 @@ model User {
   servers   ServerAccess[]
   auditLog  AuditLog[]
   invitesSent ServerAccessInvite[] @relation("ServerInviteSender")
+  alertRules AlertRule[]
+  alerts     Alert[]
 }
 
 // ============================================================================
@@ -144,6 +146,7 @@ model Node {
   metrics    NodeMetrics[]
   alerts     Alert[]
   ipPools    IpPool[]
+  allocations NodeAllocation[]
 }
 
 model IpPool {
@@ -175,6 +178,23 @@ model IpAllocation {
   releasedAt DateTime?
 
   @@unique([poolId, ip])
+  @@index([serverId])
+}
+
+model NodeAllocation {
+  id        String   @id @default(cuid())
+  nodeId    String
+  node      Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  serverId  String?
+  server    Server?  @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  ip        String
+  port      Int
+  alias     String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([nodeId, ip, port])
   @@index([serverId])
 }
 
@@ -257,6 +277,9 @@ model Server {
   backupStorageMode   String   @default("local") // local, s3, stream
   backupRetentionCount Int     @default(0)
   backupRetentionDays  Int     @default(0)
+  backupAllocationMb  Int     @default(0)
+  backupS3Config      Json    @default("{}")
+  backupSftpConfig    Json    @default("{}")
   
   // Crash detection & auto-restart
   restartPolicy  String   @default("on-failure") // always, on-failure, never
@@ -278,6 +301,7 @@ model Server {
   scheduledTasks ScheduledTask[]
   alerts         Alert[]
   ipAllocation   IpAllocation?
+  allocations    NodeAllocation[]
 }
 
 // ============================================================================
@@ -438,6 +462,8 @@ model Alert {
   id          String   @id @default(cuid())
   ruleId      String?
   rule        AlertRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   serverId    String?
   server      Server?  @relation(fields: [serverId], references: [id], onDelete: Cascade)
   nodeId      String?
@@ -457,6 +483,7 @@ model Alert {
   @@index([nodeId, resolved, createdAt])
   @@index([type, severity, resolved])
   @@index([ruleId, createdAt])
+  @@index([userId, resolved, createdAt])
 }
 
 model AlertRule {
@@ -467,6 +494,8 @@ model AlertRule {
   type        String   // resource_threshold, node_offline, server_crashed
   target      String   // server, node, global
   targetId    String?  // Specific server/node ID, or null for global
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   conditions  Json     // Threshold values, etc.
   actions     Json     // Webhook URLs, notification methods
   createdAt   DateTime @default(now())
@@ -475,6 +504,7 @@ model AlertRule {
 
   @@index([enabled, type])
   @@index([target, targetId])
+  @@index([userId, createdAt])
 }
 
 model AlertDelivery {

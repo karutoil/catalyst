@@ -5,6 +5,7 @@ import type { UpdateServerPayload } from '../../types/server';
 import { useServer } from '../../hooks/useServer';
 import { useWebSocketStore } from '../../stores/websocketStore';
 import { notifyError, notifySuccess } from '../../utils/notify';
+import { nodesApi } from '../../services/api/nodes';
 
 type Props = {
   serverId: string;
@@ -17,11 +18,21 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
   const [cpu, setCpu] = useState('1');
   const [disk, setDisk] = useState('10240');
   const [name, setName] = useState('');
+  const [primaryIp, setPrimaryIp] = useState('');
+  const [allocationId, setAllocationId] = useState('');
+  const [availableAllocations, setAvailableAllocations] = useState<
+    Array<{ id: string; ip: string; port: number; alias?: string | null }>
+  >([]);
+  const [allocLoadError, setAllocLoadError] = useState<string | null>(null);
+  const [availableIps, setAvailableIps] = useState<string[]>([]);
+  const [ipLoadError, setIpLoadError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { data: server } = useServer(serverId);
   const { onMessage } = useWebSocketStore();
 
   const isRunning = server?.status !== 'stopped';
+  const isIpamNetwork = server?.networkMode && !['bridge', 'host'].includes(server.networkMode);
+  const isBridgeNetwork = server?.networkMode === 'bridge';
   const memoryValue = Number(memory);
   const cpuValue = Number(cpu);
   const diskValue = Number(disk);
@@ -39,6 +50,12 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
       }
       if (Number.isFinite(cpuValue) && cpuValue > 0 && cpuValue !== existingCpuCores) {
         updates.allocatedCpuCores = cpuValue;
+      }
+      if (isIpamNetwork && primaryIp !== (server?.primaryIp ?? '')) {
+        updates.primaryIp = primaryIp.trim() || null;
+      }
+      if (isBridgeNetwork && allocationId) {
+        updates.allocationId = allocationId;
       }
 
       if (Object.keys(updates).length) {
@@ -65,7 +82,75 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
     if (server.allocatedMemoryMb) setMemory(String(server.allocatedMemoryMb));
     if (server.allocatedCpuCores) setCpu(String(server.allocatedCpuCores));
     if (server.allocatedDiskMb) setDisk(String(server.allocatedDiskMb));
+    setPrimaryIp(server.primaryIp ?? '');
+    setAllocationId('');
   }, [server]);
+
+  useEffect(() => {
+    let active = true;
+    if (!server?.nodeId || !isIpamNetwork) {
+      setAvailableIps([]);
+      setIpLoadError(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    setIpLoadError(null);
+    nodesApi
+      .availableIps(server.nodeId, server.networkMode ?? 'mc-lan-static', 200)
+      .then((ips) => {
+        if (!active) return;
+        setAvailableIps(ips);
+      })
+      .catch((error: any) => {
+        if (!active) return;
+        const message = error?.response?.data?.error || 'Unable to load IP pool';
+        setAvailableIps([]);
+        setIpLoadError(message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [server?.nodeId, server?.networkMode, isIpamNetwork]);
+
+  useEffect(() => {
+    let active = true;
+    if (!server?.nodeId || !isBridgeNetwork) {
+      setAvailableAllocations([]);
+      setAllocLoadError(null);
+      return () => {
+        active = false;
+      };
+    }
+    setAllocLoadError(null);
+    nodesApi
+      .allocations(server.nodeId, { serverId: server.id })
+      .then((allocations) => {
+        if (!active) return;
+        setAvailableAllocations(
+          allocations.map((allocation) => ({
+            id: allocation.id,
+            ip: allocation.ip,
+            port: allocation.port,
+            alias: allocation.alias,
+          })),
+        );
+        const current = allocations.find((allocation) => allocation.serverId === server.id);
+        setAllocationId(current?.id ?? '');
+      })
+      .catch((error: any) => {
+        if (!active) return;
+        const message = error?.response?.data?.error || 'Unable to load allocations';
+        setAvailableAllocations([]);
+        setAllocLoadError(message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [server?.nodeId, server?.networkMode, server?.id, isBridgeNetwork]);
 
   useEffect(() => {
     const unsubscribe = onMessage((message) => {
@@ -153,6 +238,65 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
                   </span>
                 ) : null}
               </label>
+              {isIpamNetwork ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-400">
+                    Choose a primary IP or leave auto-assign selected.
+                  </p>
+                  <label className="block space-y-1">
+                    <span className="text-slate-300">Primary IP allocation</span>
+                    <select
+                      className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                      value={primaryIp}
+                      onChange={(event) => setPrimaryIp(event.target.value)}
+                      disabled={isRunning}
+                    >
+                      <option value="">Auto-assign</option>
+                      {server?.primaryIp ? (
+                        <option value={server.primaryIp}>{server.primaryIp} (current)</option>
+                      ) : null}
+                      {availableIps
+                        .filter((ip) => ip !== server?.primaryIp)
+                        .map((ip) => (
+                          <option key={ip} value={ip}>
+                            {ip}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  {ipLoadError ? <p className="text-xs text-amber-300">{ipLoadError}</p> : null}
+                  {!ipLoadError && availableIps.length === 0 ? (
+                    <p className="text-xs text-slate-500">No available IPs found.</p>
+                  ) : null}
+                </div>
+              ) : isBridgeNetwork ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-400">
+                    Choose the primary allocation (IP:port) for this server.
+                  </p>
+                  <label className="block space-y-1">
+                    <span className="text-slate-300">Primary allocation</span>
+                    <select
+                      className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                      value={allocationId}
+                      onChange={(event) => setAllocationId(event.target.value)}
+                      disabled={isRunning}
+                    >
+                      <option value="">Select allocation</option>
+                      {availableAllocations.map((allocation) => (
+                        <option key={allocation.id} value={allocation.id}>
+                          {allocation.ip}:{allocation.port}
+                          {allocation.alias ? ` (${allocation.alias})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {allocLoadError ? <p className="text-xs text-amber-300">{allocLoadError}</p> : null}
+                  {!allocLoadError && availableAllocations.length === 0 ? (
+                    <p className="text-xs text-slate-500">No allocations found.</p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="mt-4 flex justify-end gap-2 text-xs">
               <button

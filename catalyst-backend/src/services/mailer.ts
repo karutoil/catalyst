@@ -160,7 +160,7 @@ const createTransporter = (settings: SmtpSettings) => {
     maxConnections: settings.maxConnections ?? undefined,
     maxMessages: settings.maxMessages ?? undefined,
     auth: settings.username && settings.password ? { user: settings.username, pass: settings.password } : undefined,
-  });
+  } as any);
 };
 
 export const sendEmail = async (payload: {

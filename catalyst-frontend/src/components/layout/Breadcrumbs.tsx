@@ -9,6 +9,7 @@ const labelMap: Record<string, string> = {
   users: 'Users',
   servers: 'Servers',
   system: 'System',
+  network: 'Network',
   'audit-logs': 'Audit Logs',
   files: 'Files',
   console: 'Console',

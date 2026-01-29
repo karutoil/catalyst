@@ -18,6 +18,7 @@ import BackupSection from '../../components/backups/BackupSection';
 import CreateTaskModal from '../../components/tasks/CreateTaskModal';
 import EditTaskModal from '../../components/tasks/EditTaskModal';
 import XtermConsole from '../../components/console/XtermConsole';
+import AlertsPage from '../alerts/AlertsPage';
 import { useConsole } from '../../hooks/useConsole';
 import { useTasks } from '../../hooks/useTasks';
 import { useServerDatabases } from '../../hooks/useServerDatabases';
@@ -66,9 +67,11 @@ const tabLabels = {
   tasks: 'Tasks',
   databases: 'Databases',
   metrics: 'Metrics',
+  alerts: 'Alerts',
   configuration: 'Configuration',
   users: 'Users',
   settings: 'Settings',
+  admin: 'Admin',
 } as const;
 
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : '—');
@@ -86,6 +89,10 @@ function ServerDetailsPage() {
   const { data: databaseHosts = [] } = useDatabaseHosts();
   const { isConnected } = useWebSocketStore();
   const { user } = useAuthStore();
+  const isAdmin = useMemo(
+    () => user?.permissions?.includes('*') || user?.permissions?.includes('admin.read'),
+    [user?.permissions],
+  );
   const queryClient = useQueryClient();
   const { data: permissionsData } = useQuery<ServerPermissionsResponse>({
     queryKey: ['server-permissions', serverId],
@@ -134,7 +141,9 @@ function ServerDetailsPage() {
   const [newHostPort, setNewHostPort] = useState('');
   const [restartPolicy, setRestartPolicy] = useState<'always' | 'on-failure' | 'never'>('on-failure');
   const [maxCrashCount, setMaxCrashCount] = useState('5');
+  const [serverName, setServerName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  const [suspendReason, setSuspendReason] = useState('');
   const [invitePreset, setInvitePreset] = useState<'readOnly' | 'power' | 'full' | 'custom'>('readOnly');
   const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
   const [accessPermissions, setAccessPermissions] = useState<Record<string, string[]>>({});
@@ -208,6 +217,40 @@ function ServerDetailsPage() {
     },
     onError: (error: any) => {
       const message = error?.response?.data?.error || 'Failed to update task';
+      notifyError(message);
+    },
+  });
+
+  const suspendMutation = useMutation({
+    mutationFn: (reason?: string) => {
+      if (!server?.id) throw new Error('Server not loaded');
+      return serversApi.suspend(server.id, reason);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['server', server?.id] });
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+      notifySuccess('Server suspended');
+      setSuspendReason('');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to suspend server';
+      notifyError(message);
+    },
+  });
+
+  const unsuspendMutation = useMutation({
+    mutationFn: () => {
+      if (!server?.id) throw new Error('Server not loaded');
+      return serversApi.unsuspend(server.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['server', server?.id] });
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+      notifySuccess('Server unsuspended');
+      setSuspendReason('');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to unsuspend server';
       notifyError(message);
     },
   });
@@ -368,6 +411,24 @@ function ServerDetailsPage() {
     },
   });
 
+  const renameServerMutation = useMutation({
+    mutationFn: () => {
+      if (!serverId) throw new Error('Missing server id');
+      const nextName = serverName.trim();
+      if (!nextName) throw new Error('Server name is required');
+      return serversApi.update(serverId, { name: nextName });
+    },
+    onSuccess: () => {
+      notifySuccess('Server name updated');
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to rename server';
+      notifyError(message);
+    },
+  });
+
   useEffect(() => {
     if (!server) return;
     setRestartPolicy(server.restartPolicy ?? 'on-failure');
@@ -377,6 +438,11 @@ function ServerDetailsPage() {
         : '5',
     );
   }, [server?.id, server?.restartPolicy, server?.maxCrashCount]);
+
+  useEffect(() => {
+    if (!server?.name) return;
+    setServerName(server.name);
+  }, [server?.name]);
 
   useEffect(() => {
     if (!permissionsData?.data) return;
@@ -467,6 +533,10 @@ function ServerDetailsPage() {
       'server.install',
       'server.transfer',
       'server.delete',
+      'alert.read',
+      'alert.create',
+      'alert.update',
+      'alert.delete',
       'console.read',
       'console.write',
       'file.read',
@@ -894,7 +964,9 @@ function ServerDetailsPage() {
       </div>
 
       <div className="flex flex-wrap gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
-        {Object.entries(tabLabels).map(([key, label]) => {
+        {Object.entries(tabLabels)
+          .filter(([key]) => key !== 'admin' || isAdmin)
+          .map(([key, label]) => {
           const isActive = activeTab === key;
           return (
             <button
@@ -1248,6 +1320,12 @@ function ServerDetailsPage() {
             allocatedMemoryMb={server.allocatedMemoryMb ?? 0}
             timeRangeLabel={metricsTimeRange.label}
           />
+        </div>
+      ) : null}
+
+      {activeTab === 'alerts' ? (
+        <div className="space-y-4">
+          <AlertsPage serverId={server.id} />
         </div>
       ) : null}
 
@@ -1760,172 +1838,263 @@ function ServerDetailsPage() {
         </div>
       ) : null}
 
+      {activeTab === 'admin' ? (
+        isAdmin ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-100">Suspension</div>
+                  <div className="text-xs text-slate-400">Suspend or restore access to the server.</div>
+                </div>
+                {server.status === 'suspended' ? (
+                  <button
+                    type="button"
+                    className="rounded-md border border-emerald-600 px-3 py-1 text-xs font-semibold text-emerald-200 hover:border-emerald-500 disabled:opacity-60"
+                    onClick={() => unsuspendMutation.mutate()}
+                    disabled={unsuspendMutation.isPending}
+                  >
+                    Unsuspend
+                  </button>
+                ) : null}
+              </div>
+              {server.status !== 'suspended' ? (
+                <div className="mt-3 flex flex-wrap items-end gap-3 text-xs">
+                  <div className="flex-1">
+                    <label className="text-[11px] uppercase tracking-wide text-slate-500">Reason (optional)</label>
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                      value={suspendReason}
+                      onChange={(event) => setSuspendReason(event.target.value)}
+                      placeholder="Billing, abuse, or other admin notes"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md bg-rose-700 px-3 py-2 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
+                    onClick={() => suspendMutation.mutate(suspendReason.trim() || undefined)}
+                    disabled={suspendMutation.isPending}
+                  >
+                    Suspend
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-100">Port allocations</div>
+                  <div className="text-xs text-slate-400">Add or remove host-to-container bindings.</div>
+                </div>
+                <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                  {server.status === 'stopped' ? 'Stopped' : 'Stop server to edit'}
+                </span>
+              </div>
+              {allocationsError ? (
+                <div className="mt-3 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+                  {allocationsError}
+                </div>
+              ) : null}
+              <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+                <input
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={newContainerPort}
+                  onChange={(event) => setNewContainerPort(event.target.value)}
+                  placeholder="Container port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  disabled={server.status !== 'stopped' || isSuspended}
+                />
+                <input
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={newHostPort}
+                  onChange={(event) => setNewHostPort(event.target.value)}
+                  placeholder="Host port (optional)"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  disabled={server.status !== 'stopped' || isSuspended}
+                />
+                <button
+                  type="button"
+                  className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  onClick={() => addAllocationMutation.mutate()}
+                  disabled={server.status !== 'stopped' || isSuspended || addAllocationMutation.isPending}
+                >
+                  Add allocation
+                </button>
+              </div>
+              <div className="mt-4 space-y-2 text-xs">
+                {allocations.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-4 py-4 text-center text-slate-400">
+                    No allocations configured.
+                  </div>
+                ) : (
+                  allocations.map((allocation) => (
+                    <div
+                      key={`${allocation.containerPort}-${allocation.hostPort}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-100">
+                          {allocation.containerPort} → {allocation.hostPort}
+                        </span>
+                        {allocation.isPrimary ? (
+                          <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+                            Primary
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                          onClick={() => setPrimaryMutation.mutate(allocation.containerPort)}
+                          disabled={
+                            allocation.isPrimary ||
+                            server.status !== 'stopped' ||
+                            isSuspended ||
+                            setPrimaryMutation.isPending
+                          }
+                        >
+                          Make primary
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                          onClick={() => removeAllocationMutation.mutate(allocation.containerPort)}
+                          disabled={
+                            allocation.isPrimary ||
+                            server.status !== 'stopped' ||
+                            isSuspended ||
+                            removeAllocationMutation.isPending
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-100">Crash recovery</div>
+                  <div className="text-xs text-slate-400">Configure automatic restart behavior for crashes.</div>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+                <div>
+                  <label className="text-[11px] uppercase tracking-wide text-slate-500">Restart policy</label>
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                    value={restartPolicy}
+                    onChange={(event) => setRestartPolicy(event.target.value)}
+                    disabled={isSuspended}
+                  >
+                    <option value="always">Always</option>
+                    <option value="on-failure">On failure</option>
+                    <option value="never">Never</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] uppercase tracking-wide text-slate-500">Max crash count</label>
+                  <input
+                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={maxCrashCount}
+                    onChange={(event) => setMaxCrashCount(event.target.value)}
+                    disabled={isSuspended}
+                  />
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  className="rounded-md bg-sky-600 px-3 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  onClick={() => restartPolicyMutation.mutate()}
+                  disabled={isSuspended || restartPolicyMutation.isPending}
+                >
+                  Save policy
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                  onClick={() => resetCrashCountMutation.mutate()}
+                  disabled={isSuspended || resetCrashCountMutation.isPending}
+                >
+                  Reset crash count
+                </button>
+                <div className="text-[11px] text-slate-400">
+                  Crashes: {server.crashCount ?? 0} / {server.maxCrashCount ?? 0}
+                  {server.lastCrashAt ? ` · Last crash ${new Date(server.lastCrashAt).toLocaleString()}` : ''}
+                  {server.lastExitCode !== null && server.lastExitCode !== undefined
+                    ? ` · Exit ${server.lastExitCode}`
+                    : ''}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="text-sm font-semibold text-slate-100">Resource allocation</div>
+              <p className="mt-2 text-xs text-slate-400">Adjust memory, CPU, disk, or primary IP assignments.</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <UpdateServerModal serverId={server.id} disabled={isSuspended} />
+                <TransferServerModal serverId={server.id} disabled={isSuspended} />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-4">
+              <div className="text-sm font-semibold text-rose-100">Danger zone</div>
+              <p className="mt-2 text-xs text-rose-200">Deleting the server removes all data and cannot be undone.</p>
+              <div className="mt-3">
+                <DeleteServerDialog serverId={server.id} serverName={server.name} disabled={isSuspended} />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-6 text-rose-200">
+            Admin access required.
+          </div>
+        )
+      ) : null}
+
       {activeTab === 'settings' ? (
         <div className="space-y-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-100">Port allocations</div>
-                <div className="text-xs text-slate-400">Add or remove host-to-container bindings.</div>
-              </div>
-              <span className="text-[10px] uppercase tracking-wide text-slate-500">
-                {server.status === 'stopped' ? 'Stopped' : 'Stop server to edit'}
-              </span>
-            </div>
-            {allocationsError ? (
-              <div className="mt-3 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
-                {allocationsError}
-              </div>
-            ) : null}
-            <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
-              <input
-                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                value={newContainerPort}
-                onChange={(event) => setNewContainerPort(event.target.value)}
-                placeholder="Container port"
-                type="number"
-                min={1}
-                max={65535}
-                disabled={server.status !== 'stopped' || isSuspended}
-              />
-              <input
-                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                value={newHostPort}
-                onChange={(event) => setNewHostPort(event.target.value)}
-                placeholder="Host port (optional)"
-                type="number"
-                min={1}
-                max={65535}
-                disabled={server.status !== 'stopped' || isSuspended}
-              />
-              <button
-                type="button"
-                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                onClick={() => addAllocationMutation.mutate()}
-                disabled={server.status !== 'stopped' || isSuspended || addAllocationMutation.isPending}
-              >
-                Add allocation
-              </button>
-            </div>
-            <div className="mt-4 space-y-2 text-xs">
-              {allocations.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-4 py-4 text-center text-slate-400">
-                  No allocations configured.
-                </div>
-              ) : (
-                allocations.map((allocation) => (
-                  <div
-                    key={`${allocation.containerPort}-${allocation.hostPort}`}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-slate-100">
-                        {allocation.containerPort} → {allocation.hostPort}
-                      </span>
-                      {allocation.isPrimary ? (
-                        <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
-                          Primary
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
-                        onClick={() => setPrimaryMutation.mutate(allocation.containerPort)}
-                        disabled={
-                          allocation.isPrimary ||
-                          server.status !== 'stopped' ||
-                          isSuspended ||
-                          setPrimaryMutation.isPending
-                        }
-                      >
-                        Make primary
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500 disabled:opacity-60"
-                        onClick={() => removeAllocationMutation.mutate(allocation.containerPort)}
-                        disabled={
-                          allocation.isPrimary ||
-                          server.status !== 'stopped' ||
-                          isSuspended ||
-                          removeAllocationMutation.isPending
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-100">Crash recovery</div>
-                <div className="text-xs text-slate-400">
-                  Configure automatic restart behavior for crashes.
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
-              <div>
-                <label className="text-[11px] uppercase tracking-wide text-slate-500">Restart policy</label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  value={restartPolicy}
-                  onChange={(event) => setRestartPolicy(event.target.value)}
-                  disabled={isSuspended}
-                >
-                  <option value="always">Always</option>
-                  <option value="on-failure">On failure</option>
-                  <option value="never">Never</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[11px] uppercase tracking-wide text-slate-500">Max crash count</label>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+              <div className="text-sm font-semibold text-slate-100">Rename server</div>
+              <p className="mt-2 text-xs text-slate-400">Update how this server appears in your list.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={maxCrashCount}
-                  onChange={(event) => setMaxCrashCount(event.target.value)}
+                  className="min-w-[220px] flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  value={serverName}
+                  onChange={(event) => setServerName(event.target.value)}
+                  placeholder="Server name"
                   disabled={isSuspended}
                 />
+                <button
+                  type="button"
+                  className="rounded-md bg-sky-600 px-3 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  onClick={() => renameServerMutation.mutate()}
+                  disabled={
+                    isSuspended ||
+                    renameServerMutation.isPending ||
+                    !serverName.trim() ||
+                    serverName.trim() === server.name
+                  }
+                >
+                  Save
+                </button>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <button
-                type="button"
-                className="rounded-md bg-sky-600 px-3 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                onClick={() => restartPolicyMutation.mutate()}
-                disabled={isSuspended || restartPolicyMutation.isPending}
-              >
-                Save policy
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
-                onClick={() => resetCrashCountMutation.mutate()}
-                disabled={isSuspended || resetCrashCountMutation.isPending}
-              >
-                Reset crash count
-              </button>
-              <div className="text-[11px] text-slate-400">
-                Crashes: {server.crashCount ?? 0} / {server.maxCrashCount ?? 0}
-                {server.lastCrashAt ? ` · Last crash ${new Date(server.lastCrashAt).toLocaleString()}` : ''}
-                {server.lastExitCode !== null && server.lastExitCode !== undefined
-                  ? ` · Exit ${server.lastExitCode}`
-                  : ''}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
               <div className="text-sm font-semibold text-slate-100">Maintenance</div>
               <p className="mt-2 text-xs text-slate-400">
@@ -1940,17 +2109,6 @@ function ServerDetailsPage() {
                 >
                   Reinstall
                 </button>
-                <UpdateServerModal serverId={server.id} disabled={isSuspended} />
-                <TransferServerModal serverId={server.id} disabled={isSuspended} />
-              </div>
-            </div>
-            <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-4">
-              <div className="text-sm font-semibold text-rose-100">Danger zone</div>
-              <p className="mt-2 text-xs text-rose-200">
-                Deleting the server removes all data and cannot be undone.
-              </p>
-              <div className="mt-3">
-                <DeleteServerDialog serverId={server.id} serverName={server.name} disabled={isSuspended} />
               </div>
             </div>
           </div>

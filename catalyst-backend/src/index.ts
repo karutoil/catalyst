@@ -222,7 +222,7 @@ async function bootstrap() {
         if (!nodeId || !token) {
           return false;
         }
-        const node = await prisma.node.findUnique({ where: { id: nodeId } });
+        const node = await prisma.node.findUnique({ where: { id: nodeId as string } });
         return Boolean(node && node.secret === token);
       },
       skipOnError: false,

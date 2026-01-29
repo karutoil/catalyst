@@ -45,6 +45,11 @@ const adminSections = [
     to: '/admin/security',
   },
   {
+    title: 'Alerts',
+    description: 'Configure alert rules and resolve incidents.',
+    to: '/admin/alerts',
+  },
+  {
     title: 'Audit Logs',
     description: 'Track privileged actions.',
     to: '/admin/audit-logs',

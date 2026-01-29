@@ -9,6 +9,7 @@ export interface AlertRule {
   type: AlertType;
   target: 'server' | 'node' | 'global';
   targetId?: string | null;
+  userId?: string | null;
   conditions: Record<string, unknown>;
   actions: Record<string, unknown>;
   createdAt: string;
@@ -31,6 +32,7 @@ export interface AlertDelivery {
 export interface Alert {
   id: string;
   ruleId?: string | null;
+  userId?: string | null;
   serverId?: string | null;
   nodeId?: string | null;
   type: AlertType;

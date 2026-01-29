@@ -675,10 +675,28 @@ export class WebSocketGateway {
                 server.id,
                 agentPath,
                 storageKey,
+                server as any,
               );
             }
           } catch (error) {
             this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to S3");
+          }
+        } else if (mode === "sftp") {
+          try {
+            const { streamAgentBackupToSftp } = await import("../services/backup-storage");
+            const storageKey = (backupRecord.metadata as any)?.storageKey;
+            if (storageKey) {
+              await streamAgentBackupToSftp(
+                this,
+                server.nodeId,
+                server.id,
+                agentPath,
+                storageKey,
+                server as any,
+              );
+            }
+          } catch (error) {
+            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to SFTP");
           }
         } else if (mode === "stream") {
           try {

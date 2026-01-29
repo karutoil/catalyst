@@ -22,7 +22,12 @@ function CreateServerModal() {
   const [networkMode, setNetworkMode] = useState<'bridge' | 'mc-lan' | 'mc-lan-static'>(
     'mc-lan-static',
   );
-  const [requestedIp, setRequestedIp] = useState('');
+  const [primaryIp, setPrimaryIp] = useState('');
+  const [allocationId, setAllocationId] = useState('');
+  const [availableAllocations, setAvailableAllocations] = useState<
+    Array<{ id: string; ip: string; port: number; alias?: string | null }>
+  >([]);
+  const [allocLoadError, setAllocLoadError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const { data: templates = [] } = useTemplates();
@@ -46,7 +51,7 @@ function CreateServerModal() {
   const locationId = nodes[0]?.locationId || '';
 
   useEffect(() => {
-    setRequestedIp('');
+    setPrimaryIp('');
     let active = true;
     if (!nodeId || networkMode !== 'mc-lan-static') {
       setAvailableIps([]);
@@ -73,14 +78,47 @@ function CreateServerModal() {
     };
   }, [nodeId, networkMode]);
 
+  useEffect(() => {
+    setAllocationId('');
+    let active = true;
+    if (!nodeId || networkMode !== 'bridge') {
+      setAvailableAllocations([]);
+      setAllocLoadError(null);
+      return () => {
+        active = false;
+      };
+    }
+    setAllocLoadError(null);
+    nodesApi
+      .allocations(nodeId)
+      .then((allocations) => {
+        if (!active) return;
+        setAvailableAllocations(
+          allocations
+            .filter((allocation) => !allocation.serverId)
+            .map((allocation) => ({
+              id: allocation.id,
+              ip: allocation.ip,
+              port: allocation.port,
+              alias: allocation.alias,
+            })),
+        );
+      })
+      .catch((error: any) => {
+        if (!active) return;
+        const message = error?.response?.data?.error || 'Unable to load allocations';
+        setAvailableAllocations([]);
+        setAllocLoadError(message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [nodeId, networkMode]);
+
   const mutation = useMutation({
     mutationFn: async () => {
       // Create server first
-      const networkEnv =
-        networkMode === 'mc-lan-static' && requestedIp.trim()
-          ? { CATALYST_NETWORK_IP: requestedIp.trim() }
-          : {};
-
       const normalizedBindings = portBindings
         .map(binding => binding.trim())
         .filter(Boolean)
@@ -101,7 +139,7 @@ function CreateServerModal() {
           return acc;
         }, {});
 
-      const server = await serversApi.create({
+      const payload: Parameters<typeof serversApi.create>[0] = {
         name,
         templateId,
         nodeId,
@@ -114,9 +152,18 @@ function CreateServerModal() {
         networkMode,
         environment: {
           ...environment,
-          ...networkEnv,
         },
-      });
+      };
+      if (networkMode === 'mc-lan-static') {
+        payload.primaryIp = primaryIp.trim() || null;
+      }
+      if (networkMode === 'bridge') {
+        if (allocationId) {
+          payload.allocationId = allocationId;
+        }
+      }
+
+      const server = await serversApi.create(payload);
       
       // Then trigger installation
       if (server?.id) {
@@ -136,7 +183,7 @@ function CreateServerModal() {
       setNodeId('');
       setEnvironment({});
       setNetworkMode('mc-lan-static');
-      setRequestedIp('');
+      setPrimaryIp('');
       setPortBindings([]);
       if (server?.id) {
         navigate(`/servers/${server.id}/console`);
@@ -333,11 +380,11 @@ function CreateServerModal() {
                     Choose an IP from the node pool or leave auto-assign selected.
                   </p>
                   <label className="block space-y-1">
-                    <span className="text-slate-300">Requested IP</span>
+                    <span className="text-slate-300">Primary IP allocation</span>
                     <select
                       className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
-                      value={requestedIp}
-                      onChange={(e) => setRequestedIp(e.target.value)}
+                      value={primaryIp}
+                      onChange={(e) => setPrimaryIp(e.target.value)}
                     >
                       <option value="">Auto-assign</option>
                       {availableIps.map((ip) => (
@@ -352,6 +399,34 @@ function CreateServerModal() {
                   ) : null}
                   {!ipLoadError && availableIps.length === 0 ? (
                     <p className="text-xs text-slate-500">No available IPs found.</p>
+                  ) : null}
+                </div>
+              ) : networkMode === 'bridge' ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-400">
+                    Choose a node allocation for the default IP and port.
+                  </p>
+                  <label className="block space-y-1">
+                    <span className="text-slate-300">Primary allocation</span>
+                    <select
+                      className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                      value={allocationId}
+                      onChange={(event) => setAllocationId(event.target.value)}
+                    >
+                      <option value="">Select allocation</option>
+                      {availableAllocations.map((allocation) => (
+                        <option key={allocation.id} value={allocation.id}>
+                          {allocation.ip}:{allocation.port}
+                          {allocation.alias ? ` (${allocation.alias})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {allocLoadError ? (
+                    <p className="text-xs text-amber-300">{allocLoadError}</p>
+                  ) : null}
+                  {!allocLoadError && availableAllocations.length === 0 ? (
+                    <p className="text-xs text-slate-500">No available allocations found.</p>
                   ) : null}
                 </div>
               ) : null}
