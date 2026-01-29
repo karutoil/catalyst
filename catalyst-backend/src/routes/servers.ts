@@ -29,6 +29,7 @@ const INVITE_EXPIRY_DAYS = 7;
 const DEFAULT_PERMISSION_PRESETS = {
   readOnly: [
     "server.read",
+    "alert.read",
     "console.read",
     "file.read",
     "database.read",
@@ -38,6 +39,9 @@ const DEFAULT_PERMISSION_PRESETS = {
     "server.start",
     "server.stop",
     "server.install",
+    "alert.read",
+    "alert.create",
+    "alert.update",
     "console.read",
     "console.write",
     "file.read",
@@ -53,6 +57,10 @@ const DEFAULT_PERMISSION_PRESETS = {
     "server.stop",
     "server.install",
     "server.transfer",
+    "alert.read",
+    "alert.create",
+    "alert.update",
+    "alert.delete",
     "console.read",
     "console.write",
     "file.read",
@@ -118,16 +126,19 @@ const normalizePortBindings = (value: unknown, primaryPort: number) => {
   return bindings;
 };
 
-const collectUsedHostPorts = (
+const WILDCARD_HOST = "*";
+
+const collectUsedHostPortsByIp = (
   servers: Array<{
     id: string;
     primaryPort?: number | null;
+    primaryIp?: string | null;
     portBindings?: unknown;
     networkMode?: string | null;
   }>,
   excludeId?: string
 ) => {
-  const used = new Set<number>();
+  const used = new Map<string, Set<number>>();
   for (const server of servers) {
     if (excludeId && server.id === excludeId) {
       continue;
@@ -135,18 +146,50 @@ const collectUsedHostPorts = (
     if (shouldUseIpam(server.networkMode ?? undefined)) {
       continue;
     }
-    const bindings = parseStoredPortBindings(server.portBindings);
-    const hostPorts = Object.values(bindings);
-    if (hostPorts.length > 0) {
-      hostPorts.forEach((port) => used.add(port));
+    if (server.networkMode === "host") {
       continue;
     }
-    const fallbackPort = parsePortValue(server.primaryPort ?? undefined);
-    if (fallbackPort) {
-      used.add(fallbackPort);
+    const hostKey = server.primaryIp || WILDCARD_HOST;
+    const bindings = parseStoredPortBindings(server.portBindings);
+    const hostPorts = Object.values(bindings);
+    const ports =
+      hostPorts.length > 0
+        ? hostPorts
+        : parsePortValue(server.primaryPort ?? undefined)
+          ? [parsePortValue(server.primaryPort ?? undefined) as number]
+          : [];
+    if (ports.length === 0) {
+      continue;
     }
+    const bucket = used.get(hostKey) ?? new Set<number>();
+    ports.forEach((port) => bucket.add(port));
+    used.set(hostKey, bucket);
   }
   return used;
+};
+
+const findPortConflict = (
+  usage: Map<string, Set<number>>,
+  hostIp: string | null,
+  ports: number[]
+) => {
+  if (!ports.length) return null;
+  const key = hostIp || WILDCARD_HOST;
+  if (key === WILDCARD_HOST) {
+    for (const port of ports) {
+      for (const bucket of usage.values()) {
+        if (bucket.has(port)) {
+          return port;
+        }
+      }
+    }
+    return null;
+  }
+  const hostBucket = usage.get(key);
+  const wildcardBucket = usage.get(WILDCARD_HOST);
+  return (
+    ports.find((port) => hostBucket?.has(port) || wildcardBucket?.has(port)) ?? null
+  );
 };
 
 const resolvePrimaryHostPort = (server: any) => {
@@ -351,7 +394,10 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedMemoryMb,
         allocatedCpuCores,
         allocatedDiskMb,
+        backupAllocationMb,
         primaryPort,
+        primaryIp,
+        allocationId,
         portBindings,
         networkMode,
         environment,
@@ -364,7 +410,10 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedMemoryMb: number;
         allocatedCpuCores: number;
         allocatedDiskMb: number;
+        backupAllocationMb?: number;
         primaryPort: number;
+        primaryIp?: string | null;
+        allocationId?: string;
         portBindings?: Record<number, number>;
         networkMode?: string;
         environment: Record<string, string>;
@@ -456,6 +505,7 @@ export async function serverRoutes(app: FastifyInstance) {
               allocatedMemoryMb: true,
               allocatedCpuCores: true,
               primaryPort: true,
+              primaryIp: true,
               portBindings: true,
               networkMode: true,
             },
@@ -500,22 +550,74 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       const desiredNetworkMode = networkMode || "mc-lan-static";
+      const hasPrimaryIp = primaryIp !== undefined;
+      const normalizedPrimaryIp = typeof primaryIp === "string" ? primaryIp.trim() : null;
+      if (allocationId && shouldUseIpam(desiredNetworkMode)) {
+        return reply.status(400).send({
+          error: "Allocation IDs are only valid for bridge networking",
+        });
+      }
+      if (allocationId && normalizedPrimaryIp) {
+        return reply.status(400).send({
+          error: "Choose either allocationId or primaryIp",
+        });
+      }
+      if (hasPrimaryIp && !shouldUseIpam(desiredNetworkMode) && !allocationId) {
+        return reply.status(400).send({
+          error: "Primary IP can only be set for IPAM networks",
+        });
+      }
       const resolvedPortBindings = normalizePortBindings(portBindings, validatedPrimaryPort);
 
-      if (!shouldUseIpam(desiredNetworkMode)) {
-        const usedPorts = collectUsedHostPorts(node.servers);
-        const conflictPort = Object.values(resolvedPortBindings).find((port) => usedPorts.has(port));
+      if (!shouldUseIpam(desiredNetworkMode) && desiredNetworkMode !== "host") {
+        const usedPorts = collectUsedHostPortsByIp(node.servers);
+        const conflictPort = findPortConflict(
+          usedPorts,
+          resolvedEnvironment?.CATALYST_NETWORK_IP
+            ? String(resolvedEnvironment.CATALYST_NETWORK_IP).trim()
+            : null,
+          Object.values(resolvedPortBindings)
+        );
         if (conflictPort) {
           return reply.status(400).send({
             error: `Port ${conflictPort} is already in use on this node`,
           });
         }
       }
-      const requestedIp =
-        resolvedEnvironment?.CATALYST_NETWORK_IP &&
-        String(resolvedEnvironment.CATALYST_NETWORK_IP).trim().length > 0
+      const requestedIp = hasPrimaryIp
+        ? normalizedPrimaryIp && normalizedPrimaryIp.length > 0
+          ? normalizedPrimaryIp
+          : null
+        : resolvedEnvironment?.CATALYST_NETWORK_IP &&
+          String(resolvedEnvironment.CATALYST_NETWORK_IP).trim().length > 0
           ? String(resolvedEnvironment.CATALYST_NETWORK_IP).trim()
           : null;
+
+      let allocationIp: string | null = null;
+      let allocationPort: number | null = null;
+      if (allocationId) {
+        const allocation = await prisma.nodeAllocation.findUnique({
+          where: { id: allocationId },
+        });
+        if (!allocation || allocation.nodeId !== nodeId) {
+          return reply.status(404).send({ error: "Allocation not found" });
+        }
+        if (allocation.serverId) {
+          return reply.status(409).send({ error: "Allocation is already assigned" });
+        }
+        allocationIp = allocation.ip;
+        allocationPort = allocation.port;
+        const conflictPort = findPortConflict(
+          collectUsedHostPortsByIp(node.servers),
+          allocationIp,
+          Object.values(resolvedPortBindings)
+        );
+        if (conflictPort) {
+          return reply.status(400).send({
+            error: `Port ${conflictPort} is already in use on this node`,
+          });
+        }
+      }
 
       // Create server (allocate IP after we have serverId)
       let server;
@@ -533,12 +635,32 @@ export async function serverRoutes(app: FastifyInstance) {
               allocatedMemoryMb,
               allocatedCpuCores,
               allocatedDiskMb,
-              primaryPort: validatedPrimaryPort,
+              backupAllocationMb: backupAllocationMb ?? 0,
+              primaryPort: allocationPort ?? validatedPrimaryPort,
               portBindings: resolvedPortBindings,
               networkMode: desiredNetworkMode,
               environment: resolvedEnvironment,
             },
           });
+
+          if (allocationId) {
+            const updated = await tx.server.update({
+              where: { id: created.id },
+              data: {
+                primaryIp: allocationIp,
+                primaryPort: allocationPort ?? validatedPrimaryPort,
+                environment: {
+                  ...(resolvedEnvironment || {}),
+                  CATALYST_NETWORK_IP: allocationIp,
+                },
+              },
+            });
+            await tx.nodeAllocation.update({
+              where: { id: allocationId },
+              data: { serverId: created.id },
+            });
+            return updated as typeof created;
+          }
 
           if (shouldUseIpam(desiredNetworkMode)) {
             const allocatedIp = await allocateIpForServer(tx, {
@@ -586,6 +708,10 @@ export async function serverRoutes(app: FastifyInstance) {
             "server.start",
             "server.stop",
             "server.read",
+            "alert.read",
+            "alert.create",
+            "alert.update",
+            "alert.delete",
             "file.read",
             "file.write",
             "console.read",
@@ -638,18 +764,18 @@ export async function serverRoutes(app: FastifyInstance) {
       reply.send({
         success: true,
         data: servers.map((server) => {
-          const metrics = latestMetricsByServer.get(server.id);
+          const metrics = latestMetricsByServer.get(server.id) as any;
           const diskTotalMb =
             server.allocatedDiskMb && server.allocatedDiskMb > 0 ? server.allocatedDiskMb : null;
-      return {
-        ...withConnectionInfo(server),
-        cpuPercent: metrics?.cpuPercent ?? null,
-        memoryUsageMb: metrics?.memoryUsageMb ?? null,
-        diskUsageMb: metrics?.diskUsageMb ?? null,
-        diskTotalMb,
-      };
-    }),
-  });
+          return {
+            ...withConnectionInfo(server),
+            cpuPercent: metrics?.cpuPercent ?? null,
+            memoryUsageMb: metrics?.memoryUsageMb ?? null,
+            diskUsageMb: metrics?.diskUsageMb ?? null,
+            diskTotalMb,
+          };
+        }),
+      });
     }
   );
 
@@ -726,7 +852,9 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedMemoryMb,
         allocatedCpuCores,
         allocatedDiskMb,
+        backupAllocationMb,
         primaryPort,
+        primaryIp,
         portBindings,
       } = request.body as {
         name?: string;
@@ -735,9 +863,14 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedMemoryMb?: number;
         allocatedCpuCores?: number;
         allocatedDiskMb?: number;
+        backupAllocationMb?: number;
         primaryPort?: number;
+        primaryIp?: string | null;
         portBindings?: Record<number, number>;
       };
+
+      const hasPrimaryIpUpdate = primaryIp !== undefined;
+      const normalizedPrimaryIp = typeof primaryIp === "string" ? primaryIp.trim() : null;
 
       // Can only update resources if server is stopped
       if (
@@ -745,7 +878,8 @@ export async function serverRoutes(app: FastifyInstance) {
           allocatedCpuCores !== undefined ||
           allocatedDiskMb !== undefined ||
           primaryPort !== undefined ||
-          portBindings !== undefined) &&
+          portBindings !== undefined ||
+          hasPrimaryIpUpdate) &&
         server.status !== "stopped"
       ) {
         return reply.status(409).send({
@@ -815,6 +949,13 @@ export async function serverRoutes(app: FastifyInstance) {
         }
       }
 
+      if (
+        backupAllocationMb !== undefined &&
+        (!Number.isFinite(backupAllocationMb) || backupAllocationMb < 0)
+      ) {
+        return reply.status(400).send({ error: "backupAllocationMb must be 0 or more" });
+      }
+
       const nextPrimaryPort = primaryPort ?? server.primaryPort;
       if (!parsePortValue(nextPrimaryPort)) {
         return reply.status(400).send({ error: "Invalid primary port" });
@@ -830,7 +971,7 @@ export async function serverRoutes(app: FastifyInstance) {
           ? resolvedPortBindings
           : normalizePortBindings({}, nextPrimaryPort);
 
-      if (!shouldUseIpam(server.networkMode ?? undefined)) {
+      if (!shouldUseIpam(server.networkMode ?? undefined) && server.networkMode !== "host") {
         const siblingServers = await prisma.server.findMany({
           where: {
             nodeId: server.nodeId,
@@ -839,12 +980,22 @@ export async function serverRoutes(app: FastifyInstance) {
           select: {
             id: true,
             primaryPort: true,
+            primaryIp: true,
             portBindings: true,
             networkMode: true,
           },
         });
-        const usedPorts = collectUsedHostPorts(siblingServers, serverId);
-        const conflictPort = Object.values(effectiveBindings).find((port) => usedPorts.has(port));
+        const usedPorts = collectUsedHostPortsByIp(siblingServers, serverId);
+        const hostIp =
+          typeof environment?.CATALYST_NETWORK_IP === "string" &&
+          environment.CATALYST_NETWORK_IP.trim().length > 0
+            ? environment.CATALYST_NETWORK_IP.trim()
+            : server.primaryIp ?? null;
+        const conflictPort = findPortConflict(
+          usedPorts,
+          hostIp,
+          Object.values(effectiveBindings)
+        );
         if (conflictPort) {
           return reply.status(400).send({
             error: `Port ${conflictPort} is already in use on this node`,
@@ -852,18 +1003,71 @@ export async function serverRoutes(app: FastifyInstance) {
         }
       }
 
-      const updated = await prisma.server.update({
-        where: { id: serverId },
-        data: {
-          name: name || server.name,
-          description: description !== undefined ? description : server.description,
-          environment: environment || server.environment,
-          allocatedMemoryMb: allocatedMemoryMb ?? server.allocatedMemoryMb,
-          allocatedCpuCores: allocatedCpuCores ?? server.allocatedCpuCores,
+      if (hasPrimaryIpUpdate && !shouldUseIpam(server.networkMode ?? undefined)) {
+        return reply.status(400).send({
+          error: "Primary IP can only be updated for IPAM networks",
+        });
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        let nextPrimaryIp = server.primaryIp ?? null;
+        let nextEnvironment = (environment || server.environment) as Record<string, string>;
+
+        if (hasPrimaryIpUpdate) {
+          if (normalizedPrimaryIp && normalizedPrimaryIp.length > 0) {
+            if (normalizedPrimaryIp !== server.primaryIp) {
+              await releaseIpForServer(tx, serverId);
+              const allocatedIp = await allocateIpForServer(tx, {
+                nodeId: server.nodeId,
+                networkName: server.networkMode,
+                serverId,
+                requestedIp: normalizedPrimaryIp,
+              });
+              if (!allocatedIp) {
+                throw new Error("No IP pool configured for this network");
+              }
+              nextPrimaryIp = allocatedIp;
+            }
+          } else if (server.primaryIp) {
+            await releaseIpForServer(tx, serverId);
+            const allocatedIp = await allocateIpForServer(tx, {
+              nodeId: server.nodeId,
+              networkName: server.networkMode,
+              serverId,
+            });
+            if (!allocatedIp) {
+              throw new Error("No IP pool configured for this network");
+            }
+            nextPrimaryIp = allocatedIp;
+          }
+
+          nextEnvironment = {
+            ...(environment || server.environment || {}),
+          };
+          if (nextPrimaryIp) {
+            nextEnvironment.CATALYST_NETWORK_IP = nextPrimaryIp;
+          } else {
+            delete nextEnvironment.CATALYST_NETWORK_IP;
+          }
+        }
+
+        const updatedServer = await tx.server.update({
+          where: { id: serverId },
+          data: {
+            name: name || server.name,
+            description: description !== undefined ? description : server.description,
+            environment: nextEnvironment,
+            allocatedMemoryMb: allocatedMemoryMb ?? server.allocatedMemoryMb,
+            allocatedCpuCores: allocatedCpuCores ?? server.allocatedCpuCores,
           allocatedDiskMb: allocatedDiskMb ?? server.allocatedDiskMb,
+          backupAllocationMb: backupAllocationMb ?? server.backupAllocationMb ?? 0,
           primaryPort: nextPrimaryPort,
-          portBindings: effectiveBindings,
-        },
+            portBindings: effectiveBindings,
+            primaryIp: nextPrimaryIp,
+          },
+        });
+
+        return updatedServer;
       });
 
       reply.send({ success: true, data: updated });
@@ -1125,7 +1329,7 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Missing file upload" });
       }
 
-      const rawPath = upload.fields?.path?.value;
+      const rawPath = (upload.fields as any)?.path?.value;
       const basePath =
         typeof rawPath === "string" ? rawPath : rawPath ? String(rawPath) : "/";
       const normalizedPath = normalizeRequestPath(basePath);
@@ -3001,7 +3205,7 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(409).send({ error: "Host port already assigned to allocation" });
       }
 
-      if (!shouldUseIpam(server.networkMode ?? undefined)) {
+      if (!shouldUseIpam(server.networkMode ?? undefined) && server.networkMode !== "host") {
         const siblingServers = await prisma.server.findMany({
           where: {
             nodeId: server.nodeId,
@@ -3010,12 +3214,15 @@ export async function serverRoutes(app: FastifyInstance) {
           select: {
             id: true,
             primaryPort: true,
+            primaryIp: true,
             portBindings: true,
             networkMode: true,
           },
         });
-        const usedPorts = collectUsedHostPorts(siblingServers, serverId);
-        if (usedPorts.has(parsedHostPort)) {
+        const usedPorts = collectUsedHostPortsByIp(siblingServers, serverId);
+        const hostIp = server.primaryIp ?? null;
+        const conflictPort = findPortConflict(usedPorts, hostIp, [parsedHostPort]);
+        if (conflictPort) {
           return reply.status(400).send({
             error: `Port ${parsedHostPort} is already in use on this node`,
           });
@@ -3254,13 +3461,34 @@ export async function serverRoutes(app: FastifyInstance) {
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { id } = request.params as { id: string };
-      const { storageMode, retentionCount, retentionDays } = request.body as {
+      const {
+        storageMode,
+        retentionCount,
+        retentionDays,
+        s3Config,
+        sftpConfig,
+      } = request.body as {
         storageMode?: string;
         retentionCount?: number;
         retentionDays?: number;
+        s3Config?: {
+          bucket?: string | null;
+          region?: string | null;
+          endpoint?: string | null;
+          accessKeyId?: string | null;
+          secretAccessKey?: string | null;
+          pathStyle?: boolean | null;
+        } | null;
+        sftpConfig?: {
+          host?: string | null;
+          port?: number | null;
+          username?: string | null;
+          password?: string | null;
+          basePath?: string | null;
+        } | null;
       };
 
-      const validModes = ["local", "s3", "stream"];
+      const validModes = ["local", "s3", "sftp", "stream"];
       if (storageMode && !validModes.includes(storageMode)) {
         return reply.status(400).send({
           error: `Invalid storage mode. Must be one of: ${validModes.join(", ")}`,
@@ -3301,6 +3529,8 @@ export async function serverRoutes(app: FastifyInstance) {
             retentionCount !== undefined ? retentionCount : server.backupRetentionCount,
           backupRetentionDays:
             retentionDays !== undefined ? retentionDays : server.backupRetentionDays,
+          backupS3Config: s3Config ? s3Config : server.backupS3Config,
+          backupSftpConfig: sftpConfig ? sftpConfig : server.backupSftpConfig,
         },
       });
 
@@ -3309,6 +3539,8 @@ export async function serverRoutes(app: FastifyInstance) {
         backupStorageMode: updated.backupStorageMode,
         backupRetentionCount: updated.backupRetentionCount,
         backupRetentionDays: updated.backupRetentionDays,
+        backupS3Config: updated.backupS3Config,
+        backupSftpConfig: updated.backupSftpConfig,
       });
     }
   );
@@ -3457,9 +3689,12 @@ export async function serverRoutes(app: FastifyInstance) {
         const backupName = `transfer-${Date.now()}`;
         const mode = transferMode || server.backupStorageMode || "local";
         const { buildBackupPaths, buildTransferBackupPath } = await import("../services/backup-storage");
-        const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode);
+        const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode, server);
         if (mode === "s3" && !storageKey) {
           throw new Error("Missing S3 storage key");
+        }
+        if (mode === "sftp" && !storageKey) {
+          throw new Error("Missing SFTP storage key");
         }
         const transferPath = buildTransferBackupPath(server.uuid, backupName);
 
@@ -3493,15 +3728,31 @@ export async function serverRoutes(app: FastifyInstance) {
           },
         });
 
-        const backupPath = mode === "stream" || mode === "s3" ? transferPath : storagePath;
+        const backupPath = mode === "stream" || mode === "s3" || mode === "sftp" ? transferPath : storagePath;
 
         if (mode === "s3") {
           const { openStorageStream, uploadStreamToAgent } = await import("../services/backup-storage");
-          const { stream } = await openStorageStream({
-            path: storagePath,
-            storageMode: "s3",
-            metadata: { storageKey },
-          });
+          const { stream } = await openStorageStream(
+            {
+              path: storagePath,
+              storageMode: "s3",
+              metadata: { storageKey },
+            },
+            server,
+          );
+          await uploadStreamToAgent(wsGateway, targetNodeId, id, transferPath, stream);
+        }
+
+        if (mode === "sftp") {
+          const { openStorageStream, uploadStreamToAgent } = await import("../services/backup-storage");
+          const { stream } = await openStorageStream(
+            {
+              path: storagePath,
+              storageMode: "sftp",
+              metadata: { storageKey },
+            },
+            server,
+          );
           await uploadStreamToAgent(wsGateway, targetNodeId, id, transferPath, stream);
         }
 
@@ -3748,5 +3999,3 @@ export async function serverRoutes(app: FastifyInstance) {
     }
   );
 }
-// Force reload - Sat Jan 24 04:14:50 PM EST 2026
-// Force reload Sat Jan 24 06:09:40 PM EST 2026

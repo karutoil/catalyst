@@ -97,7 +97,7 @@ export async function taskRoutes(app: FastifyInstance) {
 
       let nextRunAt: Date | null = null;
       try {
-        const interval = cronParser.parseExpression(schedule, {
+        const interval = (cronParser as any).parseExpression(schedule, {
           currentDate: new Date(),
           tz: process.env.TZ || 'UTC',
         });
@@ -256,7 +256,7 @@ export async function taskRoutes(app: FastifyInstance) {
       let nextRunAt: Date | undefined;
       if (schedule) {
         try {
-          const interval = cronParser.parseExpression(schedule, {
+          const interval = (cronParser as any).parseExpression(schedule, {
             currentDate: new Date(),
             tz: process.env.TZ || 'UTC',
           });

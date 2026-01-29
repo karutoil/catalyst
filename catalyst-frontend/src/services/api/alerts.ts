@@ -17,6 +17,7 @@ export const alertsApi = {
     type?: string;
     severity?: string;
     resolved?: boolean;
+    scope?: 'mine' | 'all';
   }) => {
     const { data } = await apiClient.get<{ alerts: Alert[]; pagination: any }>('/api/alerts', { params });
     return data;
@@ -28,6 +29,15 @@ export const alertsApi = {
       bySeverity: Record<string, number>;
       byType: Record<string, number>;
     }>('/api/alerts/stats');
+    return data;
+  },
+  statsScoped: async (params?: { scope?: 'mine' | 'all' }) => {
+    const { data } = await apiClient.get<{
+      total: number;
+      unresolved: number;
+      bySeverity: Record<string, number>;
+      byType: Record<string, number>;
+    }>('/api/alerts/stats', { params });
     return data;
   },
   get: async (alertId: string) => {
@@ -46,7 +56,13 @@ export const alertsApi = {
     const { data } = await apiClient.get<{ deliveries: AlertDelivery[] }>(`/api/alerts/${alertId}/deliveries`);
     return data.deliveries;
   },
-  listRules: async (params?: { type?: string; enabled?: boolean }) => {
+  listRules: async (params?: {
+    type?: string;
+    enabled?: boolean;
+    target?: string;
+    targetId?: string;
+    scope?: 'mine' | 'all';
+  }) => {
     const { data } = await apiClient.get<{ rules: AlertRule[] }>('/api/alert-rules', { params });
     return data.rules;
   },

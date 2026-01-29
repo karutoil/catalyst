@@ -4,19 +4,30 @@ import EmptyState from '../../components/shared/EmptyState';
 import { alertsApi } from '../../services/api/alerts';
 import { useNodes } from '../../hooks/useNodes';
 import { useServers } from '../../hooks/useServers';
-import type { Alert, AlertRule, AlertSeverity, AlertType } from '../../types/alert';
+import { useAlertRules } from '../../hooks/useAlertRules';
+import { useAuthStore } from '../../stores/authStore';
+import type { AlertRule, AlertSeverity, AlertType } from '../../types/alert';
 import { notifyError, notifySuccess } from '../../utils/notify';
 
-function AlertsPage() {
+type Props = {
+  scope?: 'mine' | 'all';
+  serverId?: string;
+  showAdminTargets?: boolean;
+};
+
+function AlertsPage({ scope = 'mine', serverId, showAdminTargets = false }: Props) {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
   const [filterResolved, setFilterResolved] = useState<'false' | 'true' | 'all'>('false');
   const [ruleName, setRuleName] = useState('');
   const [ruleDescription, setRuleDescription] = useState('');
   const [ruleType, setRuleType] = useState<AlertType>('resource_threshold');
-  const [ruleTarget, setRuleTarget] = useState<'global' | 'server' | 'node'>('global');
-  const [ruleTargetId, setRuleTargetId] = useState('');
+  const [ruleTarget, setRuleTarget] = useState<'global' | 'server' | 'node'>(
+    showAdminTargets ? 'global' : 'server',
+  );
+  const [ruleTargetId, setRuleTargetId] = useState(serverId ?? '');
   const [cpuThreshold, setCpuThreshold] = useState('85');
   const [memoryThreshold, setMemoryThreshold] = useState('90');
   const [diskThreshold, setDiskThreshold] = useState('90');
@@ -30,8 +41,8 @@ function AlertsPage() {
     setRuleName('');
     setRuleDescription('');
     setRuleType('resource_threshold');
-    setRuleTarget('global');
-    setRuleTargetId('');
+    setRuleTarget(showAdminTargets ? 'global' : 'server');
+    setRuleTargetId(showAdminTargets ? '' : serverId ?? '');
     setCpuThreshold('85');
     setMemoryThreshold('90');
     setDiskThreshold('90');
@@ -43,19 +54,23 @@ function AlertsPage() {
   };
 
   const { data: alertData, isLoading: alertsLoading } = useQuery({
-    queryKey: ['alerts', filterResolved],
+    queryKey: ['alerts', filterResolved, serverId, scope],
     queryFn: () =>
       alertsApi.list({
         resolved: filterResolved === 'all' ? undefined : filterResolved === 'true',
+        serverId,
+        scope,
       }),
   });
   const { data: alertStats } = useQuery({
-    queryKey: ['alerts-stats'],
-    queryFn: alertsApi.stats,
+    queryKey: ['alerts-stats', scope, serverId],
+    queryFn: () => alertsApi.statsScoped({ scope }),
+    enabled: !serverId,
   });
-  const { data: alertRules = [] } = useQuery({
-    queryKey: ['alert-rules'],
-    queryFn: () => alertsApi.listRules(),
+  const { data: alertRules = [] } = useAlertRules({
+    scope,
+    target: serverId ? 'server' : undefined,
+    targetId: serverId,
   });
   const { data: nodes = [] } = useNodes();
   const { data: serversData = [] } = useServers();
@@ -70,6 +85,11 @@ function AlertsPage() {
   ];
 
   const targetOptions = useMemo(() => {
+    if (!showAdminTargets) {
+      return serversData
+        .filter((server) => server.id === serverId)
+        .map((server) => ({ id: server.id, label: server.name }));
+    }
     if (ruleTarget === 'server') {
       return serversData.map((server) => ({ id: server.id, label: server.name }));
     }
@@ -77,7 +97,7 @@ function AlertsPage() {
       return nodes.map((node) => ({ id: node.id, label: node.name }));
     }
     return [];
-  }, [nodes, ruleTarget, serversData]);
+  }, [nodes, ruleTarget, serversData, serverId, showAdminTargets]);
 
   const selectedTargetLabel = targetOptions.find((option) => option.id === ruleTargetId)?.label;
 
@@ -105,8 +125,8 @@ function AlertsPage() {
         name: ruleName.trim(),
         description: ruleDescription.trim() || undefined,
         type: ruleType,
-        target: ruleTarget,
-        targetId: ruleTarget === 'global' ? null : ruleTargetId || null,
+        target: showAdminTargets ? ruleTarget : 'server',
+        targetId: showAdminTargets ? (ruleTarget === 'global' ? null : ruleTargetId || null) : serverId || null,
         conditions,
         actions,
       });
@@ -159,11 +179,16 @@ function AlertsPage() {
     },
   });
 
+  const invalidateAlerts = () => {
+    queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    queryClient.invalidateQueries({ queryKey: ['alerts-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['alert-rules'] });
+  };
+
   const resolveAlertMutation = useMutation({
     mutationFn: (alertId: string) => alertsApi.resolve(alertId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['alerts-stats'] });
+      invalidateAlerts();
       notifySuccess('Alert resolved');
     },
     onError: (error: any) => {
@@ -175,8 +200,7 @@ function AlertsPage() {
   const bulkResolveMutation = useMutation({
     mutationFn: (alertIds: string[]) => alertsApi.bulkResolve(alertIds),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['alerts-stats'] });
+      invalidateAlerts();
       notifySuccess('Alerts resolved');
     },
     onError: (error: any) => {
@@ -200,7 +224,11 @@ function AlertsPage() {
   const emptyState = (
     <EmptyState
       title="All clear"
-      description="No active alerts. Create rules to get notified when something breaks."
+      description={
+        showAdminTargets
+          ? 'No active alerts. Create rules to get notified when something breaks.'
+          : 'No active alerts for this server. Create rules to get notified when something breaks.'
+      }
       action={
         <button
           className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
@@ -216,8 +244,14 @@ function AlertsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-50">Alerts</h1>
-          <p className="text-sm text-slate-400">Monitor incidents and resolve alerts in real time.</p>
+          <h1 className="text-2xl font-semibold text-slate-50">
+            {showAdminTargets ? 'Alerts' : 'Server alerts'}
+          </h1>
+          <p className="text-sm text-slate-400">
+            {showAdminTargets
+              ? 'Monitor incidents and resolve alerts in real time.'
+              : 'Manage alert rules and incidents for this server.'}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -244,22 +278,24 @@ function AlertsPage() {
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-          <div className="text-xs text-slate-400">Active alerts</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-100">{alertStats?.unresolved ?? 0}</div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-          <div className="text-xs text-slate-400">Total alerts</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-100">{alertStats?.total ?? 0}</div>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-          <div className="text-xs text-slate-400">Critical alerts</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-100">
-            {alertStats?.bySeverity?.critical ?? 0}
+      {alertStats ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="text-xs text-slate-400">Active alerts</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-100">{alertStats?.unresolved ?? 0}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="text-xs text-slate-400">Total alerts</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-100">{alertStats?.total ?? 0}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="text-xs text-slate-400">Critical alerts</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-100">
+              {alertStats?.bySeverity?.critical ?? 0}
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -279,6 +315,11 @@ function AlertsPage() {
                   <div className="text-sm font-semibold text-slate-100">{rule.name}</div>
                   <div className="text-xs text-slate-400">
                     {rule.description || rule.type.replace('_', ' ')} · {rule.target}
+                    {showAdminTargets ? (
+                      <span className="ml-2 rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase text-slate-300">
+                        {rule.target === 'global' ? 'global' : rule.target}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -291,11 +332,17 @@ function AlertsPage() {
                   >
                     {rule.enabled ? 'Enabled' : 'Disabled'}
                   </span>
+                  {!showAdminTargets && rule.userId && user?.id && rule.userId !== user.id ? (
+                    <span className="text-[10px] text-slate-500">Read only</span>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
                     onClick={() => updateRuleMutation.mutate({ rule, updates: { enabled: !rule.enabled } })}
-                    disabled={updateRuleMutation.isPending}
+                    disabled={
+                      updateRuleMutation.isPending ||
+                      (rule.userId && user?.id ? rule.userId !== user.id : false)
+                    }
                   >
                     {rule.enabled ? 'Disable' : 'Enable'}
                   </button>
@@ -323,6 +370,7 @@ function AlertsPage() {
                       setNotifyOwner(Boolean(actions.notifyOwner));
                       setCooldownMinutes(String((actions.cooldownMinutes as number | undefined) ?? 5));
                     }}
+                    disabled={rule.userId && user?.id ? rule.userId !== user.id : false}
                   >
                     Edit
                   </button>
@@ -330,7 +378,7 @@ function AlertsPage() {
                     type="button"
                     className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500 disabled:opacity-60"
                     onClick={() => deleteRuleMutation.mutate(rule.id)}
-                    disabled={deleteRuleMutation.isPending}
+                    disabled={deleteRuleMutation.isPending || (rule.userId && user?.id ? rule.userId !== user.id : false)}
                   >
                     Delete
                   </button>
@@ -369,8 +417,13 @@ function AlertsPage() {
                     <div className="mt-2 text-xs text-slate-400">{alert.message}</div>
                     <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
                       <span>{new Date(alert.createdAt).toLocaleString()}</span>
-                      {alert.server?.name ? <span>Server: {alert.server.name}</span> : null}
-                      {alert.node?.name ? <span>Node: {alert.node.name}</span> : null}
+                      {showAdminTargets ? (
+                        <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase text-slate-300">
+                          {alert.nodeId ? 'Node' : alert.serverId ? 'Server' : 'Global'}
+                        </span>
+                      ) : null}
+                      {showAdminTargets && alert.server?.name ? <span>Server: {alert.server.name}</span> : null}
+                      {showAdminTargets && alert.node?.name ? <span>Node: {alert.node.name}</span> : null}
                       {alert.rule?.name ? <span>Rule: {alert.rule.name}</span> : null}
                     </div>
                   </div>
@@ -488,6 +541,7 @@ function AlertsPage() {
                     className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100"
                     value={ruleTarget}
                     onChange={(event) => setRuleTarget(event.target.value as 'global' | 'server' | 'node')}
+                    disabled={!showAdminTargets}
                   >
                     <option value="global">Global</option>
                     <option value="server">Server</option>
@@ -500,7 +554,7 @@ function AlertsPage() {
                     className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100"
                     value={ruleTargetId}
                     onChange={(event) => setRuleTargetId(event.target.value)}
-                    disabled={ruleTarget === 'global'}
+                    disabled={!showAdminTargets || ruleTarget === 'global'}
                   >
                     <option value="">
                       {ruleTarget === 'global'

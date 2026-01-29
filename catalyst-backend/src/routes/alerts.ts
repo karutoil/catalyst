@@ -4,6 +4,59 @@ import { PrismaClient } from '@prisma/client';
 export async function alertRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
   const authenticate = (app as any).authenticate;
+  const isAdminUser = async (userId: string) => {
+    const userRoles = await prisma.role.findMany({
+      where: {
+        users: {
+          some: { id: userId },
+        },
+      },
+    });
+
+    const permissions = userRoles.flatMap((role) => role.permissions);
+    if (permissions.includes('*') || permissions.includes('admin.read')) {
+      return true;
+    }
+
+    return userRoles.some((role) => role.name.toLowerCase() === 'administrator');
+  };
+  const ensureServerAccess = async ({
+    userId,
+    serverId,
+    reply,
+    isAdmin,
+    requiredPermissions,
+  }: {
+    userId: string;
+    serverId: string;
+    reply: FastifyReply;
+    isAdmin: boolean;
+    requiredPermissions: string[];
+  }) => {
+    const server = await prisma.server.findUnique({
+      where: { id: serverId },
+      select: { id: true, ownerId: true },
+    });
+    if (!server) {
+      reply.status(404).send({ error: 'Server not found' });
+      return null;
+    }
+    if (isAdmin || server.ownerId === userId) {
+      return server;
+    }
+    const access = await prisma.serverAccess.findFirst({
+      where: {
+        serverId,
+        userId,
+        permissions: { hasSome: requiredPermissions },
+      },
+    });
+    if (access) {
+      return server;
+    }
+    reply.status(403).send({ error: 'Forbidden' });
+    return null;
+  };
 
   // Create an alert rule
   app.post(
@@ -11,6 +64,7 @@ export async function alertRoutes(app: FastifyInstance) {
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { name, description, type, target, targetId, conditions, actions, enabled } = request.body as {
         name: string;
         description?: string;
@@ -51,9 +105,15 @@ export async function alertRoutes(app: FastifyInstance) {
       }
 
       if (target === 'server' && targetId) {
-        const server = await prisma.server.findUnique({ where: { id: targetId }, select: { id: true } });
+        const server = await ensureServerAccess({
+          userId: user.userId,
+          serverId: targetId,
+          reply,
+          isAdmin,
+          requiredPermissions: ['alert.create'],
+        });
         if (!server) {
-          return reply.status(404).send({ error: 'Server not found' });
+          return;
         }
       }
 
@@ -65,21 +125,14 @@ export async function alertRoutes(app: FastifyInstance) {
       }
 
       // Check admin permissions for global rules
-      if (target === 'global') {
-        const userRoles = await prisma.role.findMany({
-          where: { users: { some: { id: user.userId } } },
-        });
-        const permissions = userRoles.flatMap((role) => role.permissions);
-        const isAdmin = permissions.includes('*') || permissions.includes('admin.read');
-
-        if (!isAdmin) {
-          return reply.status(403).send({ error: 'Admin access required for global alert rules' });
-        }
+      if ((target === 'global' || target === 'node') && !isAdmin) {
+        return reply.status(403).send({ error: 'Admin access required for this alert rule target' });
       }
 
       // Create alert rule
       const rule = await prisma.alertRule.create({
         data: {
+          userId: user.userId,
           name,
           description,
           type,
@@ -100,11 +153,24 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alert-rules',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const { type, enabled } = request.query as { type?: string; enabled?: string };
+      const user = (request as any).user;
+      const { type, enabled, scope, target, targetId } = request.query as {
+        type?: string;
+        enabled?: string;
+        scope?: 'mine' | 'all';
+        target?: string;
+        targetId?: string;
+      };
+      const isAdmin = await isAdminUser(user.userId);
 
       const where: any = {};
       if (type) where.type = type;
       if (enabled !== undefined) where.enabled = enabled === 'true';
+      if (target) where.target = target;
+      if (targetId) where.targetId = targetId;
+      if (!isAdmin || scope !== 'all') {
+        where.userId = user.userId;
+      }
 
       const rules = await prisma.alertRule.findMany({
         where,
@@ -120,6 +186,8 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alert-rules/:ruleId',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { ruleId } = request.params as { ruleId: string };
 
       const rule = await prisma.alertRule.findUnique({
@@ -128,6 +196,9 @@ export async function alertRoutes(app: FastifyInstance) {
 
       if (!rule) {
         return reply.status(404).send({ error: 'Alert rule not found' });
+      }
+      if (!isAdmin && rule.userId !== user.userId) {
+        return reply.status(403).send({ error: 'Forbidden' });
       }
 
       reply.send({ rule });
@@ -139,6 +210,8 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alert-rules/:ruleId',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { ruleId } = request.params as { ruleId: string };
       const { name, description, conditions, actions, enabled } = request.body as {
         name?: string;
@@ -147,6 +220,29 @@ export async function alertRoutes(app: FastifyInstance) {
         actions?: any;
         enabled?: boolean;
       };
+
+      const existing = await prisma.alertRule.findUnique({ where: { id: ruleId } });
+      if (!existing) {
+        return reply.status(404).send({ error: 'Alert rule not found' });
+      }
+      if (!isAdmin && existing.userId !== user.userId) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      if ((existing.target === 'global' || existing.target === 'node') && !isAdmin) {
+        return reply.status(403).send({ error: 'Admin access required for this alert rule target' });
+      }
+      if (existing.target === 'server' && existing.targetId) {
+        const server = await ensureServerAccess({
+          userId: user.userId,
+          serverId: existing.targetId,
+          reply,
+          isAdmin,
+          requiredPermissions: ['alert.update'],
+        });
+        if (!server) {
+          return;
+        }
+      }
 
       const updateData: any = {};
       if (name !== undefined) updateData.name = name;
@@ -169,11 +265,34 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alert-rules/:ruleId',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { ruleId } = request.params as { ruleId: string };
 
-      await prisma.alertRule.delete({
-        where: { id: ruleId },
-      });
+      const existing = await prisma.alertRule.findUnique({ where: { id: ruleId } });
+      if (!existing) {
+        return reply.status(404).send({ error: 'Alert rule not found' });
+      }
+      if (!isAdmin && existing.userId !== user.userId) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      if ((existing.target === 'global' || existing.target === 'node') && !isAdmin) {
+        return reply.status(403).send({ error: 'Admin access required for this alert rule target' });
+      }
+      if (existing.target === 'server' && existing.targetId) {
+        const server = await ensureServerAccess({
+          userId: user.userId,
+          serverId: existing.targetId,
+          reply,
+          isAdmin,
+          requiredPermissions: ['alert.delete'],
+        });
+        if (!server) {
+          return;
+        }
+      }
+
+      await prisma.alertRule.delete({ where: { id: ruleId } });
 
       reply.send({ success: true, message: 'Alert rule deleted' });
     }
@@ -184,7 +303,28 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alerts/:alertId/deliveries',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { alertId } = request.params as { alertId: string };
+      const alert = await prisma.alert.findUnique({ where: { id: alertId }, select: { id: true, userId: true, serverId: true } });
+      if (!alert) {
+        return reply.status(404).send({ error: 'Alert not found' });
+      }
+      if (!isAdmin && alert.userId !== user.userId) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      if (alert.serverId && !isAdmin) {
+        const server = await ensureServerAccess({
+          userId: user.userId,
+          serverId: alert.serverId,
+          reply,
+          isAdmin,
+          requiredPermissions: ['alert.read'],
+        });
+        if (!server) {
+          return;
+        }
+      }
       const deliveries = await prisma.alertDelivery.findMany({
         where: { alertId },
         orderBy: { createdAt: 'desc' },
@@ -198,6 +338,7 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alerts',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
       const {
         page = 1,
         limit = 50,
@@ -206,6 +347,7 @@ export async function alertRoutes(app: FastifyInstance) {
         type,
         severity,
         resolved,
+        scope,
       } = request.query as {
         page?: number;
         limit?: number;
@@ -214,7 +356,21 @@ export async function alertRoutes(app: FastifyInstance) {
         type?: string;
         severity?: string;
         resolved?: string;
+        scope?: 'mine' | 'all';
       };
+      const isAdmin = await isAdminUser(user.userId);
+      if (serverId && !isAdmin) {
+        const server = await ensureServerAccess({
+          userId: user.userId,
+          serverId,
+          reply,
+          isAdmin,
+          requiredPermissions: ['alert.read'],
+        });
+        if (!server) {
+          return;
+        }
+      }
 
       const skip = (Number(page) - 1) * Number(limit);
 
@@ -224,6 +380,9 @@ export async function alertRoutes(app: FastifyInstance) {
       if (type) where.type = type;
       if (severity) where.severity = severity;
       if (resolved !== undefined) where.resolved = resolved === 'true';
+      if (!isAdmin || scope !== 'all') {
+        where.userId = user.userId;
+      }
 
       const [alerts, total] = await Promise.all([
         prisma.alert.findMany({
@@ -231,6 +390,7 @@ export async function alertRoutes(app: FastifyInstance) {
           skip,
           take: Number(limit),
           include: {
+            rule: { select: { id: true, name: true } },
             server: {
               select: { id: true, name: true },
             },
@@ -260,6 +420,8 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alerts/:alertId',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { alertId } = request.params as { alertId: string };
 
       const alert = await prisma.alert.findUnique({
@@ -281,6 +443,21 @@ export async function alertRoutes(app: FastifyInstance) {
       if (!alert) {
         return reply.status(404).send({ error: 'Alert not found' });
       }
+      if (!isAdmin && alert.userId !== user.userId) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      if (alert.server?.id && !isAdmin) {
+        const server = await ensureServerAccess({
+          userId: user.userId,
+          serverId: alert.server.id,
+          reply,
+          isAdmin,
+          requiredPermissions: ['alert.read'],
+        });
+        if (!server) {
+          return;
+        }
+      }
 
       reply.send({ alert });
     }
@@ -292,7 +469,30 @@ export async function alertRoutes(app: FastifyInstance) {
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { alertId } = request.params as { alertId: string };
+      const alert = await prisma.alert.findUnique({
+        where: { id: alertId },
+        select: { id: true, userId: true, serverId: true },
+      });
+      if (!alert) {
+        return reply.status(404).send({ error: 'Alert not found' });
+      }
+      if (!isAdmin && alert.userId !== user.userId) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      if (alert.serverId && !isAdmin) {
+        const server = await ensureServerAccess({
+          userId: user.userId,
+          serverId: alert.serverId,
+          reply,
+          isAdmin,
+          requiredPermissions: ['alert.update'],
+        });
+        if (!server) {
+          return;
+        }
+      }
 
       const alertService = (app as any).alertService;
       if (alertService) {
@@ -318,10 +518,37 @@ export async function alertRoutes(app: FastifyInstance) {
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
+      const isAdmin = await isAdminUser(user.userId);
       const { alertIds } = request.body as { alertIds: string[] };
 
       if (!alertIds || !Array.isArray(alertIds)) {
         return reply.status(400).send({ error: 'alertIds must be an array' });
+      }
+
+      if (!isAdmin) {
+        const alerts = await prisma.alert.findMany({
+          where: { id: { in: alertIds } },
+          select: { id: true, userId: true, serverId: true },
+        });
+        const invalid = alerts.some((alert) => alert.userId !== user.userId);
+        if (invalid) {
+          return reply.status(403).send({ error: 'Forbidden' });
+        }
+        const serverIds = Array.from(
+          new Set(alerts.map((alert) => alert.serverId).filter((serverId): serverId is string => Boolean(serverId))),
+        ) as string[];
+        for (const serverId of serverIds) {
+          const server = await ensureServerAccess({
+            userId: user.userId,
+            serverId,
+            reply,
+            isAdmin,
+            requiredPermissions: ['alert.update'],
+          });
+          if (!server) {
+            return;
+          }
+        }
       }
 
       await prisma.alert.updateMany({
@@ -342,18 +569,22 @@ export async function alertRoutes(app: FastifyInstance) {
     '/alerts/stats',
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      const { scope } = request.query as { scope?: 'mine' | 'all' };
+      const isAdmin = await isAdminUser(user.userId);
+      const where = !isAdmin || scope !== 'all' ? { userId: user.userId } : {};
       const [total, unresolved, bySeverity, byType] = await Promise.all([
-        prisma.alert.count(),
-        prisma.alert.count({ where: { resolved: false } }),
+        prisma.alert.count({ where }),
+        prisma.alert.count({ where: { ...where, resolved: false } }),
         prisma.alert.groupBy({
           by: ['severity'],
           _count: true,
-          where: { resolved: false },
+          where: { ...where, resolved: false },
         }),
         prisma.alert.groupBy({
           by: ['type'],
           _count: true,
-          where: { resolved: false },
+          where: { ...where, resolved: false },
         }),
       ]);
 

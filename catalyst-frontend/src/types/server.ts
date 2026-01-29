@@ -9,7 +9,7 @@ export type ServerStatus =
   | 'suspended';
 
 export type RestartPolicy = 'always' | 'on-failure' | 'never';
-export type BackupStorageMode = 'local' | 's3' | 'stream';
+export type BackupStorageMode = 'local' | 's3' | 'sftp' | 'stream';
 
 export interface Server {
   id: string;
@@ -48,6 +48,21 @@ export interface Server {
   backupStorageMode?: BackupStorageMode;
   backupRetentionCount?: number;
   backupRetentionDays?: number;
+  backupAllocationMb?: number;
+  backupS3Config?: {
+    bucket?: string | null;
+    region?: string | null;
+    endpoint?: string | null;
+    accessKeyId?: string | null;
+    secretAccessKey?: string | null;
+  } | null;
+  backupSftpConfig?: {
+    host?: string | null;
+    port?: number | null;
+    username?: string | null;
+    password?: string | null;
+    basePath?: string | null;
+  } | null;
   restartPolicy?: RestartPolicy;
   crashCount?: number;
   maxCrashCount?: number;
@@ -79,6 +94,8 @@ export interface CreateServerPayload {
   allocatedCpuCores: number;
   allocatedDiskMb: number;
   primaryPort: number;
+  primaryIp?: string | null;
+  allocationId?: string;
   portBindings?: Record<number, number>;
   networkMode?: string;
   environment: Record<string, string>;
@@ -90,7 +107,9 @@ export interface UpdateServerPayload {
   allocatedCpuCores?: number;
   allocatedDiskMb?: number;
   primaryPort?: number;
+  primaryIp?: string | null;
   portBindings?: Record<number, number>;
+  backupAllocationMb?: number;
 }
 
 export interface TransferServerPayload {

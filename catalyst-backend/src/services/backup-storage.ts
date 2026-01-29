@@ -3,10 +3,11 @@ import * as fs from "fs/promises";
 import path from "path";
 import { PassThrough, Readable } from "stream";
 import crypto from "crypto";
+import { Client as SftpClient } from "ssh2";
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import type { WebSocketGateway } from "../websocket/gateway";
 
-export type BackupStorageMode = "local" | "s3" | "stream";
+export type BackupStorageMode = "local" | "s3" | "sftp" | "stream";
 
 const BACKUP_DIR = process.env.BACKUP_DIR || "/var/lib/catalyst/backups";
 const STREAM_DIR = process.env.BACKUP_STREAM_DIR || "/tmp/catalyst-backup-stream";
@@ -19,28 +20,92 @@ type S3Config = {
   bucket: string;
 };
 
-const ensureS3Config = (): S3Config => {
-  const bucket = process.env.BACKUP_S3_BUCKET;
-  const region = process.env.BACKUP_S3_REGION;
-  const accessKeyId = process.env.BACKUP_S3_ACCESS_KEY;
-  const secretAccessKey = process.env.BACKUP_S3_SECRET_KEY;
+const buildS3Client = (config?: {
+  bucket?: string | null;
+  region?: string | null;
+  endpoint?: string | null;
+  accessKeyId?: string | null;
+  secretAccessKey?: string | null;
+  pathStyle?: boolean | null;
+}) => {
+  const bucket = config?.bucket || process.env.BACKUP_S3_BUCKET;
+  const region = config?.region || process.env.BACKUP_S3_REGION;
+  const accessKeyId = config?.accessKeyId || process.env.BACKUP_S3_ACCESS_KEY;
+  const secretAccessKey = config?.secretAccessKey || process.env.BACKUP_S3_SECRET_KEY;
+  const endpoint = config?.endpoint || process.env.BACKUP_S3_ENDPOINT || undefined;
+  const pathStyle = config?.pathStyle ?? (process.env.BACKUP_S3_PATH_STYLE === "true");
   if (!bucket || !region || !accessKeyId || !secretAccessKey) {
     throw new Error("S3 backup configuration is missing");
   }
-  if (!cachedS3Client) {
-    cachedS3Client = new S3Client({
+  return {
+    client: new S3Client({
       region,
-      endpoint: process.env.BACKUP_S3_ENDPOINT || undefined,
-      forcePathStyle: process.env.BACKUP_S3_PATH_STYLE === "true",
+      endpoint,
+      forcePathStyle: pathStyle,
       credentials: { accessKeyId, secretAccessKey },
-    });
+    }),
+    bucket,
+  };
+};
+
+const ensureS3Config = (): S3Config => {
+  if (!cachedS3Client) {
+    const { client, bucket } = buildS3Client();
+    cachedS3Client = client;
+    return { client, bucket };
+  }
+  const bucket = process.env.BACKUP_S3_BUCKET;
+  if (!bucket) {
+    throw new Error("S3 backup configuration is missing");
   }
   return { client: cachedS3Client, bucket };
 };
 
+const resolveS3Config = (server?: { backupS3Config?: any }) => {
+  const config = server?.backupS3Config as {
+    bucket?: string | null;
+    region?: string | null;
+    endpoint?: string | null;
+    accessKeyId?: string | null;
+    secretAccessKey?: string | null;
+    pathStyle?: boolean | null;
+  } | null;
+  if (config?.bucket || config?.region || config?.accessKeyId || config?.secretAccessKey || config?.endpoint) {
+    return buildS3Client({
+      bucket: config.bucket,
+      region: config.region,
+      endpoint: config.endpoint,
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+      pathStyle: config.pathStyle,
+    });
+  }
+  return ensureS3Config();
+};
+
+const resolveSftpConfig = (server?: { backupSftpConfig?: any }) => {
+  const config = server?.backupSftpConfig as {
+    host?: string | null;
+    port?: number | null;
+    username?: string | null;
+    password?: string | null;
+    basePath?: string | null;
+  } | null;
+  if (!config?.host || !config?.username || !config?.password) {
+    throw new Error("SFTP backup configuration is missing");
+  }
+  return {
+    host: config.host,
+    port: config.port ?? 22,
+    username: config.username,
+    password: config.password,
+    basePath: config.basePath ?? "/",
+  };
+};
+
 export const resolveBackupStorageMode = (server?: { backupStorageMode?: string | null }) => {
   const raw = (server?.backupStorageMode || process.env.BACKUP_STORAGE_MODE || "local").toLowerCase();
-  if (raw === "s3" || raw === "stream" || raw === "local") {
+  if (raw === "s3" || raw === "stream" || raw === "local" || raw === "sftp") {
     return raw as BackupStorageMode;
   }
   return "local";
@@ -54,7 +119,12 @@ export const resolveRetentionPolicy = (server?: {
   days: Math.max(0, server?.backupRetentionDays ?? 0),
 });
 
-export const buildBackupPaths = (serverUuid: string, backupName: string, mode: BackupStorageMode) => {
+export const buildBackupPaths = (
+  serverUuid: string,
+  backupName: string,
+  mode: BackupStorageMode,
+  server?: { backupS3Config?: any; backupSftpConfig?: any }
+) => {
   const fileName = `${backupName}.tar.gz`;
   const agentPath =
     mode === "stream"
@@ -62,11 +132,22 @@ export const buildBackupPaths = (serverUuid: string, backupName: string, mode: B
       : path.join(BACKUP_DIR, serverUuid, fileName);
 
   if (mode === "s3") {
-    const { bucket } = ensureS3Config();
+    const { bucket } = resolveS3Config(server);
     const storageKey = `backups/${serverUuid}/${fileName}`;
     return {
       agentPath,
       storagePath: `s3://${bucket}/${storageKey}`,
+      storageKey,
+    };
+  }
+
+  if (mode === "sftp") {
+    const config = resolveSftpConfig(server);
+    const safeBase = config.basePath?.startsWith("/") ? config.basePath : `/${config.basePath}`;
+    const storageKey = path.posix.join(safeBase || "/", "backups", serverUuid, fileName);
+    return {
+      agentPath,
+      storagePath: `sftp://${config.host}:${config.port}${storageKey}`,
       storageKey,
     };
   }
@@ -120,8 +201,9 @@ export const streamAgentBackupToS3 = async (
   serverId: string,
   agentPath: string,
   storageKey: string,
+  server?: { backupS3Config?: any },
 ) => {
-  const { client, bucket } = ensureS3Config();
+  const { client, bucket } = resolveS3Config(server);
   const passThrough = new PassThrough();
   const upload = client.send(
     new PutObjectCommand({
@@ -153,10 +235,84 @@ export const streamAgentBackupToS3 = async (
   await upload;
 };
 
-export const openStorageStream = async (backup: { path: string; storageMode?: string; metadata?: any }) => {
+export const streamAgentBackupToSftp = async (
+  gateway: WebSocketGateway,
+  nodeId: string,
+  serverId: string,
+  agentPath: string,
+  storageKey: string,
+  server?: { backupSftpConfig?: any },
+) => {
+  const config = resolveSftpConfig(server);
+  const response = await gateway.requestFromAgent(nodeId, {
+    type: "download_backup_start",
+    serverId,
+    backupPath: agentPath,
+  });
+  const requestId = response?.requestId as string | undefined;
+  if (!requestId) {
+    throw new Error("Missing download requestId");
+  }
+
+  const sftp = await new Promise<any>((resolve, reject) => {
+    const client = new SftpClient();
+    client
+      .on("ready", () =>
+        client.sftp((err, sftpClient) => {
+          if (err) {
+            client.end();
+            reject(err);
+            return;
+          }
+          resolve({ client, sftp: sftpClient });
+        })
+      )
+      .on("error", reject)
+      .connect({
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        password: config.password,
+      });
+  });
+
+  const ensureDir = async (dirPath: string) => {
+    const parts = dirPath.split("/").filter(Boolean);
+    let current = "";
+    for (const part of parts) {
+      current = `${current}/${part}`;
+      await new Promise<void>((resolve) => {
+        sftp.sftp.mkdir(current, () => resolve());
+      });
+    }
+  };
+
+  const directory = path.posix.dirname(storageKey);
+  await ensureDir(directory);
+  const writeStream = sftp.sftp.createWriteStream(storageKey);
+
+  await gateway.streamBinaryFromAgent(
+    nodeId,
+    { type: "download_backup", serverId, backupPath: agentPath, requestId },
+    (chunk) => {
+      writeStream.write(chunk);
+    },
+  );
+  writeStream.end();
+  await new Promise<void>((resolve, reject) => {
+    writeStream.on("finish", () => resolve());
+    writeStream.on("error", reject);
+  });
+  sftp.client.end();
+};
+
+export const openStorageStream = async (
+  backup: { path: string; storageMode?: string; metadata?: any },
+  server?: { backupS3Config?: any; backupSftpConfig?: any },
+) => {
   const mode = (backup.storageMode || "local") as BackupStorageMode;
   if (mode === "s3") {
-    const { client, bucket } = ensureS3Config();
+    const { client, bucket } = resolveS3Config(server);
     const storageKey = backup.metadata?.storageKey as string | undefined;
     if (!storageKey) {
       throw new Error("Missing S3 storage key");
@@ -173,6 +329,43 @@ export const openStorageStream = async (backup: { path: string; storageMode?: st
     };
   }
 
+  if (mode === "sftp") {
+    const config = resolveSftpConfig(server);
+    const storageKey = backup.metadata?.storageKey as string | undefined;
+    if (!storageKey) {
+      throw new Error("Missing SFTP storage key");
+    }
+    const sftp = await new Promise<any>((resolve, reject) => {
+      const client = new SftpClient();
+      client
+        .on("ready", () =>
+          client.sftp((err, sftpClient) => {
+            if (err) {
+              client.end();
+              reject(err);
+              return;
+            }
+            resolve({ client, sftp: sftpClient });
+          })
+        )
+        .on("error", reject)
+        .connect({
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+        });
+    });
+    const stream = sftp.sftp.createReadStream(storageKey);
+    stream.on("close", () => {
+      sftp.client.end();
+    });
+    return {
+      stream,
+      contentLength: undefined,
+    };
+  }
+
   return {
     stream: createReadStream(backup.path),
     contentLength: undefined,
@@ -182,11 +375,18 @@ export const openStorageStream = async (backup: { path: string; storageMode?: st
 export const deleteBackupFromStorage = async (
   gateway: WebSocketGateway,
   backup: { id: string; path: string; storageMode?: string; metadata?: any },
-  server: { id: string; nodeId: string; node?: { isOnline: boolean } } | null,
+  server: {
+    id: string;
+    nodeId: string;
+    node?: { isOnline: boolean };
+    backupS3Config?: any;
+    backupSftpConfig?: any;
+  } | null,
 ) => {
   const mode = (backup.storageMode || "local") as BackupStorageMode;
   if (mode === "s3") {
-    const { client, bucket } = ensureS3Config();
+    if (!server) throw new Error("Server required for S3 storage operations");
+    const { client, bucket } = resolveS3Config(server);
     const storageKey = backup.metadata?.storageKey as string | undefined;
     if (storageKey) {
       await client.send(
@@ -195,6 +395,40 @@ export const deleteBackupFromStorage = async (
           Key: storageKey,
         }),
       );
+    }
+    return;
+  }
+
+  if (mode === "sftp") {
+    if (!server) throw new Error("Server required for SFTP storage operations");
+    const config = resolveSftpConfig(server);
+    const storageKey = backup.metadata?.storageKey as string | undefined;
+    if (storageKey) {
+      const sftp = await new Promise<any>((resolve, reject) => {
+        const client = new SftpClient();
+        client
+          .on("ready", () =>
+            client.sftp((err, sftpClient) => {
+              if (err) {
+                client.end();
+                reject(err);
+                return;
+              }
+              resolve({ client, sftp: sftpClient });
+            })
+          )
+          .on("error", reject)
+          .connect({
+            host: config.host,
+            port: config.port,
+            username: config.username,
+            password: config.password,
+          });
+      });
+      await new Promise<void>((resolve) => {
+        sftp.sftp.unlink(storageKey, () => resolve());
+      });
+      sftp.client.end();
     }
     return;
   }

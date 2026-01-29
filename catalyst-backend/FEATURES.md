@@ -162,19 +162,25 @@ All planned features have been implemented and tested. The backend is ready for 
 - **Bulk operations** (resolve multiple alerts)
 
 **Endpoints:**
-- `GET /api/alerts` - List alerts (with filters)
+- `GET /api/alerts` - List alerts (with filters, scoped to user by default)
 - `GET /api/alerts/:id` - Get alert details
 - `POST /api/alerts/:id/resolve` - Mark alert as resolved
 - `POST /api/alerts/bulk-resolve` - Resolve multiple alerts
-- `GET /api/alerts/stats` - Alert statistics
+- `GET /api/alerts/stats` - Alert statistics (scoped to user by default)
 - `POST /api/alert-rules` - Create alert rule
-- `GET /api/alert-rules` - List alert rules
+- `GET /api/alert-rules` - List alert rules (scoped to user by default)
 - `PUT /api/alert-rules/:id` - Update alert rule
 - `DELETE /api/alert-rules/:id` - Delete alert rule
 
+**Scope rules:**
+- Non-admin users can create/manage their own alert rules.
+- Admins can view all alerts/rules with `scope=all`.
+- Global and node alert rules require admin permissions.
+- Server alert rules require per-server alert permissions (alert.read/create/update/delete) or ownership.
+
 **Database Models:**
-- Alert (serverId, nodeId, type, severity, title, message, resolved)
-- AlertRule (name, type, target, conditions, actions, enabled)
+- Alert (userId, serverId, nodeId, type, severity, title, message, resolved)
+- AlertRule (userId, name, type, target, conditions, actions, enabled)
 
 ---
 

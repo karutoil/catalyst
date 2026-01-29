@@ -22,6 +22,18 @@ export interface NodeInfo {
   };
 }
 
+export interface NodeAllocation {
+  id: string;
+  nodeId: string;
+  serverId?: string | null;
+  ip: string;
+  port: number;
+  alias?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface NodeStats {
   nodeId: string;
   isOnline: boolean;

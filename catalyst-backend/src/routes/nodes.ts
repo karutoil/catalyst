@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
 import { listAvailableIps } from "../utils/ipam";
+import { Prisma } from "@prisma/client";
 
 const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyReply) => {
   const roles = await prisma.role.findMany({
@@ -20,6 +21,91 @@ const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyR
     return false;
   }
   return true;
+};
+
+const PORT_FLOOR = 1024;
+const PORT_CEIL = 65535;
+const MAX_PORT_RANGE = 200;
+
+const isValidPort = (value: number) =>
+  Number.isInteger(value) && value >= PORT_FLOOR && value <= PORT_CEIL;
+
+const parsePortRanges = (input: string): number[] => {
+  const entries = input
+    .split(/[,\s]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const ports = new Set<number>();
+  for (const entry of entries) {
+    if (entry.includes("-")) {
+      const [startRaw, endRaw] = entry.split("-");
+      const start = Number(startRaw);
+      const end = Number(endRaw);
+      if (!isValidPort(start) || !isValidPort(end) || start > end) {
+        throw new Error(`Invalid port range: ${entry}`);
+      }
+      if (end - start + 1 > MAX_PORT_RANGE) {
+        throw new Error(`Port range too large: ${entry}`);
+      }
+      for (let port = start; port <= end; port += 1) {
+        ports.add(port);
+      }
+      continue;
+    }
+    const port = Number(entry);
+    if (!isValidPort(port)) {
+      throw new Error(`Invalid port: ${entry}`);
+    }
+    ports.add(port);
+  }
+  return Array.from(ports);
+};
+
+const parseAllocationIps = async (input: string): Promise<string[]> => {
+  const entries = input
+    .split(/[,\s]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const ips: string[] = [];
+  const ipRegex =
+    /^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)$/;
+  for (const entry of entries) {
+    if (entry.includes("/")) {
+      const [base, prefixRaw] = entry.split("/");
+      const prefix = Number(prefixRaw);
+      if (!ipRegex.test(base) || Number.isNaN(prefix) || prefix < 0 || prefix > 32) {
+        throw new Error(`Invalid CIDR: ${entry}`);
+      }
+      const parts = base.split(".").map((part) => Number(part));
+      const ipInt =
+        ((parts[0] << 24) >>> 0) +
+        ((parts[1] << 16) >>> 0) +
+        ((parts[2] << 8) >>> 0) +
+        (parts[3] >>> 0);
+      const mask = prefix === 0 ? 0 : ((~0 << (32 - prefix)) >>> 0);
+      const network = ipInt & mask;
+      const broadcast = (network | (~mask >>> 0)) >>> 0;
+      if (prefix >= 31) {
+        ips.push(
+          `${(network >>> 24) & 0xff}.${(network >>> 16) & 0xff}.${(network >>> 8) & 0xff}.${network & 0xff}`,
+          `${(broadcast >>> 24) & 0xff}.${(broadcast >>> 16) & 0xff}.${(broadcast >>> 8) & 0xff}.${broadcast & 0xff}`,
+        );
+        continue;
+      }
+      for (let value = network + 1; value <= broadcast - 1; value += 1) {
+        ips.push(
+          `${(value >>> 24) & 0xff}.${(value >>> 16) & 0xff}.${(value >>> 8) & 0xff}.${value & 0xff}`,
+        );
+      }
+      continue;
+    }
+    if (ipRegex.test(entry)) {
+      ips.push(entry);
+      continue;
+    }
+    throw new Error(`Unsupported host entry: ${entry}`);
+  }
+  return ips;
 };
 
 export async function nodeRoutes(app: FastifyInstance) {
@@ -437,6 +523,161 @@ export async function nodeRoutes(app: FastifyInstance) {
       }
 
       reply.send({ success: true, data: available });
+    }
+  );
+
+  // Node allocations (Pterodactyl-style)
+  app.get(
+    "/:nodeId/allocations",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
+      const { nodeId } = request.params as { nodeId: string };
+      const { serverId, search } = request.query as {
+        serverId?: string;
+        search?: string;
+      };
+
+      const node = await prisma.node.findUnique({ where: { id: nodeId } });
+      if (!node) {
+        return reply.status(404).send({ error: "Node not found" });
+      }
+
+      const searchQuery = typeof search === "string" ? search.trim() : "";
+      const where = {
+        nodeId,
+        ...(serverId ? { serverId } : {}),
+        ...(searchQuery
+          ? {
+              OR: [
+                { ip: { contains: searchQuery } },
+                { alias: { contains: searchQuery, mode: "insensitive" } },
+                { notes: { contains: searchQuery, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
+
+      const allocations = await prisma.nodeAllocation.findMany({
+        where,
+        orderBy: [{ ip: "asc" }, { port: "asc" }],
+      });
+
+      reply.send({ success: true, data: allocations });
+    }
+  );
+
+  app.post(
+    "/:nodeId/allocations",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
+      const { nodeId } = request.params as { nodeId: string };
+      const { ip, ports, alias, notes } = request.body as {
+        ip: string;
+        ports: string;
+        alias?: string;
+        notes?: string;
+      };
+
+      if (!ip || !ports) {
+        return reply.status(400).send({ error: "ip and ports are required" });
+      }
+
+      const node = await prisma.node.findUnique({ where: { id: nodeId } });
+      if (!node) {
+        return reply.status(404).send({ error: "Node not found" });
+      }
+
+      let ips: string[] = [];
+      let portList: number[] = [];
+      try {
+        ips = await parseAllocationIps(ip);
+        portList = parsePortRanges(ports);
+      } catch (error: any) {
+        return reply.status(400).send({ error: error.message });
+      }
+
+      if (ips.length * portList.length > 5000) {
+        return reply.status(400).send({ error: "Allocation request too large" });
+      }
+
+      const created = await prisma.$transaction(async (tx) => {
+        const rows = ips.flatMap((addr) =>
+          portList.map((port) => ({
+            nodeId,
+            ip: addr,
+            port,
+            alias: alias || null,
+            notes: notes || null,
+          }))
+        );
+        return tx.nodeAllocation.createMany({
+          data: rows,
+          skipDuplicates: true,
+        });
+      });
+
+      reply.status(201).send({ success: true, data: { created: created.count } });
+    }
+  );
+
+  app.patch(
+    "/:nodeId/allocations/:allocationId",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
+      const { nodeId, allocationId } = request.params as {
+        nodeId: string;
+        allocationId: string;
+      };
+      const { alias, notes } = request.body as { alias?: string; notes?: string };
+
+      const allocation = await prisma.nodeAllocation.findUnique({
+        where: { id: allocationId },
+      });
+      if (!allocation || allocation.nodeId !== nodeId) {
+        return reply.status(404).send({ error: "Allocation not found" });
+      }
+
+      const updated = await prisma.nodeAllocation.update({
+        where: { id: allocationId },
+        data: {
+          alias: alias !== undefined ? alias : allocation.alias,
+          notes: notes !== undefined ? notes : allocation.notes,
+        },
+      });
+
+      reply.send({ success: true, data: updated });
+    }
+  );
+
+  app.delete(
+    "/:nodeId/allocations/:allocationId",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      if (!isAdmin) return;
+      const { nodeId, allocationId } = request.params as {
+        nodeId: string;
+        allocationId: string;
+      };
+
+      const allocation = await prisma.nodeAllocation.findUnique({
+        where: { id: allocationId },
+      });
+      if (!allocation || allocation.nodeId !== nodeId) {
+        return reply.status(404).send({ error: "Allocation not found" });
+      }
+      if (allocation.serverId) {
+        return reply.status(409).send({ error: "Allocation is assigned to a server" });
+      }
+
+      await prisma.nodeAllocation.delete({ where: { id: allocationId } });
+      reply.send({ success: true });
     }
   );
 }

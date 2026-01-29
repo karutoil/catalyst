@@ -19,7 +19,12 @@ assert_not_empty "$TOKEN" "Admin token acquired"
 # Create test node
 response=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $TOKEN")
 body=$(parse_response "$response")
-LOCATION_ID=$(echo "$body" | jq -r '.data[0].locationId // "cmkspe7nq0000sw3ctcc39e8z"')
+LOCATION_ID=$(echo "$body" | jq -r '.data[0].locationId // empty')
+if [ -z "$LOCATION_ID" ] || [ "$LOCATION_ID" = "null" ]; then
+  response=$(http_get "${BACKEND_URL}/api/locations" "Authorization: Bearer $TOKEN")
+  body=$(parse_response "$response")
+  LOCATION_ID=$(echo "$body" | jq -r '.data[0].id')
+fi
 
 response=$(http_post "${BACKEND_URL}/api/nodes" "{
   \"name\": \"alert-node-$(random_string)\",
@@ -30,6 +35,7 @@ response=$(http_post "${BACKEND_URL}/api/nodes" "{
   \"maxCpuCores\": 4
 }" "Authorization: Bearer $TOKEN")
 NODE_ID=$(echo "$response" | head -n-1 | jq -r '.data.id')
+assert_not_empty "$NODE_ID" "Node created"
 
 # Create test server
 response=$(http_get "${BACKEND_URL}/api/templates")
@@ -62,12 +68,16 @@ response=$(http_post "${BACKEND_URL}/api/alert-rules" "{
 }" "Authorization: Bearer $TOKEN")
 http_code=$(parse_http_code "$response")
 body=$(parse_response "$response")
+if [ "$http_code" != "200" ]; then
+  log_error "Create alert rule failed response:"
+  echo "$body"
+fi
 assert_http_code "$http_code" "200" "POST /api/alert-rules"
 RULE_ID=$(echo "$body" | jq -r '.rule.id')
 assert_not_empty "$RULE_ID" "Alert rule created"
 
 # List alert rules
-response=$(http_get "${BACKEND_URL}/api/alert-rules" "Authorization: Bearer $TOKEN")
+response=$(http_get "${BACKEND_URL}/api/alert-rules?scope=all" "Authorization: Bearer $TOKEN")
 http_code=$(parse_http_code "$response")
 body=$(parse_response "$response")
 assert_http_code "$http_code" "200" "GET /api/alert-rules"
@@ -81,7 +91,7 @@ assert_http_code "$http_code" "200" "PUT /api/alert-rules/{id}"
 assert_json_field "$body" "rule.enabled" "false" "Rule disabled"
 
 # List alerts
-response=$(http_get "${BACKEND_URL}/api/alerts" "Authorization: Bearer $TOKEN")
+response=$(http_get "${BACKEND_URL}/api/alerts?scope=all" "Authorization: Bearer $TOKEN")
 http_code=$(parse_http_code "$response")
 body=$(parse_response "$response")
 assert_http_code "$http_code" "200" "GET /api/alerts"

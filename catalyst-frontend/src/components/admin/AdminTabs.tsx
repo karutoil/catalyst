@@ -10,6 +10,7 @@ const tabs = [
   { to: '/admin/network', label: 'Network' },
   { to: '/admin/system', label: 'System' },
   { to: '/admin/security', label: 'Security' },
+  { to: '/admin/alerts', label: 'Alerts' },
   { to: '/admin/audit-logs', label: 'Audit Logs' },
 ];
 

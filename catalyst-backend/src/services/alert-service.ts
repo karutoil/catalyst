@@ -122,6 +122,7 @@ export class AlertService {
       if (conditions.cpuThreshold && metrics.cpuPercent > conditions.cpuThreshold) {
         const alert = await this.createAlert({
           ruleId: rule.id,
+          userId: rule.userId ?? undefined,
           serverId: rule.targetId,
           type: 'resource_threshold',
           severity: 'warning',
@@ -149,6 +150,7 @@ export class AlertService {
         if (memoryPercent > conditions.memoryThreshold) {
           const alert = await this.createAlert({
             ruleId: rule.id,
+            userId: rule.userId ?? undefined,
             serverId: rule.targetId,
             type: 'resource_threshold',
             severity: 'warning',
@@ -174,6 +176,7 @@ export class AlertService {
         if (diskPercent > conditions.diskThreshold) {
           const alert = await this.createAlert({
             ruleId: rule.id,
+            userId: rule.userId ?? undefined,
             serverId: rule.targetId,
             type: 'resource_threshold',
             severity: 'warning',
@@ -210,6 +213,7 @@ export class AlertService {
       if (conditions.cpuThreshold && metrics.cpuPercent > conditions.cpuThreshold) {
         const alert = await this.createAlert({
           ruleId: rule.id,
+          userId: rule.userId ?? undefined,
           nodeId: rule.targetId,
           type: 'resource_threshold',
           severity: 'critical',
@@ -234,6 +238,7 @@ export class AlertService {
         if (memoryPercent > conditions.memoryThreshold) {
           const alert = await this.createAlert({
             ruleId: rule.id,
+            userId: rule.userId ?? undefined,
             nodeId: rule.targetId,
             type: 'resource_threshold',
             severity: 'critical',
@@ -258,6 +263,7 @@ export class AlertService {
         if (diskPercent > conditions.diskThreshold) {
           const alert = await this.createAlert({
             ruleId: rule.id,
+            userId: rule.userId ?? undefined,
             nodeId: rule.targetId,
             type: 'resource_threshold',
             severity: 'critical',
@@ -311,11 +317,12 @@ export class AlertService {
       });
 
       if (!existingAlert) {
-        const alert = await this.createAlert({
-          ruleId: rule.id,
-          nodeId: node.id,
-          type: 'node_offline',
-          severity: 'critical',
+      const alert = await this.createAlert({
+        ruleId: rule.id,
+        userId: rule.userId ?? undefined,
+        nodeId: node.id,
+        type: 'node_offline',
+        severity: 'critical',
           title: `Node ${node.name} is Offline`,
           message: `Node has been offline for more than ${offlineThreshold} minutes`,
           metadata: { lastSeenAt: node.lastSeenAt, offlineThreshold },
@@ -357,6 +364,7 @@ export class AlertService {
       if (!existingAlert) {
         const alert = await this.createAlert({
           ruleId: rule.id,
+          userId: rule.userId ?? undefined,
           serverId: server.id,
           type: 'server_crashed',
           severity: 'critical',
@@ -382,6 +390,7 @@ export class AlertService {
    */
   async createAlert(data: {
     ruleId?: string;
+    userId?: string;
     serverId?: string;
     nodeId?: string;
     type: string;
@@ -409,11 +418,12 @@ export class AlertService {
       return;
     }
 
-    const alert = await this.prisma.alert.create({
-      data: {
-        ruleId: data.ruleId,
-        serverId: data.serverId,
-        nodeId: data.nodeId,
+      const alert = await this.prisma.alert.create({
+        data: {
+          ruleId: data.ruleId,
+          userId: data.userId,
+          serverId: data.serverId,
+          nodeId: data.nodeId,
         type: data.type,
         severity: data.severity,
         title: data.title,
@@ -539,7 +549,7 @@ export class AlertService {
       if (!alert) {
         throw new Error('Alert not found for email dispatch');
       }
-      const alertUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/alerts`;
+      const alertUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin/alerts`;
       const emailContent = renderAlertEmail({
         title: alert.title,
         message: alert.message,
@@ -666,7 +676,7 @@ export class AlertService {
     alert: { title: string; message: string; severity: string; type: string; createdAt: Date },
   ) {
     try {
-      const alertUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/alerts`;
+      const alertUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin/alerts`;
       const emailContent = renderAlertEmail({
         title: alert.title,
         message: alert.message,

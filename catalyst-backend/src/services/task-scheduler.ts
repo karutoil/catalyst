@@ -106,7 +106,6 @@ export class TaskScheduler {
         },
         {
           timezone: process.env.TZ || 'UTC',
-          scheduled: true,
         }
       );
       job.start();
@@ -218,7 +217,7 @@ export class TaskScheduler {
    * Simple next run calculation (approximation)
    */
   calculateNextRun(schedule: string, baseDate = new Date()): Date {
-    const interval = cronParser.parseExpression(schedule, {
+    const interval = (cronParser as any).parseExpression(schedule, {
       currentDate: baseDate,
       tz: process.env.TZ || 'UTC',
     });

@@ -20,7 +20,7 @@ import AdminServersPage from './pages/admin/ServersPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import NetworkPage from './pages/admin/NetworkPage';
 import DatabasePage from './pages/admin/DatabasePage';
-import AlertsPage from './pages/alerts/AlertsPage';
+import AdminAlertsPage from './pages/admin/AlertsPage';
 import UsersPage from './pages/admin/UsersPage';
 import SystemPage from './pages/admin/SystemPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
@@ -71,7 +71,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="alerts" element={<AlertsPage />} />
           <Route
             path="admin"
             element={
@@ -141,6 +140,14 @@ function App() {
             element={
               <ProtectedRoute requireAdmin>
                 <SecurityPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/alerts"
+            element={
+              <ProtectedRoute requireAdmin>
+                <AdminAlertsPage />
               </ProtectedRoute>
             }
           />

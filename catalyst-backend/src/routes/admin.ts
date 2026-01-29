@@ -212,6 +212,10 @@ export async function adminRoutes(app: FastifyInstance) {
                 'server.start',
                 'server.stop',
                 'server.read',
+                'alert.read',
+                'alert.create',
+                'alert.update',
+                'alert.delete',
                 'file.read',
                 'file.write',
                 'console.read',
@@ -378,6 +382,10 @@ export async function adminRoutes(app: FastifyInstance) {
                 'server.start',
                 'server.stop',
                 'server.read',
+                'alert.read',
+                'alert.create',
+                'alert.update',
+                'alert.delete',
                 'file.read',
                 'file.write',
                 'console.read',
@@ -623,12 +631,12 @@ export async function adminRoutes(app: FastifyInstance) {
           : {}),
       };
 
-      const [servers, total] = await Promise.all([
-        prisma.server.findMany({
-          where,
-          skip,
-          take: Number(limit),
-          include: {
+        const [servers, total] = await Promise.all([
+          prisma.server.findMany({
+            where,
+            skip,
+            take: Number(limit),
+            include: {
             node: {
               select: {
                 id: true,
@@ -642,10 +650,10 @@ export async function adminRoutes(app: FastifyInstance) {
                 name: true,
               },
             },
-          },
-        }),
-        prisma.server.count({ where }),
-      ]);
+            },
+          }),
+          prisma.server.count({ where }),
+        ]);
 
       reply.send({
         servers,

@@ -151,7 +151,12 @@ NODE_NAME="containerd-agent-test-$(date +%s)"
 NODE_HOSTNAME="agent-containerd-$(random_string).example"
 
 log_info "Creating node via API"
-payload=$(jq -n --arg name "$NODE_NAME" --arg hostname "$NODE_HOSTNAME" '{name: $name, hostname: $hostname, locationId: "cmkspe7nq0000sw3ctcc39e8z", publicAddress: "127.0.0.1", maxMemoryMb: 8192, maxCpuCores: 4}')
+# Pick an existing location if available (fallback to known seeded id)
+response_nodes=$(http_get "${BACKEND_URL}/api/nodes" "Authorization: Bearer $TOKEN")
+LOCATION_ID=$(echo "$response_nodes" | head -n-1 | jq -r '.data[0].locationId // "cmkspe7nq0000sw3ctcc39e8z"')
+log_info "Using location ID: $LOCATION_ID"
+
+payload=$(jq -n --arg name "$NODE_NAME" --arg hostname "$NODE_HOSTNAME" --arg locationId "$LOCATION_ID" '{name: $name, hostname: $hostname, locationId: $locationId, publicAddress: "127.0.0.1", maxMemoryMb: 8192, maxCpuCores: 4}')
 response=$(http_post "${BACKEND_URL}/api/nodes" "$payload" "Authorization: Bearer $TOKEN")
 HTTP_CODE=$(echo "$response" | tail -n1)
 BODY=$(echo "$response" | head -n-1)

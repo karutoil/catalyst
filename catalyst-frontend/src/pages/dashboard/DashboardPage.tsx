@@ -40,7 +40,7 @@ function DashboardPage() {
             Register Node
           </Link>
           <Link
-            to="/alerts"
+            to="/admin/alerts"
             className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-amber-500"
           >
             View Alerts
@@ -91,7 +91,7 @@ function DashboardPage() {
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-100">Recent activity</h2>
-            <Link to="/alerts" className="text-xs font-medium text-sky-400 hover:text-sky-300">
+            <Link to="/admin/alerts" className="text-xs font-medium text-sky-400 hover:text-sky-300">
               View all
             </Link>
           </div>

@@ -88,6 +88,7 @@ export async function templateRoutes(app: FastifyInstance) {
         sendSignalTo: string;
         variables: any[];
         installScript?: string;
+        configFile?: string;
         supportedPorts: number[];
         allocatedMemoryMb: number;
         allocatedCpuCores: number;

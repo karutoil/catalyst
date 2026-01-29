@@ -208,7 +208,7 @@ test.describe('Screenshot Crawl - Full Frontend Tour', () => {
 
     // 8. ALERTS SECTION
     console.log('\n📸 === ALERTS SECTION ===');
-    await navigateTo(page, '/alerts');
+    await navigateTo(page, '/admin/alerts');
     await takeScreenshot(page, '28-alerts-list-page');
 
     // Capture alert tabs if they exist
