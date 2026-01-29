@@ -439,6 +439,7 @@ model ServerMetrics {
   timestamp     DateTime @default(now())
   
   @@index([serverId, timestamp])
+  @@unique([serverId, timestamp])
 }
 
 model NodeMetrics {

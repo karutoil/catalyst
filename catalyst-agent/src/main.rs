@@ -63,6 +63,11 @@ impl CatalystAgent {
     pub async fn run(&self) -> AgentResult<()> {
         info!("Starting Catalyst Agent");
 
+        // Run an initial resource snapshot immediately (captures current usage at startup)
+        if let Err(e) = self.ws_handler.send_resource_stats().await {
+            warn!("Initial resource snapshot failed: {}", e);
+        }
+
         // Start WebSocket connection to backend
         let agent = self.clone_refs();
         let ws_task = tokio::spawn(async move {

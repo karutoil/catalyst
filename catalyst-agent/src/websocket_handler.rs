@@ -70,6 +70,41 @@ impl WebSocketHandler {
         }
     }
 
+    async fn flush_buffered_metrics(&self, write: Arc<tokio::sync::Mutex<WsWrite>>) -> AgentResult<()> {
+        let buffered = match self.storage_manager.read_buffered_metrics().await {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Failed to read buffered metrics: {}", e);
+                return Ok(());
+            }
+        };
+
+        if buffered.is_empty() {
+            return Ok(());
+        }
+
+        info!("Flushing {} buffered metrics", buffered.len());
+
+        let batch_size = 500usize;
+        for chunk in buffered.chunks(batch_size) {
+            let metrics_value = serde_json::Value::Array(chunk.to_vec());
+            let payload = json!({ "type": "resource_stats_batch", "metrics": metrics_value });
+            let mut w = write.lock().await;
+            if let Err(e) = w.send(Message::Text(payload.to_string())).await {
+                warn!("Failed to send buffered metrics batch: {}", e);
+                // leave buffer intact - will retry on next connect
+                return Ok(());
+            }
+        }
+
+        // All batches sent successfully - clear buffer
+        if let Err(e) = self.storage_manager.clear_buffered_metrics().await {
+            warn!("Failed to clear buffered metrics: {}", e);
+        }
+
+        Ok(())
+    }
+
     pub async fn connect_and_listen(&self) -> AgentResult<()> {
         loop {
             match self.establish_connection().await {
@@ -130,6 +165,11 @@ impl WebSocketHandler {
         // Reconcile server states to prevent drift after reconnection
         if let Err(e) = self.reconcile_server_states().await {
             warn!("Failed to reconcile server states: {}", e);
+        }
+
+        // Flush any buffered metrics now that we're connected
+        if let Err(e) = self.flush_buffered_metrics(write.clone()).await {
+            warn!("Failed to flush buffered metrics: {}", e);
         }
 
         // Start heartbeat task
@@ -1888,10 +1928,8 @@ impl WebSocketHandler {
             return Ok(());
         }
 
-        let writer = { self.write.read().await.clone() };
-        let Some(ws) = writer else {
-            return Ok(());
-        };
+        let writer_opt = { self.write.read().await.clone() };
+        // writer_opt may be None if we're not connected; we will buffer metrics to disk in that case;
 
         for container in containers {
             if !container.status.contains("Up") {
@@ -1947,10 +1985,26 @@ impl WebSocketHandler {
                 "timestamp": chrono::Utc::now().timestamp_millis(),
             });
 
-            let mut w = ws.lock().await;
-            if let Err(err) = w.send(Message::Text(payload.to_string())).await {
-                warn!("Failed to send resource stats: {}", err);
-                break;
+            // If we have a live write handle, send; otherwise buffer to disk immediately
+            match &writer_opt {
+                Some(ws) => {
+                    let mut w = ws.lock().await;
+                    match w.send(Message::Text(payload.to_string())).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            warn!("Failed to send resource stats: {}. Buffering to disk.", err);
+                            if let Err(e) = self.storage_manager.append_buffered_metric(&payload).await {
+                                warn!("Failed to buffer metric to disk: {}", e);
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // No connection - persist metric locally for later flush
+                    if let Err(e) = self.storage_manager.append_buffered_metric(&payload).await {
+                        warn!("Failed to buffer metric to disk: {}", e);
+                    }
+                }
             }
         }
 

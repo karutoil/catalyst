@@ -376,6 +376,132 @@ export class WebSocketGateway {
           diskTotalMb: Math.round(Number.isFinite(diskTotalMb) ? diskTotalMb : 0),
           timestamp: Date.now(),
         });
+      } else if (message.type === "resource_stats_batch") {
+        // message.metrics is expected to be an array of metric objects
+        if (!Array.isArray(message.metrics)) {
+          this.logger.warn('resource_stats_batch.metrics is not an array');
+          return;
+        }
+
+        const items: any[] = [];
+        for (const m of message.metrics) {
+          if (!m.serverUuid || !m.timestamp) continue;
+          items.push({
+            serverId: m.serverUuid,
+            cpuPercent: Number.isFinite(Number(m.cpuPercent)) ? Number(m.cpuPercent) : 0,
+            memoryUsageMb: Math.round(Number(m.memoryUsageMb) || 0),
+            networkRxBytes: BigInt(Math.max(0, Number(m.networkRxBytes || 0))),
+            networkTxBytes: BigInt(Math.max(0, Number(m.networkTxBytes || 0))),
+            diskIoMb: Math.round(Number(m.diskIoMb || 0)),
+            diskUsageMb: Math.round(Number(m.diskUsageMb || 0)),
+            timestamp: new Date(Number(m.timestamp)),
+          });
+        }
+
+        if (items.length === 0) return;
+
+        // Use an upsert-style INSERT ... ON CONFLICT statement to dedupe and keep peaks
+        // We use GREATEST(...) for memory / network to preserve spikes when backfilling
+        const tuples: string[] = [];
+        for (const it of items) {
+          const sid = String(it.serverId).replace(/'/g, "''");
+          const cpu = Number(it.cpuPercent) || 0;
+          const mem = Number(it.memoryUsageMb) || 0;
+          const rx = BigInt(it.networkRxBytes || 0).toString();
+          const tx = BigInt(it.networkTxBytes || 0).toString();
+          const dio = Number(it.diskIoMb) || 0;
+          const dusg = Number(it.diskUsageMb) || 0;
+          const tsMs = Number(new Date(it.timestamp).getTime());
+          tuples.push(`(DEFAULT, '${sid}', ${cpu}, ${mem}, ${rx}, ${tx}, ${dio}, ${dusg}, to_timestamp(${tsMs}::double precision / 1000.0))`);
+        }
+
+        if (tuples.length === 0) return;
+
+        const sql = `INSERT INTO "ServerMetrics" ("id","serverId","cpuPercent","memoryUsageMb","networkRxBytes","networkTxBytes","diskIoMb","diskUsageMb","timestamp") VALUES ${tuples.join(',')} ON CONFLICT ("serverId","timestamp") DO UPDATE SET
+          "cpuPercent" = EXCLUDED."cpuPercent",
+          "memoryUsageMb" = GREATEST("ServerMetrics"."memoryUsageMb", EXCLUDED."memoryUsageMb"),
+          "networkRxBytes" = GREATEST("ServerMetrics"."networkRxBytes", EXCLUDED."networkRxBytes"),
+          "networkTxBytes" = GREATEST("ServerMetrics"."networkTxBytes", EXCLUDED."networkTxBytes"),
+          "diskIoMb" = GREATEST("ServerMetrics"."diskIoMb", EXCLUDED."diskIoMb"),
+          "diskUsageMb" = GREATEST("ServerMetrics"."diskUsageMb", EXCLUDED."diskUsageMb")`;
+
+        try {
+          await this.prisma.$executeRawUnsafe(sql);
+        } catch (err) {
+          this.logger.error({ err }, 'Failed to upsert batched metrics, falling back to per-item safe upsert');
+
+          // Fallback: upsert each item individually (safe but slower). We attempt
+          // to preserve spike semantics by keeping max(memory, disk, network) where applicable.
+          for (const it of items) {
+            try {
+              const existing = await this.prisma.serverMetrics.findUnique({
+                where: {
+                  serverId_timestamp: {
+                    serverId: it.serverId,
+                    timestamp: new Date(it.timestamp),
+                  },
+                },
+              });
+
+              const cpu = Number(it.cpuPercent) || 0;
+              const mem = Math.round(Number(it.memoryUsageMb) || 0);
+              const rx = BigInt(it.networkRxBytes || 0);
+              const tx = BigInt(it.networkTxBytes || 0);
+              const dio = Math.round(Number(it.diskIoMb) || 0);
+              const dusg = Math.round(Number(it.diskUsageMb) || 0);
+              const ts = new Date(it.timestamp);
+
+              if (existing) {
+                await this.prisma.serverMetrics.update({
+                  where: { id: existing.id },
+                  data: {
+                    cpuPercent: cpu, // replace cpu with latest sample
+                    memoryUsageMb: Math.max(existing.memoryUsageMb, mem),
+                    networkRxBytes: (BigInt(existing.networkRxBytes.toString()) < rx) ? rx : BigInt(existing.networkRxBytes.toString()),
+                    networkTxBytes: (BigInt(existing.networkTxBytes.toString()) < tx) ? tx : BigInt(existing.networkTxBytes.toString()),
+                    diskIoMb: Math.max(existing.diskIoMb ?? 0, dio),
+                    diskUsageMb: Math.max(existing.diskUsageMb, dusg),
+                  },
+                });
+              } else {
+                await this.prisma.serverMetrics.create({
+                  data: {
+                    serverId: it.serverId,
+                    cpuPercent: cpu,
+                    memoryUsageMb: mem,
+                    networkRxBytes: rx,
+                    networkTxBytes: tx,
+                    diskIoMb: dio,
+                    diskUsageMb: dusg,
+                    timestamp: ts,
+                  },
+                });
+              }
+            } catch (e2) {
+              this.logger.error({ err: e2, item: it }, 'Failed to upsert individual metric');
+            }
+          }
+        }
+
+        // Broadcast latest metrics for affected servers
+        const serverIds = Array.from(new Set(items.map((i) => i.serverId)));
+        for (const sid of serverIds) {
+          const latest = await this.prisma.serverMetrics.findFirst({ where: { serverId: sid }, orderBy: { timestamp: 'desc' } });
+          if (latest) {
+            await this.routeToClients(sid, {
+              type: 'resource_stats',
+              serverId: sid,
+              cpuPercent: latest.cpuPercent,
+              memoryUsageMb: latest.memoryUsageMb,
+              networkRxBytes: latest.networkRxBytes.toString(),
+              networkTxBytes: latest.networkTxBytes.toString(),
+              diskIoMb: latest.diskIoMb ?? 0,
+              diskUsageMb: latest.diskUsageMb,
+              diskTotalMb: 0,
+              timestamp: latest.timestamp.getTime(),
+            });
+          }
+        }
       } else if (message.type === "console_output") {
         if (message.serverId && message.data) {
           await this.prisma.serverLog.create({

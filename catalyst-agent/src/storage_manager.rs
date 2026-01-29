@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::task::spawn_blocking;
 use tracing::info;
+use tokio::io::AsyncWriteExt;
 
 use crate::{AgentError, AgentResult};
+use serde_json::Value;
 
 pub struct StorageManager {
     data_dir: PathBuf,
@@ -209,6 +211,54 @@ impl StorageManager {
         }
         Ok(false)
     }
+
+    // --- Metrics buffering helpers ------------------------------------------------
+    fn metrics_buffer_path(&self) -> PathBuf {
+        self.data_dir.join("metrics_buffer.jsonl")
+    }
+
+    pub async fn append_buffered_metric(&self, value: &Value) -> AgentResult<()> {
+        fs::create_dir_all(&self.data_dir).await?;
+        let path = self.metrics_buffer_path();
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await?;
+        let mut line = value.to_string();
+        line.push('\n');
+        file.write_all(line.as_bytes()).await?;
+        Ok(())
+    }
+
+    pub async fn read_buffered_metrics(&self) -> AgentResult<Vec<Value>> {
+        let path = self.metrics_buffer_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let s = fs::read_to_string(&path).await?;
+        let mut out = Vec::new();
+        for line in s.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<Value>(line) {
+                Ok(v) => out.push(v),
+                Err(e) => tracing::warn!("Skipping invalid buffered metric line: {}", e),
+            }
+        }
+        Ok(out)
+    }
+
+    pub async fn clear_buffered_metrics(&self) -> AgentResult<()> {
+        let path = self.metrics_buffer_path();
+        if path.exists() {
+            fs::remove_file(path).await?;
+        }
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------------
 
     async fn dir_has_data(&self, dir: &Path) -> AgentResult<bool> {
         let mut entries = fs::read_dir(dir).await?;

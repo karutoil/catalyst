@@ -1349,6 +1349,7 @@ function ServerDetailsPage() {
             latest={metricsHistory?.latest ?? null}
             allocatedMemoryMb={server.allocatedMemoryMb ?? 0}
             timeRangeLabel={metricsTimeRange.label}
+            timeRangeHours={metricsTimeRange.hours}
           />
         </div>
       ) : null}
