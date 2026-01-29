@@ -15,9 +15,10 @@ COPY src ./src
 RUN touch src/main.rs && cargo build --release
 
 # Runtime stage
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y ca-certificates containerd.io && rm -rf /var/lib/apt/lists/*
+# Install only ca-certificates in the runtime image. The host will provide containerd and nerdctl via mounted socket.
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/catalyst-agent /usr/local/bin/catalyst-agent
 

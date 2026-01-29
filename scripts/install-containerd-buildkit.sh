@@ -109,17 +109,21 @@ if ! command -v buildctl >/dev/null 2>&1 || ! command -v buildkitd >/dev/null 2>
     tmpdir=$(mktemp -d)
     if curl -fsSL "$ASSET_URL" -o "$tmpdir/buildkit.tar.gz"; then
         if tar -xz -C "$tmpdir" -f "$tmpdir/buildkit.tar.gz"; then
+            # Binary paths vary across releases (bin/ or buildkit/)
             if [ -f "$tmpdir/buildkit/buildctl" ] && [ -f "$tmpdir/buildkit/buildkitd" ]; then
                 cp "$tmpdir/buildkit/buildctl" /usr/local/bin/
                 cp "$tmpdir/buildkit/buildkitd" /usr/local/bin/
-                chmod +x /usr/local/bin/buildctl /usr/local/bin/buildkitd
-                echo "Installed buildkit from $ASSET_URL"
-                rm -rf "$tmpdir"
+            elif [ -f "$tmpdir/bin/buildctl" ] && [ -f "$tmpdir/bin/buildkitd" ]; then
+                cp "$tmpdir/bin/buildctl" /usr/local/bin/
+                cp "$tmpdir/bin/buildkitd" /usr/local/bin/
             else
                 echo "Downloaded archive did not contain buildctl/buildkitd" >&2
                 rm -rf "$tmpdir"
                 exit 1
             fi
+            chmod +x /usr/local/bin/buildctl /usr/local/bin/buildkitd
+            echo "Installed buildkit from $ASSET_URL"
+            rm -rf "$tmpdir"
         else
             echo "Failed to extract buildkit archive" >&2
             rm -rf "$tmpdir"

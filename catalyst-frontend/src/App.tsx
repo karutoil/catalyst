@@ -17,6 +17,7 @@ import TemplateDetailsPage from './pages/templates/TemplateDetailsPage';
 import AdminTemplatesPage from './pages/admin/TemplatesPage';
 import AdminNodesPage from './pages/admin/NodesPage';
 import AdminServersPage from './pages/admin/ServersPage';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import NetworkPage from './pages/admin/NetworkPage';
 import DatabasePage from './pages/admin/DatabasePage';
 import AlertsPage from './pages/alerts/AlertsPage';
@@ -71,6 +72,14 @@ function App() {
             }
           />
           <Route path="alerts" element={<AlertsPage />} />
+          <Route
+            path="admin"
+            element={
+              <ProtectedRoute requireAdmin>
+                <AdminDashboardPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="admin/users"
             element={
