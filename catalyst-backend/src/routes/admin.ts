@@ -88,10 +88,21 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
-      const { page = 1, limit = 20 } = request.query as {
+      const { page = 1, limit = 20, search } = request.query as {
         page?: number;
         limit?: number;
+        search?: string;
       };
+
+      const searchQuery = typeof search === 'string' ? search.trim() : '';
+      const where = searchQuery
+        ? {
+            OR: [
+              { email: { contains: searchQuery, mode: 'insensitive' } },
+              { username: { contains: searchQuery, mode: 'insensitive' } },
+            ],
+          }
+        : undefined;
 
       const skip = (Number(page) - 1) * Number(limit);
 
@@ -99,6 +110,7 @@ export async function adminRoutes(app: FastifyInstance) {
         prisma.user.findMany({
           skip,
           take: Number(limit),
+          where,
           select: {
             id: true,
             email: true,
@@ -113,7 +125,7 @@ export async function adminRoutes(app: FastifyInstance) {
             },
           },
         }),
-        prisma.user.count(),
+        prisma.user.count({ where }),
       ]);
 
       reply.send({

@@ -45,6 +45,25 @@ export async function alertRoutes(app: FastifyInstance) {
         });
       }
 
+      // Validate targetId
+      if ((target === 'server' || target === 'node') && !targetId) {
+        return reply.status(400).send({ error: 'targetId is required for server or node rules' });
+      }
+
+      if (target === 'server' && targetId) {
+        const server = await prisma.server.findUnique({ where: { id: targetId }, select: { id: true } });
+        if (!server) {
+          return reply.status(404).send({ error: 'Server not found' });
+        }
+      }
+
+      if (target === 'node' && targetId) {
+        const node = await prisma.node.findUnique({ where: { id: targetId }, select: { id: true } });
+        if (!node) {
+          return reply.status(404).send({ error: 'Node not found' });
+        }
+      }
+
       // Check admin permissions for global rules
       if (target === 'global') {
         const userRoles = await prisma.role.findMany({
@@ -160,6 +179,20 @@ export async function alertRoutes(app: FastifyInstance) {
     }
   );
 
+  // Get alert deliveries for an alert
+  app.get(
+    '/alerts/:alertId/deliveries',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { alertId } = request.params as { alertId: string };
+      const deliveries = await prisma.alertDelivery.findMany({
+        where: { alertId },
+        orderBy: { createdAt: 'desc' },
+      });
+      reply.send({ deliveries });
+    }
+  );
+
   // List alerts
   app.get(
     '/alerts',
@@ -232,11 +265,15 @@ export async function alertRoutes(app: FastifyInstance) {
       const alert = await prisma.alert.findUnique({
         where: { id: alertId },
         include: {
+          rule: { select: { id: true, name: true } },
           server: {
             select: { id: true, name: true },
           },
           node: {
             select: { id: true, name: true },
+          },
+          deliveries: {
+            orderBy: { createdAt: 'desc' },
           },
         },
       });

@@ -10,6 +10,7 @@ const pageSize = 20;
 
 function UsersPage() {
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -29,7 +30,7 @@ function UsersPage() {
   const [editServerIds, setEditServerIds] = useState<string[]>([]);
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useAdminUsers({ page, limit: pageSize });
+  const { data, isLoading } = useAdminUsers({ page, limit: pageSize, search: search.trim() || undefined });
   const { data: roles = [] } = useAdminRoles();
   const { data: serversResponse } = useAdminServers({ page: 1, limit: 200 });
   const servers = serversResponse?.servers ?? [];
@@ -152,16 +153,27 @@ function UsersPage() {
           <h1 className="text-2xl font-semibold text-slate-50">User Management</h1>
           <p className="text-sm text-slate-400">Create and manage administrator accounts.</p>
         </div>
-        <button
-          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
-          onClick={() => {
-            setIsCreateOpen(true);
-            setRoleSearch('');
-            setServerSearch('');
-          }}
-        >
-          Create user
-        </button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search users"
+            className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none sm:w-56"
+          />
+          <button
+            className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
+            onClick={() => {
+              setIsCreateOpen(true);
+              setRoleSearch('');
+              setServerSearch('');
+            }}
+          >
+            Create user
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -266,8 +278,12 @@ function UsersPage() {
         </div>
       ) : (
         <EmptyState
-          title="No users"
-          description="Create a user account to grant dashboard access."
+          title={search.trim() ? 'No users found' : 'No users'}
+          description={
+            search.trim()
+              ? 'Try a different username or email.'
+              : 'Create a user account to grant dashboard access.'
+          }
         />
       )}
       {isCreateOpen ? (

@@ -9,7 +9,7 @@ const normalizeBaseUrl = (value?: string) => {
 
 const apiClient = axios.create({
   baseURL: normalizeBaseUrl(import.meta.env.VITE_API_URL) || '',
-  timeout: 30000,
+  timeout: 10000, // 10 seconds - fail fast if something is wrong
   headers: {
     'Content-Type': 'application/json',
   },

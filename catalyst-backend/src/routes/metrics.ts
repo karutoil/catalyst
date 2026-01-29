@@ -9,13 +9,53 @@ export async function metricsRoutes(app: FastifyInstance) {
     "/servers/:serverId/metrics",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const startTime = Date.now();
       const { serverId } = request.params as { serverId: string };
       const userId = request.user.userId;
       const { hours, limit } = request.query as { hours?: string; limit?: string };
 
-      const server = await prisma.server.findUnique({
-        where: { id: serverId },
-      });
+      // Calculate time range upfront
+      const hoursBack = hours ? parseInt(hours) : 1;
+      const maxRecords = limit ? parseInt(limit) : 100;
+      const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+
+      // Run ALL queries in parallel - server, metrics, and access all at once
+      const queryStart = Date.now();
+      const [server, metrics, access] = await Promise.all([
+        prisma.server.findUnique({
+          where: { id: serverId },
+          select: { id: true, ownerId: true, suspendedAt: true, suspensionReason: true },
+        }),
+        prisma.serverMetrics.findMany({
+          where: {
+            serverId,
+            timestamp: { gte: since },
+          },
+          orderBy: { timestamp: "desc" },
+          take: maxRecords,
+          select: {
+            cpuPercent: true,
+            memoryUsageMb: true,
+            diskIoMb: true,
+            diskUsageMb: true,
+            networkRxBytes: true,
+            networkTxBytes: true,
+            timestamp: true,
+          },
+        }),
+        // Run permission check in parallel
+        prisma.serverAccess.findUnique({
+          where: {
+            userId_serverId: {
+              userId,
+              serverId,
+            },
+          },
+          select: { permissions: true },
+        }),
+      ]);
+      const queryTime = Date.now() - queryStart;
+      app.log.info({ serverId, queryMs: queryTime }, "Metrics query time");
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
@@ -29,33 +69,25 @@ export async function metricsRoutes(app: FastifyInstance) {
         });
       }
 
-      // Check permissions
-      const access = await prisma.serverAccess.findFirst({
-        where: {
-          serverId,
-          userId,
-          permissions: { has: "server.read" },
-        },
-      });
-
-      if (!access && server.ownerId !== userId) {
+      // Check permissions - user must be owner OR have explicit permission
+      if (server.ownerId !== userId && !access?.permissions?.includes("server.read")) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
-      // Calculate time range
-      const hoursBack = hours ? parseInt(hours) : 1;
-      const maxRecords = limit ? parseInt(limit) : 100;
-      const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+      // Return early if no metrics
+      if (metrics.length === 0) {
+        return reply.send({
+          success: true,
+          data: {
+            latest: null,
+            averages: null,
+            history: [],
+            count: 0,
+          },
+        });
+      }
 
-      const metrics = await prisma.serverMetrics.findMany({
-        where: {
-          serverId,
-          timestamp: { gte: since },
-        },
-        orderBy: { timestamp: "desc" },
-        take: maxRecords,
-      });
-
+      // Compute aggregations efficiently
       const normalizedMetrics = metrics.map((metric) => ({
         cpuPercent: metric.cpuPercent,
         memoryUsageMb: metric.memoryUsageMb,
@@ -66,23 +98,34 @@ export async function metricsRoutes(app: FastifyInstance) {
         timestamp: metric.timestamp,
       }));
 
-      // Calculate averages
-      const avg = metrics.length > 0 ? {
-        cpuPercent: metrics.reduce((sum, m) => sum + m.cpuPercent, 0) / metrics.length,
-        memoryUsageMb: Math.round(metrics.reduce((sum, m) => sum + m.memoryUsageMb, 0) / metrics.length),
-        diskIoMb: Math.round(metrics.reduce((sum, m) => sum + (m.diskIoMb ?? 0), 0) / metrics.length),
-        diskUsageMb: Math.round(metrics.reduce((sum, m) => sum + m.diskUsageMb, 0) / metrics.length),
-      } : null;
+      // Calculate averages with single pass
+      let sumCpu = 0, sumMemory = 0, sumDiskIo = 0, sumDiskUsage = 0;
+      for (const m of metrics) {
+        sumCpu += m.cpuPercent;
+        sumMemory += m.memoryUsageMb;
+        sumDiskIo += m.diskIoMb ?? 0;
+        sumDiskUsage += m.diskUsageMb;
+      }
 
-      // Get latest metrics
+      const avg = {
+        cpuPercent: Math.round((sumCpu / metrics.length) * 10) / 10,
+        memoryUsageMb: Math.round(sumMemory / metrics.length),
+        diskIoMb: Math.round(sumDiskIo / metrics.length),
+        diskUsageMb: Math.round(sumDiskUsage / metrics.length),
+      };
+
+      // Get latest metrics (first element since we fetched in descending order)
       const latest = normalizedMetrics[0] || null;
+
+      const totalTime = Date.now() - startTime;
+      app.log.info({ serverId, totalMs: totalTime }, "Total metrics endpoint time");
 
       reply.send({
         success: true,
         data: {
           latest,
           averages: avg,
-          history: normalizedMetrics.slice().reverse(),
+          history: normalizedMetrics.slice().reverse(), // Reverse for chronological order
           count: normalizedMetrics.length,
         },
       });
@@ -97,9 +140,45 @@ export async function metricsRoutes(app: FastifyInstance) {
       const { serverId } = request.params as { serverId: string };
       const userId = request.user.userId;
 
-      const server = await prisma.server.findUnique({
-        where: { id: serverId },
-      });
+      // Run queries in parallel
+      const [server, latest, access] = await Promise.all([
+        prisma.server.findUnique({
+          where: { id: serverId },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            ownerId: true,
+            allocatedMemoryMb: true,
+            allocatedCpuCores: true,
+            suspendedAt: true,
+            suspensionReason: true,
+          },
+        }),
+        prisma.serverMetrics.findFirst({
+          where: { serverId },
+          orderBy: { timestamp: "desc" },
+          select: {
+            cpuPercent: true,
+            memoryUsageMb: true,
+            diskIoMb: true,
+            diskUsageMb: true,
+            networkRxBytes: true,
+            networkTxBytes: true,
+            timestamp: true,
+          },
+        }),
+        // Run permission check in parallel
+        prisma.serverAccess.findUnique({
+          where: {
+            userId_serverId: {
+              userId,
+              serverId,
+            },
+          },
+          select: { permissions: true },
+        }),
+      ]);
 
       if (!server) {
         return reply.status(404).send({ error: "Server not found" });
@@ -113,24 +192,10 @@ export async function metricsRoutes(app: FastifyInstance) {
         });
       }
 
-      // Check permissions
-      const access = await prisma.serverAccess.findFirst({
-        where: {
-          serverId,
-          userId,
-          permissions: { has: "server.read" },
-        },
-      });
-
-      if (!access && server.ownerId !== userId) {
+      // Check permissions - user must be owner OR have explicit permission
+      if (server.ownerId !== userId && !access?.permissions?.includes("server.read")) {
         return reply.status(403).send({ error: "Forbidden" });
       }
-
-      // Get latest metric
-      const latest = await prisma.serverMetrics.findFirst({
-        where: { serverId },
-        orderBy: { timestamp: "desc" },
-      });
 
       if (!latest) {
         return reply.send({

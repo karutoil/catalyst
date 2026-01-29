@@ -17,7 +17,7 @@ export function useAdminHealth() {
   });
 }
 
-export function useAdminUsers(params?: { page?: number; limit?: number }) {
+export function useAdminUsers(params?: { page?: number; limit?: number; search?: string }) {
   return useQuery({
     queryKey: ['admin-users', params],
     queryFn: () => adminApi.listUsers(params),

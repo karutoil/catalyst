@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import fetch from 'node-fetch';
+import { renderAlertEmail, sendEmail } from './mailer';
 
 interface AlertConditions {
   cpuThreshold?: number;
@@ -11,7 +12,10 @@ interface AlertConditions {
 
 interface AlertActions {
   webhooks?: string[];
+  emails?: string[];
+  notifyOwner?: boolean;
   createAlert?: boolean;
+  cooldownMinutes?: number;
 }
 
 export class AlertService {
@@ -32,7 +36,13 @@ export class AlertService {
 
     // Check for alert conditions every 30 seconds
     this.checkInterval = setInterval(() => {
-      this.evaluateAlerts();
+      this.evaluateAlerts().catch((err) => {
+        this.logger.error({ err }, 'Failed to evaluate alerts');
+      });
+
+      this.retryFailedDeliveries().catch((err) => {
+        this.logger.error({ err }, 'Failed to retry failed alert deliveries');
+      });
     }, 30000);
 
     this.logger.info('Alert service started');
@@ -110,7 +120,8 @@ export class AlertService {
 
       // Check CPU threshold
       if (conditions.cpuThreshold && metrics.cpuPercent > conditions.cpuThreshold) {
-        await this.createAlert({
+        const alert = await this.createAlert({
+          ruleId: rule.id,
           serverId: rule.targetId,
           type: 'resource_threshold',
           severity: 'warning',
@@ -118,20 +129,26 @@ export class AlertService {
           message: `CPU usage is ${metrics.cpuPercent.toFixed(2)}%, exceeding threshold of ${conditions.cpuThreshold}%`,
           metadata: { cpu: metrics.cpuPercent, threshold: conditions.cpuThreshold },
         });
-        await this.executeActions(actions, {
-          alertType: 'resource_threshold',
-          resourceType: 'cpu',
-          value: metrics.cpuPercent,
-          threshold: conditions.cpuThreshold,
-          serverName: metrics.server.name,
-        });
+        if (alert) {
+          await this.executeActions(actions, {
+            alertType: 'resource_threshold',
+            resourceType: 'cpu',
+            value: metrics.cpuPercent,
+            threshold: conditions.cpuThreshold,
+            serverName: metrics.server.name,
+          }, alert);
+        }
       }
 
       // Check memory threshold
       if (conditions.memoryThreshold) {
-        const memoryPercent = (metrics.memoryUsageMb / metrics.server.allocatedMemoryMb) * 100;
+        const memoryPercent =
+          metrics.server.allocatedMemoryMb > 0
+            ? (metrics.memoryUsageMb / metrics.server.allocatedMemoryMb) * 100
+            : 0;
         if (memoryPercent > conditions.memoryThreshold) {
-          await this.createAlert({
+          const alert = await this.createAlert({
+            ruleId: rule.id,
             serverId: rule.targetId,
             type: 'resource_threshold',
             severity: 'warning',
@@ -139,13 +156,44 @@ export class AlertService {
             message: `Memory usage is ${memoryPercent.toFixed(2)}%, exceeding threshold of ${conditions.memoryThreshold}%`,
             metadata: { memory: memoryPercent, threshold: conditions.memoryThreshold },
           });
-          await this.executeActions(actions, {
-            alertType: 'resource_threshold',
-            resourceType: 'memory',
-            value: memoryPercent,
-            threshold: conditions.memoryThreshold,
-            serverName: metrics.server.name,
+          if (alert) {
+            await this.executeActions(actions, {
+              alertType: 'resource_threshold',
+              resourceType: 'memory',
+              value: memoryPercent,
+              threshold: conditions.memoryThreshold,
+              serverName: metrics.server.name,
+            }, alert);
+          }
+        }
+      }
+
+      if (conditions.diskThreshold) {
+        const diskPercent =
+          metrics.server.allocatedDiskMb > 0 ? (metrics.diskUsageMb / metrics.server.allocatedDiskMb) * 100 : 0;
+        if (diskPercent > conditions.diskThreshold) {
+          const alert = await this.createAlert({
+            ruleId: rule.id,
+            serverId: rule.targetId,
+            type: 'resource_threshold',
+            severity: 'warning',
+            title: `High Disk Usage on ${metrics.server.name}`,
+            message: `Disk usage is ${diskPercent.toFixed(2)}%, exceeding threshold of ${conditions.diskThreshold}%`,
+            metadata: { disk: diskPercent, threshold: conditions.diskThreshold },
           });
+          if (alert) {
+            await this.executeActions(
+              actions,
+              {
+                alertType: 'resource_threshold',
+                resourceType: 'disk',
+                value: diskPercent,
+                threshold: conditions.diskThreshold,
+                serverName: metrics.server.name,
+              },
+              alert,
+            );
+          }
         }
       }
     } else if (rule.target === 'node' && rule.targetId) {
@@ -160,7 +208,8 @@ export class AlertService {
 
       // Check CPU threshold
       if (conditions.cpuThreshold && metrics.cpuPercent > conditions.cpuThreshold) {
-        await this.createAlert({
+        const alert = await this.createAlert({
+          ruleId: rule.id,
           nodeId: rule.targetId,
           type: 'resource_threshold',
           severity: 'critical',
@@ -168,20 +217,23 @@ export class AlertService {
           message: `Node CPU usage is ${metrics.cpuPercent.toFixed(2)}%, exceeding threshold of ${conditions.cpuThreshold}%`,
           metadata: { cpu: metrics.cpuPercent, threshold: conditions.cpuThreshold },
         });
-        await this.executeActions(actions, {
-          alertType: 'resource_threshold',
-          resourceType: 'cpu',
-          value: metrics.cpuPercent,
-          threshold: conditions.cpuThreshold,
-          nodeName: metrics.node.name,
-        });
+        if (alert) {
+          await this.executeActions(actions, {
+            alertType: 'resource_threshold',
+            resourceType: 'cpu',
+            value: metrics.cpuPercent,
+            threshold: conditions.cpuThreshold,
+            nodeName: metrics.node.name,
+          }, alert);
+        }
       }
 
       // Check memory threshold
       if (conditions.memoryThreshold) {
-        const memoryPercent = (metrics.memoryUsageMb / metrics.memoryTotalMb) * 100;
+        const memoryPercent = metrics.memoryTotalMb > 0 ? (metrics.memoryUsageMb / metrics.memoryTotalMb) * 100 : 0;
         if (memoryPercent > conditions.memoryThreshold) {
-          await this.createAlert({
+          const alert = await this.createAlert({
+            ruleId: rule.id,
             nodeId: rule.targetId,
             type: 'resource_threshold',
             severity: 'critical',
@@ -189,13 +241,43 @@ export class AlertService {
             message: `Node memory usage is ${memoryPercent.toFixed(2)}%, exceeding threshold of ${conditions.memoryThreshold}%`,
             metadata: { memory: memoryPercent, threshold: conditions.memoryThreshold },
           });
-          await this.executeActions(actions, {
-            alertType: 'resource_threshold',
-            resourceType: 'memory',
-            value: memoryPercent,
-            threshold: conditions.memoryThreshold,
-            nodeName: metrics.node.name,
+          if (alert) {
+            await this.executeActions(actions, {
+              alertType: 'resource_threshold',
+              resourceType: 'memory',
+              value: memoryPercent,
+              threshold: conditions.memoryThreshold,
+              nodeName: metrics.node.name,
+            }, alert);
+          }
+        }
+      }
+
+      if (conditions.diskThreshold) {
+        const diskPercent = metrics.diskTotalMb > 0 ? (metrics.diskUsageMb / metrics.diskTotalMb) * 100 : 0;
+        if (diskPercent > conditions.diskThreshold) {
+          const alert = await this.createAlert({
+            ruleId: rule.id,
+            nodeId: rule.targetId,
+            type: 'resource_threshold',
+            severity: 'critical',
+            title: `High Disk Usage on Node ${metrics.node.name}`,
+            message: `Node disk usage is ${diskPercent.toFixed(2)}%, exceeding threshold of ${conditions.diskThreshold}%`,
+            metadata: { disk: diskPercent, threshold: conditions.diskThreshold },
           });
+          if (alert) {
+            await this.executeActions(
+              actions,
+              {
+                alertType: 'resource_threshold',
+                resourceType: 'disk',
+                value: diskPercent,
+                threshold: conditions.diskThreshold,
+                nodeName: metrics.node.name,
+              },
+              alert,
+            );
+          }
         }
       }
     }
@@ -229,7 +311,8 @@ export class AlertService {
       });
 
       if (!existingAlert) {
-        await this.createAlert({
+        const alert = await this.createAlert({
+          ruleId: rule.id,
           nodeId: node.id,
           type: 'node_offline',
           severity: 'critical',
@@ -238,11 +321,13 @@ export class AlertService {
           metadata: { lastSeenAt: node.lastSeenAt, offlineThreshold },
         });
 
-        await this.executeActions(actions, {
-          alertType: 'node_offline',
-          nodeName: node.name,
-          offlineMinutes: offlineThreshold,
-        });
+        if (alert) {
+          await this.executeActions(actions, {
+            alertType: 'node_offline',
+            nodeName: node.name,
+            offlineMinutes: offlineThreshold,
+          }, alert);
+        }
       }
     }
   }
@@ -270,7 +355,8 @@ export class AlertService {
       });
 
       if (!existingAlert) {
-        await this.createAlert({
+        const alert = await this.createAlert({
+          ruleId: rule.id,
           serverId: server.id,
           type: 'server_crashed',
           severity: 'critical',
@@ -279,12 +365,14 @@ export class AlertService {
           metadata: { crashCount: server.crashCount, maxCrashCount: server.maxCrashCount },
         });
 
-        await this.executeActions(actions, {
-          alertType: 'server_crashed',
-          serverName: server.name,
-          crashCount: server.crashCount,
-          maxCrashCount: server.maxCrashCount,
-        });
+        if (alert) {
+          await this.executeActions(actions, {
+            alertType: 'server_crashed',
+            serverName: server.name,
+            crashCount: server.crashCount,
+            maxCrashCount: server.maxCrashCount,
+          }, alert);
+        }
       }
     }
   }
@@ -293,6 +381,7 @@ export class AlertService {
    * Create an alert if it doesn't already exist
    */
   async createAlert(data: {
+    ruleId?: string;
     serverId?: string;
     nodeId?: string;
     type: string;
@@ -301,16 +390,17 @@ export class AlertService {
     message: string;
     metadata?: any;
   }) {
-    // Check for duplicate unresolved alerts in the last 5 minutes
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const cooldownMinutes = await this.resolveCooldownMinutes(data.ruleId);
+    const windowStart = new Date(Date.now() - cooldownMinutes * 60 * 1000);
     const existingAlert = await this.prisma.alert.findFirst({
       where: {
         ...(data.serverId ? { serverId: data.serverId } : {}),
         ...(data.nodeId ? { nodeId: data.nodeId } : {}),
+        ...(data.ruleId ? { ruleId: data.ruleId } : {}),
         type: data.type,
         title: data.title,
         resolved: false,
-        createdAt: { gt: fiveMinutesAgo },
+        createdAt: { gt: windowStart },
       },
     });
 
@@ -321,6 +411,7 @@ export class AlertService {
 
     const alert = await this.prisma.alert.create({
       data: {
+        ruleId: data.ruleId,
         serverId: data.serverId,
         nodeId: data.nodeId,
         type: data.type,
@@ -338,23 +429,274 @@ export class AlertService {
   /**
    * Execute alert actions (webhooks, etc.)
    */
-  async executeActions(actions: AlertActions, context: any) {
+  async executeActions(actions: AlertActions, context: any, alert: { id: string }) {
     if (actions.webhooks && actions.webhooks.length > 0) {
       for (const webhookUrl of actions.webhooks) {
-        try {
-          await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              timestamp: new Date().toISOString(),
-              ...context,
-            }),
-          });
-          this.logger.info(`Webhook sent to ${webhookUrl}`);
-        } catch (error) {
-          this.logger.error(error, `Failed to send webhook to ${webhookUrl}`);
-        }
+        await this.dispatchWebhook(alert.id, webhookUrl, context);
       }
+    }
+    if (actions.emails && actions.emails.length > 0) {
+      for (const email of actions.emails) {
+        await this.dispatchEmail(alert.id, email, context);
+      }
+    }
+    if (actions.notifyOwner) {
+      await this.dispatchOwnerEmail(alert.id, context);
+    }
+  }
+
+  private async resolveCooldownMinutes(ruleId?: string) {
+    if (!ruleId) {
+      return 5;
+    }
+    const rule = await this.prisma.alertRule.findUnique({
+      where: { id: ruleId },
+      select: { actions: true },
+    });
+    const actions = rule?.actions as AlertActions | undefined;
+    return actions?.cooldownMinutes && actions.cooldownMinutes > 0 ? actions.cooldownMinutes : 5;
+  }
+
+  private isDiscordWebhook(webhookUrl: string) {
+    return /discord\.com\/api\/webhooks/.test(webhookUrl);
+  }
+
+  private buildWebhookPayload(
+    webhookUrl: string,
+    context: any,
+    alert: { id: string; title: string; message: string; severity: string; type: string; createdAt: Date },
+  ) {
+    if (this.isDiscordWebhook(webhookUrl)) {
+      const severity = alert.severity.toUpperCase();
+      return {
+        content: `**${severity}** - ${alert.title}\n${alert.message}`,
+        embeds: [
+          {
+            title: alert.title,
+            description: alert.message,
+            color: alert.severity === 'critical' ? 0xef4444 : alert.severity === 'warning' ? 0xf59e0b : 0x22c55e,
+            fields: [
+              { name: 'Type', value: alert.type, inline: true },
+              { name: 'Severity', value: severity, inline: true },
+              { name: 'Created', value: alert.createdAt.toISOString(), inline: false },
+            ],
+            timestamp: alert.createdAt.toISOString(),
+          },
+        ],
+      };
+    }
+    return {
+      alertId: alert.id,
+      timestamp: new Date().toISOString(),
+      ...context,
+    };
+  }
+
+  private async dispatchWebhook(alertId: string, webhookUrl: string, context: any) {
+    const delivery = await this.prisma.alertDelivery.create({
+      data: { alertId, channel: 'webhook', target: webhookUrl, status: 'pending' },
+    });
+    try {
+      const alert = await this.prisma.alert.findUnique({ where: { id: alertId } });
+      if (!alert) {
+        throw new Error('Alert not found for webhook dispatch');
+      }
+      const payload = this.buildWebhookPayload(webhookUrl, context, alert);
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Webhook response ${response.status}: ${body}`);
+      }
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: { status: 'sent', attempts: delivery.attempts + 1, lastAttemptAt: new Date() },
+      });
+      this.logger.info(`Webhook sent to ${webhookUrl}`);
+    } catch (error) {
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: 'failed',
+          attempts: delivery.attempts + 1,
+          lastAttemptAt: new Date(),
+          lastError: error instanceof Error ? error.message : 'Webhook delivery failed',
+        },
+      });
+      this.logger.error(error, `Failed to send webhook to ${webhookUrl}`);
+    }
+  }
+
+  private async dispatchEmail(alertId: string, email: string, context: any) {
+    const delivery = await this.prisma.alertDelivery.create({
+      data: { alertId, channel: 'email', target: email, status: 'pending' },
+    });
+    try {
+      const alert = await this.prisma.alert.findUnique({ where: { id: alertId } });
+      if (!alert) {
+        throw new Error('Alert not found for email dispatch');
+      }
+      const alertUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/alerts`;
+      const emailContent = renderAlertEmail({
+        title: alert.title,
+        message: alert.message,
+        severity: alert.severity,
+        type: alert.type,
+        createdAt: alert.createdAt,
+        alertUrl,
+      });
+      await sendEmail({
+        to: email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+      });
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: { status: 'sent', attempts: delivery.attempts + 1, lastAttemptAt: new Date() },
+      });
+      this.logger.info(`Alert email sent to ${email}`);
+    } catch (error) {
+      await this.prisma.alertDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: 'failed',
+          attempts: delivery.attempts + 1,
+          lastAttemptAt: new Date(),
+          lastError: error instanceof Error ? error.message : 'Email delivery failed',
+        },
+      });
+      this.logger.error(error, `Failed to send alert email to ${email}`);
+    }
+  }
+
+  private async dispatchOwnerEmail(alertId: string, context: any) {
+    const alert = await this.prisma.alert.findUnique({
+      where: { id: alertId },
+      include: { server: { select: { ownerId: true } } },
+    });
+    if (!alert?.server?.ownerId) {
+      return;
+    }
+    const owner = await this.prisma.user.findUnique({ where: { id: alert.server.ownerId } });
+    if (!owner?.email) {
+      return;
+    }
+    await this.dispatchEmail(alertId, owner.email, context);
+  }
+
+  private async retryFailedDeliveries() {
+    const maxAttempts = 3;
+    const retryDelayMs = 5 * 60 * 1000;
+    const cutoff = new Date(Date.now() - retryDelayMs);
+    const deliveries = await this.prisma.alertDelivery.findMany({
+      where: {
+        status: 'failed',
+        attempts: { lt: maxAttempts },
+        OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lt: cutoff } }],
+      },
+      take: 50,
+    });
+    if (!deliveries.length) {
+      return;
+    }
+    for (const delivery of deliveries) {
+      const alert = await this.prisma.alert.findUnique({ where: { id: delivery.alertId } });
+      if (!alert) {
+        continue;
+      }
+      const retryContext = {
+        alertId: alert.id,
+        alertType: alert.type,
+        severity: alert.severity,
+        title: alert.title,
+        message: alert.message,
+        metadata: alert.metadata,
+        createdAt: alert.createdAt.toISOString(),
+      };
+      if (delivery.channel === 'webhook') {
+        await this.retryWebhookDelivery(delivery.id, delivery.target, retryContext);
+      } else if (delivery.channel === 'email') {
+        await this.retryEmailDelivery(delivery.id, delivery.target, alert);
+      }
+    }
+  }
+
+  private async retryWebhookDelivery(deliveryId: string, webhookUrl: string, context: any) {
+    try {
+      const alert = await this.prisma.alert.findUnique({ where: { id: context.alertId } });
+      if (!alert) {
+        throw new Error('Alert not found for webhook retry');
+      }
+      const payload = this.buildWebhookPayload(webhookUrl, context, alert);
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Webhook response ${response.status}: ${body}`);
+      }
+      await this.prisma.alertDelivery.update({
+        where: { id: deliveryId },
+        data: { status: 'sent', attempts: { increment: 1 }, lastAttemptAt: new Date(), lastError: null },
+      });
+      this.logger.info(`Retried webhook delivery to ${webhookUrl}`);
+    } catch (error) {
+      await this.prisma.alertDelivery.update({
+        where: { id: deliveryId },
+        data: {
+          status: 'failed',
+          attempts: { increment: 1 },
+          lastAttemptAt: new Date(),
+          lastError: error instanceof Error ? error.message : 'Webhook delivery failed',
+        },
+      });
+      this.logger.error(error, `Retry webhook failed for ${webhookUrl}`);
+    }
+  }
+
+  private async retryEmailDelivery(
+    deliveryId: string,
+    email: string,
+    alert: { title: string; message: string; severity: string; type: string; createdAt: Date },
+  ) {
+    try {
+      const alertUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/alerts`;
+      const emailContent = renderAlertEmail({
+        title: alert.title,
+        message: alert.message,
+        severity: alert.severity,
+        type: alert.type,
+        createdAt: alert.createdAt,
+        alertUrl,
+      });
+      await sendEmail({
+        to: email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+      });
+      await this.prisma.alertDelivery.update({
+        where: { id: deliveryId },
+        data: { status: 'sent', attempts: { increment: 1 }, lastAttemptAt: new Date(), lastError: null },
+      });
+      this.logger.info(`Retried alert email to ${email}`);
+    } catch (error) {
+      await this.prisma.alertDelivery.update({
+        where: { id: deliveryId },
+        data: {
+          status: 'failed',
+          attempts: { increment: 1 },
+          lastAttemptAt: new Date(),
+          lastError: error instanceof Error ? error.message : 'Email delivery failed',
+        },
+      });
+      this.logger.error(error, `Retry email failed for ${email}`);
     }
   }
 

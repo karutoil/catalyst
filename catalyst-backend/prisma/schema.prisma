@@ -64,6 +64,7 @@ model ServerAccess {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, serverId])
+  @@index([serverId, userId])
 }
 
 model ServerAccessInvite {
@@ -411,6 +412,8 @@ model NodeMetrics {
 
 model Alert {
   id          String   @id @default(cuid())
+  ruleId      String?
+  rule        AlertRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   serverId    String?
   server      Server?  @relation(fields: [serverId], references: [id], onDelete: Cascade)
   nodeId      String?
@@ -424,10 +427,12 @@ model Alert {
   resolvedAt  DateTime?
   resolvedBy  String?
   createdAt   DateTime @default(now())
+  deliveries  AlertDelivery[]
 
   @@index([serverId, resolved, createdAt])
   @@index([nodeId, resolved, createdAt])
   @@index([type, severity, resolved])
+  @@index([ruleId, createdAt])
 }
 
 model AlertRule {
@@ -442,7 +447,25 @@ model AlertRule {
   actions     Json     // Webhook URLs, notification methods
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  alerts      Alert[]
 
   @@index([enabled, type])
   @@index([target, targetId])
+}
+
+model AlertDelivery {
+  id            String   @id @default(cuid())
+  alertId       String
+  alert         Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  channel       String   // email, webhook
+  target        String
+  status        String   @default("pending") // pending, sent, failed
+  attempts      Int      @default(0)
+  lastAttemptAt DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([alertId, status])
+  @@index([channel, status])
 }

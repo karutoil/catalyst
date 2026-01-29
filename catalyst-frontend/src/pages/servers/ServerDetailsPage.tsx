@@ -2,13 +2,14 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react
 import { useNavigate, useParams } from 'react-router-dom';
 import { useServer } from '../../hooks/useServer';
 import { useServerMetrics } from '../../hooks/useServerMetrics';
-import { useServerMetricsHistory } from '../../hooks/useServerMetricsHistory';
+import { useServerMetricsHistory, type MetricsTimeRange } from '../../hooks/useServerMetricsHistory';
 import { formatBytes } from '../../utils/formatters';
 import { useWebSocketStore } from '../../stores/websocketStore';
 import ServerControls from '../../components/servers/ServerControls';
 import ServerStatusBadge from '../../components/servers/ServerStatusBadge';
 import ServerMetrics from '../../components/servers/ServerMetrics';
 import ServerMetricsTrends from '../../components/servers/ServerMetricsTrends';
+import MetricsTimeRangeSelector from '../../components/servers/MetricsTimeRangeSelector';
 import UpdateServerModal from '../../components/servers/UpdateServerModal';
 import TransferServerModal from '../../components/servers/TransferServerModal';
 import DeleteServerDialog from '../../components/servers/DeleteServerDialog';
@@ -77,7 +78,8 @@ function ServerDetailsPage() {
   const navigate = useNavigate();
   const { data: server, isLoading, isError } = useServer(serverId);
   const liveMetrics = useServerMetrics(serverId, server?.allocatedMemoryMb);
-  const { data: metricsHistory } = useServerMetricsHistory(serverId);
+  const [metricsTimeRange, setMetricsTimeRange] = useState<MetricsTimeRange>({ hours: 1, limit: 60, label: '1 hour' });
+  const { data: metricsHistory } = useServerMetricsHistory(serverId, metricsTimeRange);
   const { data: tasks = [], isLoading: tasksLoading } = useTasks(serverId);
   const { data: databases = [], isLoading: databasesLoading, isError: databasesError } =
     useServerDatabases(serverId);
@@ -1229,10 +1231,18 @@ function ServerDetailsPage() {
               </div>
             </div>
           </div>
+          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+            <div className="text-sm font-semibold text-slate-100">Historical metrics</div>
+            <MetricsTimeRangeSelector
+              selectedRange={metricsTimeRange}
+              onRangeChange={setMetricsTimeRange}
+            />
+          </div>
           <ServerMetricsTrends
             history={metricsHistory?.history ?? []}
             latest={metricsHistory?.latest ?? null}
             allocatedMemoryMb={server.allocatedMemoryMb ?? 0}
+            timeRangeLabel={metricsTimeRange.label}
           />
         </div>
       ) : null}

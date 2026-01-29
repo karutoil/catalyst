@@ -27,7 +27,7 @@ export const adminApi = {
     const { data } = await apiClient.get<AdminHealthResponse>('/api/admin/health');
     return data;
   },
-  listUsers: async (params?: { page?: number; limit?: number }) => {
+  listUsers: async (params?: { page?: number; limit?: number; search?: string }) => {
     const { data } = await apiClient.get<AdminUsersResponse>('/api/admin/users', { params });
     return data;
   },

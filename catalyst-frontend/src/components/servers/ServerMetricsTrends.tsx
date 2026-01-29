@@ -31,16 +31,15 @@ function ServerMetricsTrends({
   history,
   latest,
   allocatedMemoryMb = 0,
+  timeRangeLabel = 'Last 60 min',
 }: {
   history: ServerMetricsPoint[];
   latest: ServerMetricsPoint | null;
   allocatedMemoryMb?: number;
+  timeRangeLabel?: string;
 }) {
   const cpuHistory = history.map((point) => point.cpuPercent);
-  const memoryHistory = history.map((point) => {
-    if (!allocatedMemoryMb) return 0;
-    return Math.min(100, (point.memoryUsageMb / allocatedMemoryMb) * 100);
-  });
+  const memoryHistory = history.map((point) => point.memoryUsageMb);
   const diskHistory = history.map((point) => point.diskUsageMb);
   const diskIoHistory = history.map((point) => point.diskIoMb ?? 0);
   const netRxHistory = history.map((point) => toNumber(point.networkRxBytes));
@@ -58,11 +57,12 @@ function ServerMetricsTrends({
     {
       label: 'Memory',
       value: allocatedMemoryMb
-        ? `${Math.min(100, ((latest?.memoryUsageMb ?? 0) / allocatedMemoryMb) * 100).toFixed(1)}%`
+        ? `${(latest?.memoryUsageMb ?? 0).toFixed(0)} / ${allocatedMemoryMb} MB`
         : 'n/a',
       color: 'text-emerald-300',
       stroke: '#34d399',
       data: toChartData(memoryHistory),
+      formatTooltip: (value) => `${value.toFixed(0)} MB`,
     },
     {
       label: 'Disk Usage',
@@ -99,7 +99,7 @@ function ServerMetricsTrends({
               <div className="text-xs uppercase tracking-wide text-slate-400">{card.label}</div>
               <div className={`text-lg font-semibold ${card.color}`}>{card.value}</div>
             </div>
-            <div className="text-[11px] text-slate-500">Last 60 min</div>
+            <div className="text-[11px] text-slate-500">{timeRangeLabel}</div>
           </div>
           <div className="mt-3">
             <div className="h-24 w-full">

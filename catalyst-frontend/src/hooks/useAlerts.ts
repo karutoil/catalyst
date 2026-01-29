@@ -4,6 +4,6 @@ import { alertsApi } from '../services/api/alerts';
 export function useAlerts() {
   return useQuery({
     queryKey: ['alerts'],
-    queryFn: alertsApi.list,
+    queryFn: () => alertsApi.list({ resolved: false }),
   });
 }
