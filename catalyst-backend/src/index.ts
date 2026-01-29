@@ -24,6 +24,8 @@ import { taskRoutes } from "./routes/tasks";
 import { TaskScheduler } from "./services/task-scheduler";
 import { alertRoutes } from "./routes/alerts";
 import { AlertService } from "./services/alert-service";
+import { getSecuritySettings } from "./services/mailer";
+import { startAuditRetention } from "./services/audit-retention";
 
 const logger = pino({
   transport: {
@@ -47,6 +49,7 @@ const wsGateway = new WebSocketGateway(prisma, logger);
 const rbac = new RbacMiddleware(prisma);
 const taskScheduler = new TaskScheduler(prisma, logger);
 const alertService = new AlertService(prisma, logger);
+let auditRetentionInterval: ReturnType<typeof setInterval> | null = null;
 
 // Set task executor for the scheduler
 taskScheduler.setTaskExecutor({
@@ -277,12 +280,22 @@ async function bootstrap() {
     });
 
     // API Routes
-    await app.register(authRoutes, { 
+    await app.register(authRoutes, {
       prefix: "/api/auth",
-      config: { rateLimit: { max: 10, timeWindow: '1 minute' } } // Strict rate limit for auth
+      config: {
+        rateLimit: {
+          max: async () => {
+            const settings = await getSecuritySettings();
+            return settings.authRateLimitMax;
+          },
+          timeWindow: '1 minute',
+        },
+      },
     });
     await app.register(nodeRoutes, { prefix: "/api/nodes" });
-    await app.register(serverRoutes, { prefix: "/api/servers" });
+    await app.register(serverRoutes, {
+      prefix: "/api/servers",
+    });
     await app.register(templateRoutes, { prefix: "/api/templates" });
     await app.register(metricsRoutes, { prefix: "/api" });
     await app.register(backupRoutes, { prefix: "/api/servers" });
@@ -331,6 +344,9 @@ async function bootstrap() {
     // Start alert service
     await alertService.start();
     logger.info('Alert monitoring service started');
+
+    auditRetentionInterval = startAuditRetention(prisma, logger);
+    logger.info('Audit retention job scheduled');
   } catch (err) {
     logger.error(err, "Failed to start server");
     process.exit(1);

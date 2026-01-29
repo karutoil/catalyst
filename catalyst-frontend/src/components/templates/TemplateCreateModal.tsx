@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { TemplateVariable } from '../../types/template';
@@ -25,6 +25,7 @@ const createVariableDraft = (): VariableDraft => ({
 
 function TemplateCreateModal() {
   const [open, setOpen] = useState(false);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [author, setAuthor] = useState('');
@@ -67,7 +68,56 @@ function TemplateCreateModal() {
           .split(',')
           .map((rule) => rule.trim())
           .filter(Boolean),
-      }));
+        }));
+
+  const buildTemplatePayload = (payload: any) => {
+    const toNumber = (value: unknown, fallback: number) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    };
+    const ports = Array.isArray(payload.supportedPorts)
+      ? payload.supportedPorts
+          .map((port: unknown) => Number(port))
+          .filter((value: number) => Number.isFinite(value) && value > 0)
+      : [];
+    const variablesPayload = Array.isArray(payload.variables)
+      ? payload.variables
+          .map((variable: any) => ({
+            name: String(variable?.name ?? '').trim(),
+            description: variable?.description ? String(variable.description) : undefined,
+            default: String(variable?.default ?? ''),
+            required: Boolean(variable?.required),
+            input: variable?.input ?? 'text',
+            rules: Array.isArray(variable?.rules) ? variable.rules : undefined,
+          }))
+          .filter((variable: TemplateVariable) => variable.name)
+      : [];
+
+    return {
+      name: String(payload.name ?? ''),
+      description: payload.description ? String(payload.description) : undefined,
+      author: String(payload.author ?? ''),
+      version: String(payload.version ?? ''),
+      image: String(payload.image ?? ''),
+      installImage: payload.installImage ? String(payload.installImage) : undefined,
+      startup: String(payload.startup ?? ''),
+      stopCommand: String(payload.stopCommand ?? ''),
+      sendSignalTo: payload.sendSignalTo === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM',
+      variables: variablesPayload,
+      installScript: payload.installScript ? String(payload.installScript) : undefined,
+      supportedPorts: ports.length ? ports : [25565],
+      allocatedMemoryMb: toNumber(payload.allocatedMemoryMb, 1024),
+      allocatedCpuCores: toNumber(payload.allocatedCpuCores, 2),
+      features: {
+        ...(payload.features ?? {}),
+        iconUrl: payload.features?.iconUrl ? String(payload.features.iconUrl) : undefined,
+        ...(payload.features?.configFile ? { configFile: String(payload.features.configFile) } : {}),
+        ...(Array.isArray(payload.features?.configFiles)
+          ? { configFiles: payload.features.configFiles }
+          : {}),
+      },
+    };
+  };
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -162,22 +212,52 @@ function TemplateCreateModal() {
     setVariables(importedVariables.length ? importedVariables : [createVariableDraft()]);
   };
 
-  const handleImportFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result || ''));
-        applyTemplateImport(parsed);
-      } catch (error) {
-        setImportError('Failed to parse JSON file');
-      }
-    };
-    reader.onerror = () => {
-      setImportError('Unable to read file');
-    };
-    reader.readAsText(file);
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+    setImportError('');
+    if (files.length === 1) {
+      setOpen(true);
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result || ''));
+          applyTemplateImport(parsed);
+        } catch (error) {
+          setImportError('Failed to parse JSON file');
+        }
+      };
+      reader.onerror = () => {
+        setImportError('Unable to read file');
+      };
+      reader.readAsText(files[0]);
+      event.target.value = '';
+      return;
+    }
+
+    setOpen(false);
+    const results = await Promise.all(
+      files.map(async (file) => {
+        try {
+          const text = await file.text();
+          const parsed = JSON.parse(text);
+          const payload = buildTemplatePayload(parsed);
+          await templatesApi.create(payload);
+          return { ok: true };
+        } catch (error) {
+          return { ok: false };
+        }
+      }),
+    );
+    const successCount = results.filter((result) => result.ok).length;
+    const failureCount = results.length - successCount;
+    if (successCount) {
+      notifySuccess(`Imported ${successCount} template${successCount === 1 ? '' : 's'}`);
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+    }
+    if (failureCount) {
+      notifyError(`${failureCount} template${failureCount === 1 ? '' : 's'} failed to import`);
+    }
     event.target.value = '';
   };
 
@@ -195,15 +275,31 @@ function TemplateCreateModal() {
 
   return (
     <div>
-      <button
-        className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
-        onClick={() => {
-          setImportError('');
-          setOpen(true);
-        }}
-      >
-        New Template
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
+          onClick={() => {
+            setImportError('');
+            setOpen(true);
+          }}
+        >
+          New Template
+        </button>
+        <button
+          className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
+          onClick={() => importFileRef.current?.click()}
+        >
+          Import JSON
+        </button>
+        <input
+          ref={importFileRef}
+          type="file"
+          accept="application/json,.json"
+          onChange={handleImportFile}
+          multiple
+          className="hidden"
+        />
+      </div>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-xl flex flex-col">

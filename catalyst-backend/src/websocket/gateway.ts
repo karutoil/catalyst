@@ -41,12 +41,22 @@ export class WebSocketGateway {
   private clientCommandCounters = new Map<string, { count: number; resetAt: number }>();
   private consoleResumeTimestamps = new Map<string, number>();
   private readonly consoleOutputLimit = { max: 200, windowMs: 1000 };
-  private readonly consoleInputLimit = { max: 10, windowMs: 1000 };
+  private consoleInputLimit = { max: 10, windowMs: 1000 };
   private readonly autoRestartingServers = new Set<string>();
 
   constructor(private prisma: PrismaClient, logger: pino.Logger) {
     this.logger = logger.child({ component: "WebSocketGateway" });
     this.startHeartbeatCheck();
+    this.refreshConsoleLimits().catch((err) =>
+      this.logger.warn({ err }, "Failed to load console rate limits")
+    );
+  }
+
+  private async refreshConsoleLimits() {
+    const settings = await this.prisma.systemSetting.findUnique({ where: { id: "security" } });
+    if (settings?.consoleRateLimitMax && settings.consoleRateLimitMax > 0) {
+      this.consoleInputLimit = { ...this.consoleInputLimit, max: settings.consoleRateLimitMax };
+    }
   }
 
   async handleConnection(socket: any, request: FastifyRequest) {
@@ -996,6 +1006,11 @@ export class WebSocketGateway {
     const now = Date.now();
     const windowMs = this.consoleInputLimit.windowMs;
     const limit = this.consoleInputLimit.max;
+    if (now % windowMs < 25) {
+      this.refreshConsoleLimits().catch((err) =>
+        this.logger.warn({ err }, "Failed to refresh console rate limits")
+      );
+    }
     const existing = this.clientCommandCounters.get(clientId);
     if (!existing || now >= existing.resetAt) {
       this.clientCommandCounters.set(clientId, { count: 1, resetAt: now + windowMs });

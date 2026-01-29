@@ -2,7 +2,13 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { createAuditLog } from '../middleware/audit';
-import { getSmtpSettings, upsertSmtpSettings } from '../services/mailer';
+import {
+  DEFAULT_SECURITY_SETTINGS,
+  getSecuritySettings,
+  getSmtpSettings,
+  upsertSecuritySettings,
+  upsertSmtpSettings,
+} from '../services/mailer';
 import { summarizePool } from '../utils/ipam';
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -534,7 +540,22 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
+      const { search } = request.query as {
+        search?: string;
+      };
+
+      const searchQuery = typeof search === 'string' ? search.trim() : '';
+      const where = searchQuery
+        ? {
+            OR: [
+              { name: { contains: searchQuery, mode: 'insensitive' } },
+              { hostname: { contains: searchQuery, mode: 'insensitive' } },
+            ],
+          }
+        : undefined;
+
       const nodes = await prisma.node.findMany({
+        where,
         include: {
           location: true,
           servers: {
@@ -579,15 +600,28 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
-      const { page = 1, limit = 20, status } = request.query as {
+      const { page = 1, limit = 20, status, search } = request.query as {
         page?: number;
         limit?: number;
         status?: string;
+        search?: string;
       };
 
       const skip = (Number(page) - 1) * Number(limit);
 
-      const where = status ? { status } : {};
+      const searchQuery = typeof search === 'string' ? search.trim() : '';
+      const where = {
+        ...(status ? { status } : {}),
+        ...(searchQuery
+          ? {
+              OR: [
+                { name: { contains: searchQuery, mode: 'insensitive' } },
+                { id: { contains: searchQuery, mode: 'insensitive' } },
+                { node: { name: { contains: searchQuery, mode: 'insensitive' } } },
+              ],
+            }
+          : {}),
+      };
 
       const [servers, total] = await Promise.all([
         prisma.server.findMany({
@@ -720,6 +754,252 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   );
 
+  // Export audit logs (admin only)
+  app.get(
+    '/audit-logs/export',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const {
+        userId,
+        action,
+        resource,
+        from,
+        to,
+        format = 'csv',
+      } = request.query as {
+        userId?: string;
+        action?: string;
+        resource?: string;
+        from?: string;
+        to?: string;
+        format?: string;
+      };
+
+      const where: any = {};
+      if (userId) where.userId = userId;
+      if (action) where.action = { contains: action };
+      if (resource) where.resource = resource;
+      if (from || to) {
+        const parsedFrom = from ? new Date(from) : undefined;
+        const parsedTo = to ? new Date(to) : undefined;
+        if (parsedFrom && Number.isNaN(parsedFrom.getTime())) {
+          return reply.status(400).send({ error: 'Invalid from timestamp' });
+        }
+        if (parsedTo && Number.isNaN(parsedTo.getTime())) {
+          return reply.status(400).send({ error: 'Invalid to timestamp' });
+        }
+        where.timestamp = {
+          ...(parsedFrom ? { gte: parsedFrom } : {}),
+          ...(parsedTo ? { lte: parsedTo } : {}),
+        };
+      }
+
+      const logs = await prisma.auditLog.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 2000,
+      });
+
+      if (format !== 'csv' && format !== 'json') {
+        return reply.status(400).send({ error: 'Invalid export format' });
+      }
+
+      if (format === 'json') {
+        reply.type('application/json').send({ logs });
+        return;
+      }
+
+      const rows = ['id,timestamp,action,resource,resourceId,userId,username,email,details'];
+      for (const log of logs) {
+        const details = log.details ? JSON.stringify(log.details).replace(/"/g, '""') : '';
+        rows.push(
+          [
+            log.id,
+            log.timestamp.toISOString(),
+            log.action,
+            log.resource,
+            log.resourceId ?? '',
+            log.userId ?? '',
+            log.user?.username ?? '',
+            log.user?.email ?? '',
+            `"${details}"`,
+          ].join(','),
+        );
+      }
+      reply.type('text/csv').send(rows.join('\n'));
+    }
+  );
+
+  // Security settings (admin only)
+  app.get(
+    '/security-settings',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const settings = await getSecuritySettings();
+      reply.send({ success: true, data: settings });
+    }
+  );
+
+  app.put(
+    '/security-settings',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const {
+        authRateLimitMax = DEFAULT_SECURITY_SETTINGS.authRateLimitMax,
+        fileRateLimitMax = DEFAULT_SECURITY_SETTINGS.fileRateLimitMax,
+        consoleRateLimitMax = DEFAULT_SECURITY_SETTINGS.consoleRateLimitMax,
+        lockoutMaxAttempts = DEFAULT_SECURITY_SETTINGS.lockoutMaxAttempts,
+        lockoutWindowMinutes = DEFAULT_SECURITY_SETTINGS.lockoutWindowMinutes,
+        lockoutDurationMinutes = DEFAULT_SECURITY_SETTINGS.lockoutDurationMinutes,
+        auditRetentionDays = DEFAULT_SECURITY_SETTINGS.auditRetentionDays,
+      } = request.body as Partial<typeof DEFAULT_SECURITY_SETTINGS>;
+
+      const numericFields = [
+        authRateLimitMax,
+        fileRateLimitMax,
+        consoleRateLimitMax,
+        lockoutMaxAttempts,
+        lockoutWindowMinutes,
+        lockoutDurationMinutes,
+        auditRetentionDays,
+      ];
+      if (numericFields.some((value) => !Number.isFinite(value) || Number(value) <= 0)) {
+        return reply.status(400).send({ error: 'Security settings must be positive numbers' });
+      }
+
+      await upsertSecuritySettings({
+        authRateLimitMax: Number(authRateLimitMax),
+        fileRateLimitMax: Number(fileRateLimitMax),
+        consoleRateLimitMax: Number(consoleRateLimitMax),
+        lockoutMaxAttempts: Number(lockoutMaxAttempts),
+        lockoutWindowMinutes: Number(lockoutWindowMinutes),
+        lockoutDurationMinutes: Number(lockoutDurationMinutes),
+        auditRetentionDays: Number(auditRetentionDays),
+      });
+
+      await createAuditLog(user.userId, {
+        action: 'security.settings.update',
+        resource: 'system',
+        details: {
+          authRateLimitMax,
+          fileRateLimitMax,
+          consoleRateLimitMax,
+          lockoutMaxAttempts,
+          lockoutWindowMinutes,
+          lockoutDurationMinutes,
+          auditRetentionDays,
+        },
+      });
+
+      reply.send({ success: true });
+    }
+  );
+
+  // Auth lockouts (admin only)
+  app.get(
+    '/auth-lockouts',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { page = 1, limit = 20, search } = request.query as {
+        page?: number;
+        limit?: number;
+        search?: string;
+      };
+      const searchQuery = typeof search === 'string' ? search.trim() : '';
+      const where = searchQuery
+        ? {
+            OR: [
+              { email: { contains: searchQuery, mode: 'insensitive' } },
+              { ipAddress: { contains: searchQuery, mode: 'insensitive' } },
+            ],
+          }
+        : undefined;
+
+      const skip = (Number(page) - 1) * Number(limit);
+      const [lockouts, total] = await Promise.all([
+        prisma.authLockout.findMany({
+          where,
+          orderBy: { updatedAt: 'desc' },
+          skip,
+          take: Number(limit),
+        }),
+        prisma.authLockout.count({ where }),
+      ]);
+
+      reply.send({
+        lockouts,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / Number(limit)),
+        },
+      });
+    }
+  );
+
+  app.delete(
+    '/auth-lockouts/:lockoutId',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { lockoutId } = request.params as { lockoutId: string };
+      const existing = await prisma.authLockout.findUnique({ where: { id: lockoutId } });
+      if (!existing) {
+        return reply.status(404).send({ error: 'Lockout not found' });
+      }
+
+      await prisma.authLockout.delete({ where: { id: lockoutId } });
+
+      await createAuditLog(user.userId, {
+        action: 'auth.lockout.clear',
+        resource: 'auth_lockout',
+        resourceId: lockoutId,
+        details: { email: existing.email, ipAddress: existing.ipAddress },
+      });
+
+      reply.send({ success: true });
+    }
+  );
+
   // System health check (admin only)
   app.get(
     '/health',
@@ -752,7 +1032,7 @@ export async function adminRoutes(app: FastifyInstance) {
           id: true,
           name: true,
           isOnline: true,
-          lastHeartbeat: true,
+          lastSeenAt: true,
         },
       });
 
@@ -761,9 +1041,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
       // Check for stale nodes (no heartbeat in 5 minutes)
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      const staleNodes = nodes.filter(
-        (n) => n.lastHeartbeat && n.lastHeartbeat < fiveMinutesAgo
-      );
+      const staleNodes = nodes.filter((n) => n.lastSeenAt && n.lastSeenAt < fiveMinutesAgo);
 
       reply.send({
         status: dbHealthy && offlineNodes === 0 ? 'healthy' : 'degraded',

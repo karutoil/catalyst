@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { Template } from '../../types/template';
+import TemplateDeleteDialog from './TemplateDeleteDialog';
 
 type Props = {
   template: Template;
@@ -34,12 +35,19 @@ function TemplateCard({ template }: Props) {
             </div>
           </div>
         </div>
-        <Link
-          to={`/admin/templates/${template.id}`}
-          className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
-        >
-          View
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/admin/templates/${template.id}`}
+            className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
+          >
+            View
+          </Link>
+          <TemplateDeleteDialog
+            templateId={template.id}
+            templateName={template.name}
+            buttonClassName="rounded-md border border-rose-700 px-3 py-1 text-xs font-semibold text-rose-200 hover:border-rose-500"
+          />
+        </div>
       </div>
       <div className="mt-3 text-xs text-slate-400 line-clamp-2">{description}</div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-300">

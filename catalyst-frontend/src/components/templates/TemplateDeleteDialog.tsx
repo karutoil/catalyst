@@ -1,0 +1,72 @@
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { templatesApi } from '../../services/api/templates';
+import { notifyError, notifySuccess } from '../../utils/notify';
+
+type Props = {
+  templateId: string;
+  templateName: string;
+  onDeleted?: () => void;
+  buttonClassName?: string;
+};
+
+function TemplateDeleteDialog({ templateId, templateName, onDeleted, buttonClassName }: Props) {
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => templatesApi.remove(templateId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      queryClient.invalidateQueries({ queryKey: ['template', templateId] });
+      notifySuccess('Template deleted');
+      setOpen(false);
+      onDeleted?.();
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to delete template';
+      notifyError(message);
+    },
+  });
+
+  return (
+    <div>
+      <button
+        className={
+          buttonClassName ||
+          'rounded-md bg-rose-700 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-rose-600'
+        }
+        onClick={() => setOpen(true)}
+      >
+        Delete
+      </button>
+      {open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-950 p-6 shadow-xl">
+            <div className="text-lg font-semibold text-slate-100">Delete template</div>
+            <p className="mt-2 text-sm text-slate-300">
+              Are you sure you want to delete <span className="font-semibold">{templateName}</span>? This
+              action cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2 text-xs">
+              <button
+                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                onClick={() => setOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-md bg-rose-700 px-4 py-2 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
+                onClick={() => mutation.mutate()}
+                disabled={mutation.isPending}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default TemplateDeleteDialog;

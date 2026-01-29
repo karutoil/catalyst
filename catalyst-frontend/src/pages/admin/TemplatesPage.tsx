@@ -5,8 +5,7 @@ function AdminTemplatesPage() {
   return (
     <div className="space-y-4">
       <AdminTabs />
-      <h1 className="text-2xl font-semibold text-slate-50">Templates</h1>
-      <TemplatesPage hideHeader />
+      <TemplatesPage />
     </div>
   );
 }

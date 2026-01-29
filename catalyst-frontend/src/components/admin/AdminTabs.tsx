@@ -5,7 +5,10 @@ const tabs = [
   { to: '/admin/servers', label: 'Servers' },
   { to: '/admin/nodes', label: 'Nodes' },
   { to: '/admin/templates', label: 'Templates' },
+  { to: '/admin/database', label: 'Database' },
+  { to: '/admin/network', label: 'Network' },
   { to: '/admin/system', label: 'System' },
+  { to: '/admin/security', label: 'Security' },
   { to: '/admin/audit-logs', label: 'Audit Logs' },
 ];
 

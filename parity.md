@@ -128,12 +128,12 @@ Catalyst is missing several core Wings-equivalent features across backend, agent
 
 ### Phase 10 — Security & Rate Limiting Hardening
 **Backend**
-- [ ] Expand rate limit policies per endpoint group (auth, file ops, console).
-- [ ] Brute-force protection with lockout/backoff.
-- [ ] Audit log retention policy and export.
+- [x] Expand rate limit policies per endpoint group (auth, file ops, console).
+- [x] Brute-force protection with lockout/backoff.
+- [x] Audit log retention policy and export.
 
 **Frontend**
-- [ ] Admin security settings page for rate limits and lockout visibility.
+- [x] Admin security settings page for rate limits and lockout visibility.
 
 ## Notes & Considerations
 - Maintain backward compatibility with existing routes and clients; add new fields as optional.

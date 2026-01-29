@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
 import AdminTabs from '../../components/admin/AdminTabs';
 import EmptyState from '../../components/shared/EmptyState';
+import Button from '../../components/ui/button';
+import Input from '../../components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import { useAuditLogs } from '../../hooks/useAdmin';
+import { adminApi } from '../../services/api/admin';
 
 const pageSize = 50;
 
@@ -46,34 +56,34 @@ function AuditLogsPage() {
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
         <label className="text-xs text-slate-300">
           Action contains
-          <input
+          <Input
             value={action}
             onChange={(event) => setAction(event.target.value)}
             placeholder="server.create"
-            className="mt-1 w-48 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+            className="mt-1 w-48"
           />
         </label>
         <label className="text-xs text-slate-300">
           Resource
-          <input
+          <Input
             value={resource}
             onChange={(event) => setResource(event.target.value)}
             placeholder="server"
-            className="mt-1 w-40 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+            className="mt-1 w-40"
           />
         </label>
         <label className="text-xs text-slate-300">
           User ID
-          <input
+          <Input
             value={userId}
             onChange={(event) => setUserId(event.target.value)}
             placeholder="cuid"
-            className="mt-1 w-48 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+            className="mt-1 w-48"
           />
         </label>
         <label className="text-xs text-slate-300">
           From
-          <input
+          <Input
             type="datetime-local"
             value={from}
             onChange={(event) => {
@@ -81,12 +91,12 @@ function AuditLogsPage() {
               setRange('');
               setPage(1);
             }}
-            className="mt-1 w-48 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+            className="mt-1 w-48"
           />
         </label>
         <label className="text-xs text-slate-300">
           To
-          <input
+          <Input
             type="datetime-local"
             value={to}
             onChange={(event) => {
@@ -94,38 +104,42 @@ function AuditLogsPage() {
               setRange('');
               setPage(1);
             }}
-            className="mt-1 w-48 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+            className="mt-1 w-48"
           />
         </label>
         <label className="text-xs text-slate-300">
           Quick range
-          <select
-            value={range}
-            onChange={(event) => {
-              const next = event.target.value;
-              setRange(next);
-              if (!next) return;
+          <Select
+            value={range || 'custom'}
+            onValueChange={(next) => {
+              const value = next === 'custom' ? '' : next;
+              setRange(value);
+              if (!value) return;
               const now = new Date();
               const nextFrom = new Date(now);
-              if (next === '1h') nextFrom.setHours(now.getHours() - 1);
-              if (next === '6h') nextFrom.setHours(now.getHours() - 6);
-              if (next === '24h') nextFrom.setHours(now.getHours() - 24);
-              if (next === '7d') nextFrom.setDate(now.getDate() - 7);
+              if (value === '1h') nextFrom.setHours(now.getHours() - 1);
+              if (value === '6h') nextFrom.setHours(now.getHours() - 6);
+              if (value === '24h') nextFrom.setHours(now.getHours() - 24);
+              if (value === '7d') nextFrom.setDate(now.getDate() - 7);
               setFrom(nextFrom.toISOString().slice(0, 16));
               setTo(now.toISOString().slice(0, 16));
               setPage(1);
             }}
-            className="mt-1 w-40 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
           >
-            <option value="">Custom</option>
-            <option value="1h">Last 1h</option>
-            <option value="6h">Last 6h</option>
-            <option value="24h">Last 24h</option>
-            <option value="7d">Last 7d</option>
-          </select>
+            <SelectTrigger className="mt-1 w-40">
+              <SelectValue placeholder="Custom" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="custom">Custom</SelectItem>
+              <SelectItem value="1h">Last 1h</SelectItem>
+              <SelectItem value="6h">Last 6h</SelectItem>
+              <SelectItem value="24h">Last 24h</SelectItem>
+              <SelectItem value="7d">Last 7d</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
-        <button
-          className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-700"
+        <Button
+          className="rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-700 hover:bg-slate-900"
           onClick={() => {
             setAction('');
             setResource('');
@@ -137,7 +151,31 @@ function AuditLogsPage() {
           }}
         >
           Clear filters
-        </button>
+        </Button>
+        <Button
+          className="rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-700 hover:bg-slate-900"
+          onClick={async () => {
+            const payload = await adminApi.exportAuditLogs({
+              action: action || undefined,
+              resource: resource || undefined,
+              userId: userId || undefined,
+              from: from ? new Date(from).toISOString() : undefined,
+              to: to ? new Date(to).toISOString() : undefined,
+              format: 'csv',
+            });
+            const blob = new Blob([payload], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `audit-logs-${Date.now()}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Export CSV
+        </Button>
       </div>
 
       {isLoading ? (

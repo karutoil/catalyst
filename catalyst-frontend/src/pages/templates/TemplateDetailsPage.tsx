@@ -1,12 +1,14 @@
 import { useMemo } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTemplate } from '../../hooks/useTemplates';
 import TemplateVariablesList from '../../components/templates/TemplateVariablesList';
 import { useAuthStore } from '../../stores/authStore';
 import TemplateEditModal from '../../components/templates/TemplateEditModal';
+import TemplateDeleteDialog from '../../components/templates/TemplateDeleteDialog';
 
 function TemplateDetailsPage() {
   const { templateId } = useParams();
+  const navigate = useNavigate();
   const { data: template, isLoading, isError } = useTemplate(templateId);
   const { user } = useAuthStore();
   const isAdmin = useMemo(
@@ -66,6 +68,12 @@ function TemplateDetailsPage() {
             {isAdmin ? (
               <>
                 <TemplateEditModal template={template} />
+                <TemplateDeleteDialog
+                  templateId={template.id}
+                  templateName={template.name}
+                  onDeleted={() => navigate('/admin/templates')}
+                  buttonClassName="rounded-md border border-rose-700 px-3 py-1 text-xs font-semibold text-rose-200 hover:border-rose-500"
+                />
                 <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
                   Admin
                 </span>

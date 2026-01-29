@@ -98,6 +98,13 @@ model SystemSetting {
   smtpPool           Boolean  @default(false)
   smtpMaxConnections Int?
   smtpMaxMessages    Int?
+  authRateLimitMax         Int?
+  fileRateLimitMax         Int?
+  consoleRateLimitMax      Int?
+  lockoutMaxAttempts       Int?
+  lockoutWindowMinutes     Int?
+  lockoutDurationMinutes   Int?
+  auditRetentionDays       Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
@@ -372,6 +379,23 @@ model AuditLog {
   timestamp DateTime @default(now())
 
   @@index([userId, timestamp])
+}
+
+model AuthLockout {
+  id            String   @id @default(cuid())
+  email         String
+  ipAddress     String
+  userAgent     String?
+  failureCount  Int      @default(0)
+  firstFailedAt DateTime
+  lastFailedAt  DateTime
+  lockedUntil   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([email, ipAddress])
+  @@index([email])
+  @@index([lockedUntil])
 }
 
 // ============================================================================

@@ -17,10 +17,13 @@ import TemplateDetailsPage from './pages/templates/TemplateDetailsPage';
 import AdminTemplatesPage from './pages/admin/TemplatesPage';
 import AdminNodesPage from './pages/admin/NodesPage';
 import AdminServersPage from './pages/admin/ServersPage';
+import NetworkPage from './pages/admin/NetworkPage';
+import DatabasePage from './pages/admin/DatabasePage';
 import AlertsPage from './pages/alerts/AlertsPage';
 import UsersPage from './pages/admin/UsersPage';
 import SystemPage from './pages/admin/SystemPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
+import SecurityPage from './pages/admin/SecurityPage';
 import InvitesPage from './pages/InvitesPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -101,10 +104,34 @@ function App() {
             }
           />
           <Route
+            path="admin/database"
+            element={
+              <ProtectedRoute requireAdmin>
+                <DatabasePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/network"
+            element={
+              <ProtectedRoute requireAdmin>
+                <NetworkPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="admin/system"
             element={
               <ProtectedRoute requireAdmin>
                 <SystemPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/security"
+            element={
+              <ProtectedRoute requireAdmin>
+                <SecurityPage />
               </ProtectedRoute>
             }
           />

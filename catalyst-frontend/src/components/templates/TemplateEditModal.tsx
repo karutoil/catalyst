@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Template, TemplateVariable } from '../../types/template';
 import { templatesApi } from '../../services/api/templates';
@@ -24,6 +25,7 @@ const createVariableDraft = (variable?: TemplateVariable): VariableDraft => ({
 
 function TemplateEditModal({ template }: { template: Template }) {
   const [open, setOpen] = useState(false);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
   const [author, setAuthor] = useState(template.author);
@@ -49,6 +51,7 @@ function TemplateEditModal({ template }: { template: Template }) {
       ? template.variables.map((variable) => createVariableDraft(variable))
       : [createVariableDraft()],
   );
+  const [importError, setImportError] = useState('');
   const queryClient = useQueryClient();
 
   const parsedPorts = useMemo(
@@ -76,6 +79,7 @@ function TemplateEditModal({ template }: { template: Template }) {
       }));
 
   const resetFromTemplate = () => {
+    setImportError('');
     setName(template.name);
     setDescription(template.description ?? '');
     setAuthor(template.author);
@@ -99,6 +103,69 @@ function TemplateEditModal({ template }: { template: Template }) {
         ? template.variables.map((variable) => createVariableDraft(variable))
         : [createVariableDraft()],
     );
+  };
+
+  const applyTemplateImport = (payload: any) => {
+    if (!payload || typeof payload !== 'object') {
+      setImportError('Invalid template JSON');
+      return;
+    }
+    setImportError('');
+    setName(String(payload.name ?? ''));
+    setDescription(String(payload.description ?? ''));
+    setAuthor(String(payload.author ?? ''));
+    setVersion(String(payload.version ?? ''));
+    setImage(String(payload.image ?? ''));
+    setInstallImage(String(payload.installImage ?? ''));
+    setStartup(String(payload.startup ?? ''));
+    setStopCommand(String(payload.stopCommand ?? ''));
+    setSendSignalTo(payload.sendSignalTo === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM');
+    setInstallScript(String(payload.installScript ?? ''));
+    setConfigFile(String(payload.features?.configFile ?? ''));
+    setConfigFiles(
+      Array.isArray(payload.features?.configFiles)
+        ? payload.features.configFiles
+        : payload.features?.configFile
+          ? [String(payload.features.configFile)]
+          : [],
+    );
+    setSupportedPorts(
+      Array.isArray(payload.supportedPorts) ? payload.supportedPorts.join(', ') : '25565',
+    );
+    setAllocatedMemoryMb(payload.allocatedMemoryMb ? String(payload.allocatedMemoryMb) : '1024');
+    setAllocatedCpuCores(payload.allocatedCpuCores ? String(payload.allocatedCpuCores) : '2');
+    setIconUrl(String(payload.features?.iconUrl ?? ''));
+    const importedVariables = Array.isArray(payload.variables)
+      ? payload.variables.map((variable: any) => ({
+          name: String(variable?.name ?? ''),
+          description: String(variable?.description ?? ''),
+          defaultValue: String(variable?.default ?? ''),
+          required: Boolean(variable?.required),
+          input: variable?.input ?? 'text',
+          rules: Array.isArray(variable?.rules) ? variable.rules.join(', ') : '',
+        }))
+      : [];
+    setVariables(importedVariables.length ? importedVariables : [createVariableDraft()]);
+  };
+
+  const handleImportFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportError('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || ''));
+        applyTemplateImport(parsed);
+      } catch (error) {
+        setImportError('Failed to parse JSON file');
+      }
+    };
+    reader.onerror = () => {
+      setImportError('Unable to read file');
+    };
+    reader.readAsText(file);
+    event.target.value = '';
   };
 
   const mutation = useMutation({
@@ -162,14 +229,30 @@ function TemplateEditModal({ template }: { template: Template }) {
           <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-xl flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
               <h2 className="text-lg font-semibold text-slate-100">Edit template</h2>
-              <button
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
-                onClick={() => setOpen(false)}
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700"
+                  onClick={() => importFileRef.current?.click()}
+                >
+                  Import JSON
+                </button>
+                <button
+                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                  onClick={() => setOpen(false)}
+                >
+                  Close
+                </button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={handleImportFile}
+                  className="hidden"
+                />
+              </div>
             </div>
             <div className="space-y-4 overflow-y-auto px-6 py-4 text-sm text-slate-100">
+              {importError ? <p className="text-xs text-rose-400">{importError}</p> : null}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="block space-y-1">
                   <span className="text-slate-300">Name</span>

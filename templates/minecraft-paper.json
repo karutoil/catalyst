@@ -6,7 +6,7 @@
   "version": "1.20.4",
   "image": "eclipse-temurin:21-jre",
   "installImage": "alpine:3.19",
-  "startup": "java -Xms{{MEMORY_XMS}}M -Xmx{{MEMORY}}M -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:G1HeapRegionSize=16M -jar paper.jar nogui",
+  "startup": "java -Xms{{MEMORY_XMS}}M -Xmx{{MEMORY}}M -XX:MaxMetaspaceSize=512M -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -XX:ShenandoahGCHeuristics=compact -XX:ShenandoahUncommitDelay=30000 -XX:ShenandoahAllocationThreshold=15 -XX:ShenandoahGuaranteedGCInterval=30000 -XX:+PerfDisableSharedMem -XX:+DisableExplicitGC -XX:+ParallelRefProcEnabled -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -jar paper.jar nogui",
   "stopCommand": "stop",
   "sendSignalTo": "SIGTERM",
   "variables": [

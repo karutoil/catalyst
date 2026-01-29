@@ -18,6 +18,27 @@ export type SmtpSettings = {
 };
 
 export const SMTP_SETTING_ID = 'smtp';
+export const SECURITY_SETTING_ID = 'security';
+
+export type SecuritySettings = {
+  authRateLimitMax: number;
+  fileRateLimitMax: number;
+  consoleRateLimitMax: number;
+  lockoutMaxAttempts: number;
+  lockoutWindowMinutes: number;
+  lockoutDurationMinutes: number;
+  auditRetentionDays: number;
+};
+
+export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
+  authRateLimitMax: 5,
+  fileRateLimitMax: 30,
+  consoleRateLimitMax: 60,
+  lockoutMaxAttempts: 5,
+  lockoutWindowMinutes: 15,
+  lockoutDurationMinutes: 15,
+  auditRetentionDays: 90,
+};
 
 export const getSmtpSettings = async (): Promise<SmtpSettings> => {
   const settings = await prisma.systemSetting.findUnique({ where: { id: SMTP_SETTING_ID } });
@@ -80,6 +101,48 @@ export const upsertSmtpSettings = async (payload: SmtpSettings) => {
       smtpPool: payload.pool ?? false,
       smtpMaxConnections: payload.maxConnections ?? null,
       smtpMaxMessages: payload.maxMessages ?? null,
+    },
+  });
+};
+
+export const getSecuritySettings = async (): Promise<SecuritySettings> => {
+  const settings = await prisma.systemSetting.findUnique({ where: { id: SECURITY_SETTING_ID } });
+  if (!settings) {
+    return { ...DEFAULT_SECURITY_SETTINGS };
+  }
+  return {
+    authRateLimitMax: settings.authRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.authRateLimitMax,
+    fileRateLimitMax: settings.fileRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.fileRateLimitMax,
+    consoleRateLimitMax: settings.consoleRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.consoleRateLimitMax,
+    lockoutMaxAttempts: settings.lockoutMaxAttempts ?? DEFAULT_SECURITY_SETTINGS.lockoutMaxAttempts,
+    lockoutWindowMinutes: settings.lockoutWindowMinutes ?? DEFAULT_SECURITY_SETTINGS.lockoutWindowMinutes,
+    lockoutDurationMinutes:
+      settings.lockoutDurationMinutes ?? DEFAULT_SECURITY_SETTINGS.lockoutDurationMinutes,
+    auditRetentionDays: settings.auditRetentionDays ?? DEFAULT_SECURITY_SETTINGS.auditRetentionDays,
+  };
+};
+
+export const upsertSecuritySettings = async (payload: SecuritySettings) => {
+  return prisma.systemSetting.upsert({
+    where: { id: SECURITY_SETTING_ID },
+    create: {
+      id: SECURITY_SETTING_ID,
+      authRateLimitMax: payload.authRateLimitMax,
+      fileRateLimitMax: payload.fileRateLimitMax,
+      consoleRateLimitMax: payload.consoleRateLimitMax,
+      lockoutMaxAttempts: payload.lockoutMaxAttempts,
+      lockoutWindowMinutes: payload.lockoutWindowMinutes,
+      lockoutDurationMinutes: payload.lockoutDurationMinutes,
+      auditRetentionDays: payload.auditRetentionDays,
+    },
+    update: {
+      authRateLimitMax: payload.authRateLimitMax,
+      fileRateLimitMax: payload.fileRateLimitMax,
+      consoleRateLimitMax: payload.consoleRateLimitMax,
+      lockoutMaxAttempts: payload.lockoutMaxAttempts,
+      lockoutWindowMinutes: payload.lockoutWindowMinutes,
+      lockoutDurationMinutes: payload.lockoutDurationMinutes,
+      auditRetentionDays: payload.auditRetentionDays,
     },
   });
 };

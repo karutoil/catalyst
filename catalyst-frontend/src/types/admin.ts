@@ -50,6 +50,25 @@ export interface AdminServerNode {
   hostname: string;
 }
 
+export interface AdminNode {
+  id: string;
+  name: string;
+  locationId: string;
+  hostname: string;
+  publicAddress: string;
+  isOnline: boolean;
+  lastSeenAt?: string | null;
+  maxMemoryMb: number;
+  maxCpuCores: number;
+  _count: {
+    servers: number;
+  };
+}
+
+export interface AdminNodesResponse {
+  nodes: AdminNode[];
+}
+
 export interface AdminServerTemplate {
   id: string;
   name: string;
@@ -127,4 +146,32 @@ export interface SmtpSettings {
   pool: boolean;
   maxConnections: number | null;
   maxMessages: number | null;
+}
+
+export interface SecuritySettings {
+  authRateLimitMax: number;
+  fileRateLimitMax: number;
+  consoleRateLimitMax: number;
+  lockoutMaxAttempts: number;
+  lockoutWindowMinutes: number;
+  lockoutDurationMinutes: number;
+  auditRetentionDays: number;
+}
+
+export interface AuthLockout {
+  id: string;
+  email: string;
+  ipAddress: string;
+  userAgent?: string | null;
+  failureCount: number;
+  firstFailedAt: string;
+  lastFailedAt: string;
+  lockedUntil?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthLockoutsResponse {
+  lockouts: AuthLockout[];
+  pagination: PaginationMeta;
 }

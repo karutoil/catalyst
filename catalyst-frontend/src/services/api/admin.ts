@@ -6,9 +6,13 @@ import type {
   AdminServersResponse,
   AdminStats,
   AdminUsersResponse,
+  AdminNodesResponse,
   AuditLogsResponse,
   DatabaseHost,
   SmtpSettings,
+  SecuritySettings,
+  AuthLockout,
+  AuthLockoutsResponse,
 } from '../../types/admin';
 
 type ApiResponse<T> = {
@@ -72,8 +76,12 @@ export const adminApi = {
     const { data } = await apiClient.delete<{ success: boolean }>(`/api/admin/users/${userId}`);
     return data;
   },
-  listServers: async (params?: { page?: number; limit?: number; status?: string }) => {
+  listServers: async (params?: { page?: number; limit?: number; status?: string; search?: string }) => {
     const { data } = await apiClient.get<AdminServersResponse>('/api/admin/servers', { params });
+    return data;
+  },
+  listNodes: async (params?: { search?: string }) => {
+    const { data } = await apiClient.get<AdminNodesResponse>('/api/admin/nodes', { params });
     return data;
   },
   suspendServer: async (serverId: string, reason?: string) => {
@@ -160,6 +168,38 @@ export const adminApi = {
   },
   updateSmtpSettings: async (payload: SmtpSettings) => {
     const { data } = await apiClient.put<ApiResponse<void>>('/api/admin/smtp', payload);
+    return data;
+  },
+  getSecuritySettings: async () => {
+    const { data } = await apiClient.get<ApiResponse<SecuritySettings>>('/api/admin/security-settings');
+    return data.data;
+  },
+  updateSecuritySettings: async (payload: SecuritySettings) => {
+    const { data } = await apiClient.put<ApiResponse<void>>('/api/admin/security-settings', payload);
+    return data;
+  },
+  listAuthLockouts: async (params?: { page?: number; limit?: number; search?: string }) => {
+    const { data } = await apiClient.get<AuthLockoutsResponse>('/api/admin/auth-lockouts', {
+      params,
+    });
+    return data;
+  },
+  clearAuthLockout: async (lockoutId: string) => {
+    const { data } = await apiClient.delete<ApiResponse<void>>(`/api/admin/auth-lockouts/${lockoutId}`);
+    return data;
+  },
+  exportAuditLogs: async (params?: {
+    userId?: string;
+    action?: string;
+    resource?: string;
+    from?: string;
+    to?: string;
+    format?: 'csv' | 'json';
+  }) => {
+    const { data } = await apiClient.get('/api/admin/audit-logs/export', {
+      params,
+      responseType: 'text',
+    });
     return data;
   },
 };

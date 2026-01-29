@@ -1,0 +1,232 @@
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import AdminTabs from '../../components/admin/AdminTabs';
+import EmptyState from '../../components/shared/EmptyState';
+import { adminApi } from '../../services/api/admin';
+import { useNodes } from '../../hooks/useNodes';
+import { notifyError, notifySuccess } from '../../utils/notify';
+
+const parseReserved = (value: string) =>
+  value
+    .split(/[\s,]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+function NetworkPage() {
+  const [nodeId, setNodeId] = useState('');
+  const [networkName, setNetworkName] = useState('mc-lan');
+  const [cidr, setCidr] = useState('');
+  const [gateway, setGateway] = useState('');
+  const [startIp, setStartIp] = useState('');
+  const [endIp, setEndIp] = useState('');
+  const [reserved, setReserved] = useState('');
+  const queryClient = useQueryClient();
+  const { data: nodes = [] } = useNodes();
+  const { data: pools = [], isLoading } = useQuery({
+    queryKey: ['ip-pools'],
+    queryFn: adminApi.listIpPools,
+  });
+
+  const canSubmit = useMemo(
+    () => nodeId && networkName && cidr,
+    [nodeId, networkName, cidr],
+  );
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      adminApi.createIpPool({
+        nodeId,
+        networkName,
+        cidr,
+        gateway: gateway || undefined,
+        startIp: startIp || undefined,
+        endIp: endIp || undefined,
+        reserved: reserved ? parseReserved(reserved) : undefined,
+      }),
+    onSuccess: () => {
+      notifySuccess('IP pool created');
+      queryClient.invalidateQueries({ queryKey: ['ip-pools'] });
+      setCidr('');
+      setGateway('');
+      setStartIp('');
+      setEndIp('');
+      setReserved('');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to create IP pool';
+      notifyError(message);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (poolId: string) => adminApi.deleteIpPool(poolId),
+    onSuccess: () => {
+      notifySuccess('IP pool removed');
+      queryClient.invalidateQueries({ queryKey: ['ip-pools'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to remove IP pool';
+      notifyError(message);
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <AdminTabs />
+      <div>
+        <h1 className="text-2xl font-semibold text-slate-50">Network</h1>
+        <p className="text-sm text-slate-400">Manage IP pools for macvlan network allocations.</p>
+      </div>
+
+      <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-6 py-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-100">IP Address Pools</h2>
+            <p className="text-xs text-slate-400">
+              Allocate static macvlan IPs per node. Pools map to network names (e.g. mc-lan).
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <label className="block text-xs text-slate-300">
+            Node
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              value={nodeId}
+              onChange={(event) => setNodeId(event.target.value)}
+            >
+              <option value="">Select node</option>
+              {nodes.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {node.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs text-slate-300">
+            Network name
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              value={networkName}
+              onChange={(event) => setNetworkName(event.target.value)}
+              placeholder="mc-lan"
+            />
+          </label>
+          <label className="block text-xs text-slate-300">
+            CIDR
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              value={cidr}
+              onChange={(event) => setCidr(event.target.value)}
+              placeholder="192.168.50.0/24"
+            />
+          </label>
+          <label className="block text-xs text-slate-300">
+            Gateway
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              value={gateway}
+              onChange={(event) => setGateway(event.target.value)}
+              placeholder="192.168.50.1"
+            />
+          </label>
+          <label className="block text-xs text-slate-300">
+            Start IP (optional)
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              value={startIp}
+              onChange={(event) => setStartIp(event.target.value)}
+              placeholder="192.168.50.10"
+            />
+          </label>
+          <label className="block text-xs text-slate-300">
+            End IP (optional)
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              value={endIp}
+              onChange={(event) => setEndIp(event.target.value)}
+              placeholder="192.168.50.200"
+            />
+          </label>
+          <label className="block text-xs text-slate-300 md:col-span-3">
+            Reserved IPs (comma or space separated)
+            <textarea
+              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              value={reserved}
+              onChange={(event) => setReserved(event.target.value)}
+              rows={2}
+              placeholder="192.168.50.20, 192.168.50.21"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+            disabled={!canSubmit || createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+          >
+            Create pool
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {isLoading ? (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-300">
+            Loading IP pools...
+          </div>
+        ) : pools.length === 0 ? (
+          <EmptyState
+            title="No IP pools yet"
+            description="Create a pool to allocate static macvlan IPs."
+          />
+        ) : (
+          pools.map((pool) => (
+            <div
+              key={pool.id}
+              className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-100">
+                    {pool.nodeName} · {pool.networkName}
+                  </div>
+                  <div className="text-xs text-slate-400">{pool.cidr}</div>
+                  <div className="mt-2 text-xs text-slate-400">
+                    Range: {pool.rangeStart} → {pool.rangeEnd}
+                  </div>
+                </div>
+                <button
+                  className="rounded-md border border-rose-700 px-2 py-1 text-xs text-rose-200 hover:border-rose-500"
+                  onClick={() => deleteMutation.mutate(pool.id)}
+                  disabled={deleteMutation.isPending}
+                >
+                  Delete
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Available</div>
+                  <div className="text-sm font-semibold text-slate-100">{pool.availableCount}</div>
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Used</div>
+                  <div className="text-sm font-semibold text-slate-100">{pool.usedCount}</div>
+                </div>
+                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
+                  <div className="text-slate-400">Reserved</div>
+                  <div className="text-sm font-semibold text-slate-100">{pool.reservedCount}</div>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-slate-400">
+                Total: {pool.total} · Gateway: {pool.gateway ?? 'n/a'}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default NetworkPage;

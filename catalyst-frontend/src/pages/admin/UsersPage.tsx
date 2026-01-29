@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import AdminTabs from '../../components/admin/AdminTabs';
 import EmptyState from '../../components/shared/EmptyState';
+import Input from '../../components/ui/input';
 import { useAdminRoles, useAdminServers, useAdminUsers } from '../../hooks/useAdmin';
 import { adminApi } from '../../services/api/admin';
 import { notifyError, notifySuccess } from '../../utils/notify';
@@ -153,27 +154,30 @@ function UsersPage() {
           <h1 className="text-2xl font-semibold text-slate-50">User Management</h1>
           <p className="text-sm text-slate-400">Create and manage administrator accounts.</p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <input
+        <button
+          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
+          onClick={() => {
+            setIsCreateOpen(true);
+            setRoleSearch('');
+            setServerSearch('');
+          }}
+        >
+          Create user
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+        <label className="text-xs text-slate-300">
+          Search
+          <Input
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
               setPage(1);
             }}
             placeholder="Search users"
-            className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none sm:w-56"
+            className="mt-1 w-56"
           />
-          <button
-            className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
-            onClick={() => {
-              setIsCreateOpen(true);
-              setRoleSearch('');
-              setServerSearch('');
-            }}
-          >
-            Create user
-          </button>
-        </div>
+        </label>
       </div>
 
       {isLoading ? (
@@ -332,11 +336,11 @@ function UsersPage() {
               </div>
               <div className="text-xs text-slate-300">
                 <div className="mb-1 text-slate-400">Roles</div>
-                <input
+                <Input
                   value={editRoleSearch}
                   onChange={(event) => setEditRoleSearch(event.target.value)}
                   placeholder="Search roles"
-                  className="mb-2 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="mb-2 w-full"
                 />
                 <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
                   {filteredEditRoles.map((role) => (
@@ -360,11 +364,11 @@ function UsersPage() {
               </div>
               <div className="text-xs text-slate-300">
                 <div className="mb-1 text-slate-400">Server access</div>
-                <input
+                <Input
                   value={editServerSearch}
                   onChange={(event) => setEditServerSearch(event.target.value)}
                   placeholder="Search servers"
-                  className="mb-2 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="mb-2 w-full"
                 />
                 <div className="flex max-h-36 flex-col gap-2 overflow-y-auto">
                   {filteredEditServers.map((server) => (
@@ -453,11 +457,11 @@ function UsersPage() {
               </div>
               <div className="text-xs text-slate-300">
                 <div className="mb-1 text-slate-400">Roles</div>
-                <input
+                <Input
                   value={roleSearch}
                   onChange={(event) => setRoleSearch(event.target.value)}
                   placeholder="Search roles"
-                  className="mb-2 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="mb-2 w-full"
                 />
                 <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
                   {filteredRoles.map((role) => (
@@ -481,11 +485,11 @@ function UsersPage() {
               </div>
               <div className="text-xs text-slate-300">
                 <div className="mb-1 text-slate-400">Server access</div>
-                <input
+                <Input
                   value={serverSearch}
                   onChange={(event) => setServerSearch(event.target.value)}
                   placeholder="Search servers"
-                  className="mb-2 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="mb-2 w-full"
                 />
                 <div className="flex max-h-36 flex-col gap-2 overflow-y-auto">
                   {filteredServers.map((server) => (

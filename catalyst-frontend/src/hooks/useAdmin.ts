@@ -31,10 +31,22 @@ export function useAdminRoles() {
   });
 }
 
-export function useAdminServers(params?: { page?: number; limit?: number; status?: string }) {
+export function useAdminServers(params?: {
+  page?: number;
+  limit?: number;
+  status?: string;
+  search?: string;
+}) {
   return useQuery({
     queryKey: ['admin-servers', params],
     queryFn: () => adminApi.listServers(params),
+  });
+}
+
+export function useAdminNodes(params?: { search?: string }) {
+  return useQuery({
+    queryKey: ['admin-nodes', params],
+    queryFn: () => adminApi.listNodes(params),
   });
 }
 
@@ -64,5 +76,19 @@ export function useSmtpSettings() {
   return useQuery({
     queryKey: ['admin-smtp'],
     queryFn: adminApi.getSmtpSettings,
+  });
+}
+
+export function useSecuritySettings() {
+  return useQuery({
+    queryKey: ['admin-security-settings'],
+    queryFn: adminApi.getSecuritySettings,
+  });
+}
+
+export function useAuthLockouts(params?: { page?: number; limit?: number; search?: string }) {
+  return useQuery({
+    queryKey: ['admin-auth-lockouts', params],
+    queryFn: () => adminApi.listAuthLockouts(params),
   });
 }

@@ -1,1 +1,1471 @@
-# Catalyst API\n\nCatalyst backend API documentation\n\n**Version:** 1.0.0\n\n_Inferred request fields are extracted from route handler typings and may omit implicit or dynamic values._\n\n## Endpoints\n\n### GET /api/admin/audit-logs\n\n**Inferred Request Fields**\n- query:\n  - page?: number\n  - limit?: number\n  - userId?: string\n  - action?: string\n  - resource?: string\n  - from?: string\n  - to?: string\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/database-hosts\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/admin/database-hosts\n\n**Inferred Request Fields**\n- body:\n  - name: string\n  - host: string\n  - port?: number\n  - username: string\n  - password: string\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/admin/database-hosts/{hostId}\n\n**Parameters**\n- hostId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/admin/database-hosts/{hostId}\n\n**Parameters**\n- hostId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/health\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/ip-pools\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/admin/ip-pools\n\n**Inferred Request Fields**\n- body:\n  - nodeId: string\n  - networkName: string\n  - cidr: string\n  - gateway?: string\n  - startIp?: string\n  - endIp?: string\n  - reserved?: string[]\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/admin/ip-pools/{poolId}\n\n**Parameters**\n- poolId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/admin/ip-pools/{poolId}\n\n**Parameters**\n- poolId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/nodes\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/roles\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/servers\n\n**Inferred Request Fields**\n- query:\n  - page?: number\n  - limit?: number\n  - status?: string\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/smtp\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/admin/smtp\n\n**Inferred Request Fields**\n- body:\n  - host?: string\n  - port?: number\n  - username?: string\n  - password?: string\n  - from?: string\n  - replyTo?: string\n  - secure?: boolean\n  - requireTls?: boolean\n  - pool?: boolean\n  - maxConnections?: number\n  - maxMessages?: number\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/stats\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/users\n\n**Inferred Request Fields**\n- query:\n  - page?: number\n  - limit?: number\n\n**Responses**\n- 200: Default Response\n\n### POST /api/admin/users\n\n**Inferred Request Fields**\n- body:\n  - email: string\n  - username: string\n  - password: string\n  - roleIds?: string[]\n  - serverIds?: string[]\n  - serverPermissions?: string[]\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/admin/users/{userId}\n\n**Parameters**\n- userId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/admin/users/{userId}\n\n**Parameters**\n- userId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/admin/users/{userId}/servers\n\n**Parameters**\n- userId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/alert-rules\n\n**Inferred Request Fields**\n- query:\n  - type?: string\n  - enabled?: string\n\n**Responses**\n- 200: Default Response\n\n### POST /api/alert-rules\n\n**Inferred Request Fields**\n- body:\n  - name: string\n  - description?: string\n  - type: string\n  - target: string\n  - targetId?: string\n  - conditions: any\n  - actions: any\n  - enabled?: boolean\n\n**Responses**\n- 200: Default Response\n\n### GET /api/alert-rules/{ruleId}\n\n**Parameters**\n- ruleId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/alert-rules/{ruleId}\n\n**Parameters**\n- ruleId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/alert-rules/{ruleId}\n\n**Parameters**\n- ruleId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/alerts\n\n**Inferred Request Fields**\n- query:\n  - page?: number\n  - limit?: number\n  - serverId?: string\n  - nodeId?: string\n  - type?: string\n  - severity?: string\n  - resolved?: string\n\n**Responses**\n- 200: Default Response\n\n### POST /api/alerts/bulk-resolve\n\n**Inferred Request Fields**\n- body:\n  - alertIds: string[]\n\n**Responses**\n- 200: Default Response\n\n### GET /api/alerts/stats\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/alerts/{alertId}\n\n**Parameters**\n- alertId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/alerts/{alertId}/resolve\n\n**Parameters**\n- alertId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/auth/login\n\n**Inferred Request Fields**\n- body:\n  - email: string\n  - password: string\n\n**Responses**\n- 200: Default Response\n\n### GET /api/auth/me\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/auth/register\n\n**Inferred Request Fields**\n- body:\n  - email: string\n  - username: string\n  - password: string\n\n**Responses**\n- 200: Default Response\n\n### GET /api/deploy/{token}\n\n**Parameters**\n- token (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/nodes/\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/nodes/\n\n**Inferred Request Fields**\n- body:\n  - name: string\n  - description?: string\n  - locationId: string\n  - hostname: string\n  - publicAddress: string\n  - maxMemoryMb: number\n  - maxCpuCores: number\n\n**Responses**\n- 200: Default Response\n\n### GET /api/nodes/{nodeId}\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/nodes/{nodeId}\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/nodes/{nodeId}\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/nodes/{nodeId}/deployment-token\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/nodes/{nodeId}/heartbeat\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/nodes/{nodeId}/ip-availability\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/nodes/{nodeId}/metrics\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/nodes/{nodeId}/stats\n\n**Parameters**\n- nodeId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/\n\n**Inferred Request Fields**\n- body:\n  - name: string\n  - description?: string\n  - templateId: string\n  - nodeId: string\n  - locationId: string\n  - allocatedMemoryMb: number\n  - allocatedCpuCores: number\n  - allocatedDiskMb: number\n  - primaryPort: number\n  - portBindings?: Record<number\n  - networkMode?: string\n  - environment: Record<string\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/invites/accept\n\n**Inferred Request Fields**\n- body:\n  - token?: string\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/invites/register\n\n**Inferred Request Fields**\n- body:\n  - token?: string\n  - username?: string\n  - password?: string\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/invites/{token}\n\n**Parameters**\n- token (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PATCH /api/servers/{id}/backup-settings\n\n**Parameters**\n- id (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{id}/reset-crash-count\n\n**Parameters**\n- id (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PATCH /api/servers/{id}/restart-policy\n\n**Parameters**\n- id (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{id}/transfer\n\n**Parameters**\n- id (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/servers/{serverId}\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/access\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}/access/{targetUserId}\n\n**Parameters**\n- serverId (path) (required): string\n- targetUserId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/allocations\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/allocations\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/allocations/primary\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}/allocations/{containerPort}\n\n**Parameters**\n- serverId (path) (required): string\n- containerPort (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/backups\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/backups\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/backups/{backupId}\n\n**Parameters**\n- serverId (path) (required): string\n- backupId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}/backups/{backupId}\n\n**Parameters**\n- serverId (path) (required): string\n- backupId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/backups/{backupId}/download\n\n**Parameters**\n- serverId (path) (required): string\n- backupId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/backups/{backupId}/restore\n\n**Parameters**\n- serverId (path) (required): string\n- backupId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/databases\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/databases\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}/databases/{databaseId}\n\n**Parameters**\n- serverId (path) (required): string\n- databaseId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/databases/{databaseId}/rotate\n\n**Parameters**\n- serverId (path) (required): string\n- databaseId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/files\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/files/compress\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/files/create\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/files/decompress\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}/files/delete\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/files/download\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/files/permissions\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/files/upload\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/files/write\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/install\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/invites\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/invites\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}/invites/{inviteId}\n\n**Parameters**\n- serverId (path) (required): string\n- inviteId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/logs\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/metrics\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/permissions\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/restart\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/start\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/stats\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/stop\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/storage/resize\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/suspend\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/tasks\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/tasks\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/servers/{serverId}/tasks/{taskId}\n\n**Parameters**\n- serverId (path) (required): string\n- taskId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/servers/{serverId}/tasks/{taskId}\n\n**Parameters**\n- serverId (path) (required): string\n- taskId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/servers/{serverId}/tasks/{taskId}\n\n**Parameters**\n- serverId (path) (required): string\n- taskId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/tasks/{taskId}/execute\n\n**Parameters**\n- serverId (path) (required): string\n- taskId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/servers/{serverId}/unsuspend\n\n**Parameters**\n- serverId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /api/templates/\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### POST /api/templates/\n\n**Inferred Request Fields**\n- body:\n  - name: string\n  - description?: string\n  - author: string\n  - version: string\n  - image: string\n  - installImage?: string\n  - startup: string\n  - stopCommand: string\n  - sendSignalTo: string\n  - variables: any[]\n  - installScript?: string\n  - supportedPorts: number[]\n  - allocatedMemoryMb: number\n  - allocatedCpuCores: number\n  - features?: Record<string\n  - configFile?: unknown\n\n**Responses**\n- 200: Default Response\n\n### GET /api/templates/{templateId}\n\n**Parameters**\n- templateId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### PUT /api/templates/{templateId}\n\n**Parameters**\n- templateId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### DELETE /api/templates/{templateId}\n\n**Parameters**\n- templateId (path) (required): string\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /health\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response\n\n### GET /ws\n\n**Inferred Request Fields**\n- params: none\n- query: none\n- body: none\n\n**Responses**\n- 200: Default Response
+# Catalyst API
+
+Catalyst backend API documentation
+
+**Version:** 1.0.0
+
+_Inferred request fields are extracted from route handler typings and may omit implicit or dynamic values._
+
+## Endpoints
+
+### GET /api/admin/audit-logs
+
+**Inferred Request Fields**
+- query:
+  - page?: number
+  - limit?: number
+  - userId?: string
+  - action?: string
+  - resource?: string
+  - from?: string
+  - to?: string
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/audit-logs/export
+
+**Inferred Request Fields**
+- query:
+  - userId?: string
+  - action?: string
+  - resource?: string
+  - from?: string
+  - to?: string
+  - format?: string
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/auth-lockouts
+
+**Inferred Request Fields**
+- query:
+  - search?: string
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/admin/auth-lockouts/{lockoutId}
+
+**Parameters**
+- lockoutId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/database-hosts
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/admin/database-hosts
+
+**Inferred Request Fields**
+- body:
+  - name: string
+  - host: string
+  - port?: number
+  - username: string
+  - password: string
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/admin/database-hosts/{hostId}
+
+**Parameters**
+- hostId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/admin/database-hosts/{hostId}
+
+**Parameters**
+- hostId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/health
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/ip-pools
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/admin/ip-pools
+
+**Inferred Request Fields**
+- body:
+  - nodeId: string
+  - networkName: string
+  - cidr: string
+  - gateway?: string
+  - startIp?: string
+  - endIp?: string
+  - reserved?: string[]
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/admin/ip-pools/{poolId}
+
+**Parameters**
+- poolId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/admin/ip-pools/{poolId}
+
+**Parameters**
+- poolId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/nodes
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/roles
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/servers
+
+**Inferred Request Fields**
+- query:
+  - page?: number
+  - limit?: number
+  - status?: string
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/smtp
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/admin/smtp
+
+**Inferred Request Fields**
+- body:
+  - host?: string
+  - port?: number
+  - username?: string
+  - password?: string
+  - from?: string
+  - replyTo?: string
+  - secure?: boolean
+  - requireTls?: boolean
+  - pool?: boolean
+  - maxConnections?: number
+  - maxMessages?: number
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/security-settings
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/admin/security-settings
+
+**Inferred Request Fields**
+- body:
+  - authRateLimitMax?: number
+  - fileRateLimitMax?: number
+  - consoleRateLimitMax?: number
+  - lockoutMaxAttempts?: number
+  - lockoutWindowMinutes?: number
+  - lockoutDurationMinutes?: number
+  - auditRetentionDays?: number
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/stats
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/users
+
+**Inferred Request Fields**
+- query:
+  - page?: number
+  - limit?: number
+
+**Responses**
+- 200: Default Response
+
+### POST /api/admin/users
+
+**Inferred Request Fields**
+- body:
+  - email: string
+  - username: string
+  - password: string
+  - roleIds?: string[]
+  - serverIds?: string[]
+  - serverPermissions?: string[]
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/admin/users/{userId}
+
+**Parameters**
+- userId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/admin/users/{userId}
+
+**Parameters**
+- userId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/admin/users/{userId}/servers
+
+**Parameters**
+- userId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/alert-rules
+
+**Inferred Request Fields**
+- query:
+  - type?: string
+  - enabled?: string
+
+**Responses**
+- 200: Default Response
+
+### POST /api/alert-rules
+
+**Inferred Request Fields**
+- body:
+  - name: string
+  - description?: string
+  - type: string
+  - target: string
+  - targetId?: string
+  - conditions: any
+  - actions: any
+  - enabled?: boolean
+
+**Responses**
+- 200: Default Response
+
+### GET /api/alert-rules/{ruleId}
+
+**Parameters**
+- ruleId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/alert-rules/{ruleId}
+
+**Parameters**
+- ruleId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/alert-rules/{ruleId}
+
+**Parameters**
+- ruleId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/alerts
+
+**Inferred Request Fields**
+- query:
+  - page?: number
+  - limit?: number
+  - serverId?: string
+  - nodeId?: string
+  - type?: string
+  - severity?: string
+  - resolved?: string
+
+**Responses**
+- 200: Default Response
+
+### POST /api/alerts/bulk-resolve
+
+**Inferred Request Fields**
+- body:
+  - alertIds: string[]
+
+**Responses**
+- 200: Default Response
+
+### GET /api/alerts/stats
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/alerts/{alertId}
+
+**Parameters**
+- alertId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/alerts/{alertId}/resolve
+
+**Parameters**
+- alertId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/auth/login
+
+**Inferred Request Fields**
+- body:
+  - email: string
+  - password: string
+
+**Responses**
+- 200: Default Response
+
+### GET /api/auth/me
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/auth/register
+
+**Inferred Request Fields**
+- body:
+  - email: string
+  - username: string
+  - password: string
+
+**Responses**
+- 200: Default Response
+
+### GET /api/deploy/{token}
+
+**Parameters**
+- token (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/nodes/
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/nodes/
+
+**Inferred Request Fields**
+- body:
+  - name: string
+  - description?: string
+  - locationId: string
+  - hostname: string
+  - publicAddress: string
+  - maxMemoryMb: number
+  - maxCpuCores: number
+
+**Responses**
+- 200: Default Response
+
+### GET /api/nodes/{nodeId}
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/nodes/{nodeId}
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/nodes/{nodeId}
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/nodes/{nodeId}/deployment-token
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/nodes/{nodeId}/heartbeat
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/nodes/{nodeId}/ip-availability
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/nodes/{nodeId}/metrics
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/nodes/{nodeId}/stats
+
+**Parameters**
+- nodeId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/
+
+**Inferred Request Fields**
+- body:
+  - name: string
+  - description?: string
+  - templateId: string
+  - nodeId: string
+  - locationId: string
+  - allocatedMemoryMb: number
+  - allocatedCpuCores: number
+  - allocatedDiskMb: number
+  - primaryPort: number
+  - portBindings?: Record<number
+  - networkMode?: string
+  - environment: Record<string
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/invites/accept
+
+**Inferred Request Fields**
+- body:
+  - token?: string
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/invites/register
+
+**Inferred Request Fields**
+- body:
+  - token?: string
+  - username?: string
+  - password?: string
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/invites/{token}
+
+**Parameters**
+- token (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PATCH /api/servers/{id}/backup-settings
+
+**Parameters**
+- id (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{id}/reset-crash-count
+
+**Parameters**
+- id (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PATCH /api/servers/{id}/restart-policy
+
+**Parameters**
+- id (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{id}/transfer
+
+**Parameters**
+- id (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/servers/{serverId}
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/access
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}/access/{targetUserId}
+
+**Parameters**
+- serverId (path) (required): string
+- targetUserId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/allocations
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/allocations
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/allocations/primary
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}/allocations/{containerPort}
+
+**Parameters**
+- serverId (path) (required): string
+- containerPort (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/backups
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/backups
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/backups/{backupId}
+
+**Parameters**
+- serverId (path) (required): string
+- backupId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}/backups/{backupId}
+
+**Parameters**
+- serverId (path) (required): string
+- backupId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/backups/{backupId}/download
+
+**Parameters**
+- serverId (path) (required): string
+- backupId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/backups/{backupId}/restore
+
+**Parameters**
+- serverId (path) (required): string
+- backupId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/databases
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/databases
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}/databases/{databaseId}
+
+**Parameters**
+- serverId (path) (required): string
+- databaseId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/databases/{databaseId}/rotate
+
+**Parameters**
+- serverId (path) (required): string
+- databaseId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/files
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/files/compress
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/files/create
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/files/decompress
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}/files/delete
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/files/download
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/files/permissions
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/files/upload
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/files/write
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/install
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/invites
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/invites
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}/invites/{inviteId}
+
+**Parameters**
+- serverId (path) (required): string
+- inviteId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/logs
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/metrics
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/permissions
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/restart
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/start
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/stats
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/stop
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/storage/resize
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/suspend
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/tasks
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/tasks
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/servers/{serverId}/tasks/{taskId}
+
+**Parameters**
+- serverId (path) (required): string
+- taskId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/servers/{serverId}/tasks/{taskId}
+
+**Parameters**
+- serverId (path) (required): string
+- taskId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/servers/{serverId}/tasks/{taskId}
+
+**Parameters**
+- serverId (path) (required): string
+- taskId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/tasks/{taskId}/execute
+
+**Parameters**
+- serverId (path) (required): string
+- taskId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/servers/{serverId}/unsuspend
+
+**Parameters**
+- serverId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /api/templates/
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### POST /api/templates/
+
+**Inferred Request Fields**
+- body:
+  - name: string
+  - description?: string
+  - author: string
+  - version: string
+  - image: string
+  - installImage?: string
+  - startup: string
+  - stopCommand: string
+  - sendSignalTo: string
+  - variables: any[]
+  - installScript?: string
+  - supportedPorts: number[]
+  - allocatedMemoryMb: number
+  - allocatedCpuCores: number
+  - features?: Record<string
+  - configFile?: unknown
+
+**Responses**
+- 200: Default Response
+
+### GET /api/templates/{templateId}
+
+**Parameters**
+- templateId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### PUT /api/templates/{templateId}
+
+**Parameters**
+- templateId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### DELETE /api/templates/{templateId}
+
+**Parameters**
+- templateId (path) (required): string
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /health
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response
+
+### GET /ws
+
+**Inferred Request Fields**
+- params: none
+- query: none
+- body: none
+
+**Responses**
+- 200: Default Response

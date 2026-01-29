@@ -2,6 +2,14 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import AdminTabs from '../../components/admin/AdminTabs';
 import EmptyState from '../../components/shared/EmptyState';
+import Input from '../../components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import { useAdminServers } from '../../hooks/useAdmin';
 import type { AdminServer } from '../../types/admin';
 import { adminApi } from '../../services/api/admin';
@@ -12,6 +20,7 @@ const pageSize = 20;
 function AdminServersPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
   const [actionServer, setActionServer] = useState<AdminServer | null>(null);
   const [suspendReason, setSuspendReason] = useState('');
   const queryClient = useQueryClient();
@@ -19,6 +28,7 @@ function AdminServersPage() {
     page,
     limit: pageSize,
     status: status || undefined,
+    search: search.trim() || undefined,
   });
 
   const servers = data?.servers ?? [];
@@ -67,22 +77,38 @@ function AdminServersPage() {
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
         <label className="text-xs text-slate-300">
-          Status
-          <select
-            value={status}
+          Search
+          <Input
+            value={search}
             onChange={(event) => {
-              setStatus(event.target.value);
+              setSearch(event.target.value);
               setPage(1);
             }}
-            className="mt-1 w-44 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+            placeholder="Search servers"
+            className="mt-1 w-56"
+          />
+        </label>
+        <label className="text-xs text-slate-300">
+          Status
+          <Select
+            value={status || 'all'}
+            onValueChange={(value) => {
+              setStatus(value === 'all' ? '' : value);
+              setPage(1);
+            }}
           >
-            <option value="">All statuses</option>
-            {statuses.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="mt-1 w-44">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {statuses.map((entry) => (
+                <SelectItem key={entry} value={entry}>
+                  {entry}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
       </div>
 
@@ -163,8 +189,12 @@ function AdminServersPage() {
         </div>
       ) : (
         <EmptyState
-          title="No servers"
-          description="No servers match the selected status filter."
+          title={search.trim() ? 'No servers found' : 'No servers'}
+          description={
+            search.trim()
+              ? 'Try a different server name, ID, or node.'
+              : 'No servers match the selected status filter.'
+          }
         />
       )}
       {actionServer ? (
