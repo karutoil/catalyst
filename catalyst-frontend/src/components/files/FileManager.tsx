@@ -335,20 +335,22 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[240px,1fr]">
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Folders</div>
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Folders
+        </div>
         <FileTree serverId={serverId} activePath={path} onNavigate={(nextPath) => setPath(nextPath)} />
       </div>
 
       <div className="space-y-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-100">Path</div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">Path</div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <button
                   type="button"
-                  className="rounded-md border border-slate-800 px-2 py-1 text-[11px] text-slate-300 hover:border-slate-700"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => setPath(getParentPath(path))}
                   disabled={path === '/'}
                 >
@@ -357,17 +359,17 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
                 <nav className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className="rounded-md px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                    className="rounded-md px-2 py-1 text-[11px] text-slate-500 transition-all duration-300 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                     onClick={() => setPath('/')}
                   >
                     /
                   </button>
                   {breadcrumbs.map((crumb) => (
                     <div key={crumb.path} className="flex items-center gap-2">
-                      <span className="text-slate-600">/</span>
+                      <span className="text-slate-500 dark:text-slate-400 dark:text-slate-500">/</span>
                       <button
                         type="button"
-                        className="rounded-md px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                        className="rounded-md px-2 py-1 text-[11px] text-slate-500 transition-all duration-300 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                         onClick={() => setPath(crumb.path)}
                       >
                         {crumb.name}
@@ -380,7 +382,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setShowUpload((prev) => !prev)}
                 disabled={isSuspended}
               >
@@ -388,7 +390,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setCreateMode('file')}
                 disabled={isSuspended}
               >
@@ -396,7 +398,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setCreateMode('directory')}
                 disabled={isSuspended}
               >
@@ -404,20 +406,22 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => refetch()}
               >
                 Refresh
               </button>
             </div>
         </div>
-          {message ? <div className="mt-3 text-xs text-amber-300">{message}</div> : null}
+          {message ? (
+            <div className="mt-3 text-xs text-amber-600 dark:text-amber-300">{message}</div>
+          ) : null}
           {selectedEntries.length ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-300">
               <span>Selected {selectedEntries.length}</span>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setShowCompress(true)}
                 disabled={isSuspended}
               >
@@ -426,7 +430,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
               {selectedArchive ? (
                 <button
                   type="button"
-                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => setShowDecompress(true)}
                   disabled={isSuspended}
                 >
@@ -435,7 +439,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
               ) : null}
               <button
                 type="button"
-                className="rounded-md border border-rose-800 px-2 py-1 text-xs text-rose-200 hover:border-rose-600"
+                className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-400"
                 onClick={() => setConfirmDelete(true)}
                 disabled={isSuspended}
               >
@@ -443,7 +447,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setSelectedPaths(new Set())}
               >
                 Clear
@@ -463,36 +467,36 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
 
         {createMode ? (
           <form
-            className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-4 text-sm text-slate-200"
+            className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30"
             onSubmit={handleCreateSubmit}
           >
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-slate-100">
+              <div className="font-semibold text-slate-900 dark:text-white">
                 {createMode === 'directory' ? 'Create folder' : 'Create file'}
               </div>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setCreateMode(null)}
               >
                 Close
               </button>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-400">
+              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
                 Name
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   value={createName}
                   onChange={(event) => setCreateName(event.target.value)}
                   placeholder={createMode === 'directory' ? 'configs' : 'server.properties'}
                 />
               </label>
               {createMode === 'file' ? (
-                <label className="space-y-1 text-xs text-slate-400">
+                <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
                   Initial content
                   <textarea
-                    className="h-24 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={createContent}
                     onChange={(event) => setCreateContent(event.target.value)}
                     placeholder="# New file"
@@ -503,14 +507,14 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
             <div className="mt-3 flex justify-end gap-2 text-xs">
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setCreateMode(null)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 disabled={!createName.trim() || createMutation.isPending || isSuspended}
               >
                 Create
@@ -520,35 +524,35 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
         ) : null}
 
         {showCompress ? (
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-4 text-sm text-slate-200">
+          <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-slate-100">Compress selection</div>
+              <div className="font-semibold text-slate-900 dark:text-white">Compress selection</div>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setShowCompress(false)}
               >
                 Close
               </button>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-400">
+              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
                 Archive name
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   value={archiveName}
                   onChange={(event) => setArchiveName(event.target.value)}
                   placeholder="archive.tar.gz"
                 />
               </label>
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
                 {selectedEntries.length} item(s) selected
               </div>
             </div>
             <div className="mt-3 flex justify-end gap-2 text-xs">
               <button
                 type="button"
-                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 onClick={handleCompress}
                 disabled={!selectedEntries.length || compressMutation.isPending || isSuspended}
               >
@@ -559,33 +563,35 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
         ) : null}
 
         {showDecompress && selectedArchive ? (
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-4 text-sm text-slate-200">
+          <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-slate-100">Decompress archive</div>
+              <div className="font-semibold text-slate-900 dark:text-white">Decompress archive</div>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setShowDecompress(false)}
               >
                 Close
               </button>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-400">
+              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
                 Target path
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   value={decompressTarget}
                   onChange={(event) => setDecompressTarget(event.target.value)}
                   placeholder="/"
                 />
               </label>
-              <div className="text-xs text-slate-500">Archive: {selectedArchive.name}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                Archive: {selectedArchive.name}
+              </div>
             </div>
             <div className="mt-3 flex justify-end gap-2 text-xs">
               <button
                 type="button"
-                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 onClick={handleDecompress}
                 disabled={decompressMutation.isPending || isSuspended}
               >
@@ -596,7 +602,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
         ) : null}
 
         {confirmDelete && selectedEntries.length ? (
-          <div className="rounded-lg border border-rose-900 bg-rose-950/40 px-4 py-4 text-sm text-rose-200">
+          <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 Delete {selectedEntries.length} item(s)? This action cannot be undone.
@@ -604,7 +610,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
               <div className="flex items-center gap-2 text-xs">
                 <button
                   type="button"
-                  className="rounded-md border border-rose-800 px-3 py-1 text-xs text-rose-200 hover:border-rose-600"
+                  className="rounded-md border border-rose-200 px-3 py-1 text-xs text-rose-700 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
                   onClick={handleDeleteSelection}
                   disabled={deleteMutation.isPending || isSuspended}
                 >
@@ -612,7 +618,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-300 hover:border-slate-700"
+                  className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => setConfirmDelete(false)}
                 >
                   Cancel
@@ -622,8 +628,8 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 text-xs text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 dark:border-slate-800">
             <span>Files</span>
             <span>{sortedFiles.length} items</span>
           </div>
@@ -671,10 +677,10 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
       {activeFile ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
           <div
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-white dark:bg-slate-950/70 backdrop-blur-sm"
             onClick={closeActiveFile}
           />
-          <div className="relative z-10 h-[90vh] w-[90vw] rounded-xl border border-slate-800 bg-slate-900/95 p-4 shadow-2xl">
+          <div className="relative z-10 h-[90vh] w-[90vw] rounded-xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <FileEditor
               file={activeFile}
               isLoading={isFileLoading}
@@ -698,31 +704,35 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
       {permissionsEntry ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
           <div
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-white dark:bg-slate-950/70 backdrop-blur-sm"
             onClick={() => setPermissionsEntry(null)}
           />
           <form
-            className="relative z-10 w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900/95 p-4 shadow-2xl"
+            className="relative z-10 w-full max-w-lg rounded-xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
             onSubmit={handlePermissionsSubmit}
           >
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-semibold text-slate-100">Edit permissions</div>
-                <div className="text-xs text-slate-500">{permissionsEntry.path}</div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Edit permissions
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                  {permissionsEntry.path}
+                </div>
               </div>
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setPermissionsEntry(null)}
               >
                 Close
               </button>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-400">
+              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
                 Mode (octal)
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   value={permissionsValue}
                   onChange={(event) => {
                     setPermissionsValue(event.target.value);
@@ -731,26 +741,26 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
                   placeholder={permissionsEntry.isDirectory ? '755' : '644'}
                 />
               </label>
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
                 Use three or four digits. Example: 644 for files, 755 for folders.
               </div>
             </div>
             {permissionsError ? (
-              <div className="mt-3 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+              <div className="mt-3 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                 {permissionsError}
               </div>
             ) : null}
             <div className="mt-4 flex justify-end gap-2 text-xs">
               <button
                 type="button"
-                className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setPermissionsEntry(null)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 disabled={permissionsMutation.isPending || isSuspended}
               >
                 Update

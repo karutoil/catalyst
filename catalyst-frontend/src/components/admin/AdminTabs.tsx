@@ -16,17 +16,17 @@ const tabs = [
 
 function AdminTabs() {
   return (
-    <div className="flex flex-wrap gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
+    <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
       {tabs.map((tab) => (
         <NavLink
           key={tab.to}
           to={tab.to}
           end={tab.end}
           className={({ isActive }) =>
-            `rounded-full px-3 py-1.5 font-semibold transition ${
+            `rounded-full px-3 py-1.5 font-semibold transition-all duration-300 ${
               isActive
-                ? 'bg-sky-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/20'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
             }`
           }
         >

@@ -1,14 +1,14 @@
 import type { ServerStatus } from '../../types/server';
 
 const colorMap: Record<ServerStatus, string> = {
-  stopped: 'bg-slate-700 text-slate-100',
-  installing: 'bg-sky-700 text-white',
-  starting: 'bg-sky-600 text-white',
-  running: 'bg-emerald-700 text-white',
-  stopping: 'bg-amber-600 text-white',
-  crashed: 'bg-rose-700 text-white',
-  transferring: 'bg-purple-700 text-white',
-  suspended: 'bg-rose-800 text-rose-100',
+  stopped: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+  installing: 'bg-primary-100 text-primary-700 dark:bg-primary-500/10 dark:text-primary-400',
+  starting: 'bg-primary-100 text-primary-700 dark:bg-primary-500/10 dark:text-primary-400',
+  running: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+  stopping: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+  crashed: 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
+  transferring: 'bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400',
+  suspended: 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
 };
 
 function ServerStatusBadge({ status }: { status: ServerStatus }) {

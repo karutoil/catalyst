@@ -50,8 +50,8 @@ function ServerMetricsTrends({
     {
       label: 'CPU',
       value: `${(latest?.cpuPercent ?? 0).toFixed(1)}%`,
-      color: 'text-sky-300',
-      stroke: '#38bdf8',
+      color: 'text-primary-600 dark:text-primary-400',
+      stroke: '#06b6d4',
       data: toChartData(cpuHistory),
     },
     {
@@ -59,7 +59,7 @@ function ServerMetricsTrends({
       value: allocatedMemoryMb
         ? `${(latest?.memoryUsageMb ?? 0).toFixed(0)} / ${allocatedMemoryMb} MB`
         : 'n/a',
-      color: 'text-emerald-300',
+      color: 'text-emerald-600 dark:text-emerald-400',
       stroke: '#34d399',
       data: toChartData(memoryHistory),
       formatTooltip: (value) => `${value.toFixed(0)} MB`,
@@ -67,7 +67,7 @@ function ServerMetricsTrends({
     {
       label: 'Disk Usage',
       value: formatBytes((latest?.diskUsageMb ?? 0) * 1024 * 1024),
-      color: 'text-amber-300',
+      color: 'text-amber-600 dark:text-amber-400',
       stroke: '#fbbf24',
       data: toChartData(diskHistory),
       formatTooltip: (value) => formatBytes(value * 1024 * 1024),
@@ -75,7 +75,7 @@ function ServerMetricsTrends({
     {
       label: 'Disk IO',
       value: formatBytes((latest?.diskIoMb ?? 0) * 1024 * 1024),
-      color: 'text-orange-300',
+      color: 'text-orange-600 dark:text-orange-400',
       stroke: '#fb923c',
       data: toChartData(diskIoHistory),
       formatTooltip: (value) => formatBytes(value * 1024 * 1024),
@@ -83,7 +83,7 @@ function ServerMetricsTrends({
     {
       label: 'Network',
       value: formatBytes(throughput[throughput.length - 1] ?? 0),
-      color: 'text-violet-300',
+      color: 'text-violet-600 dark:text-violet-400',
       stroke: '#a78bfa',
       data: toChartData(throughput),
       formatTooltip: (value) => formatBytes(value),
@@ -93,13 +93,15 @@ function ServerMetricsTrends({
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {cards.map((card) => (
-        <div key={card.label} className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs uppercase tracking-wide text-slate-400">{card.label}</div>
+              <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {card.label}
+              </div>
               <div className={`text-lg font-semibold ${card.color}`}>{card.value}</div>
             </div>
-            <div className="text-[11px] text-slate-500">{timeRangeLabel}</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-500">{timeRangeLabel}</div>
           </div>
           <div className="mt-3">
             <div className="h-24 w-full">
@@ -107,7 +109,11 @@ function ServerMetricsTrends({
                 <LineChart data={card.data}>
                   <YAxis hide domain={['auto', 'auto']} />
                   <Tooltip
-                    contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', fontSize: 12 }}
+                    contentStyle={{
+                      background: '#0f172a',
+                      border: '1px solid #1e293b',
+                      fontSize: 12,
+                    }}
                     labelFormatter={() => ''}
                     formatter={(value) => {
                       const numeric = typeof value === 'number' ? value : Number(value);

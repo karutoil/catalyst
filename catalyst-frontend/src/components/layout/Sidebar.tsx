@@ -15,8 +15,8 @@ function Sidebar() {
     user?.permissions?.includes('*') || user?.permissions?.includes('admin.read');
   return (
     <aside
-      className={`flex flex-col border-r border-slate-800 bg-slate-900/80 px-2 py-6 text-sm transition-all ${
-        sidebarCollapsed ? 'w-16' : 'w-56'
+      className={`flex flex-col border-r border-slate-200 bg-white px-2 py-6 text-sm shadow-surface-light transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark ${
+        sidebarCollapsed ? 'w-16' : 'w-64'
       }`}
     >
       <nav className="flex flex-1 flex-col gap-2">
@@ -27,12 +27,14 @@ function Sidebar() {
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `flex items-center rounded-md px-3 py-2 font-medium transition ${
-                  isActive ? 'bg-sky-600 text-white' : 'text-slate-200 hover:bg-slate-800'
+                `flex items-center rounded-md px-3 py-2 font-medium transition-all duration-300 ${
+                  isActive
+                    ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/20'
+                    : 'text-slate-600 hover:border-primary-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:border-primary-500/30 dark:hover:bg-slate-800'
                 } ${sidebarCollapsed ? 'justify-center' : ''}`
               }
             >
-              <span className="text-xs font-semibold uppercase text-slate-400">
+              <span className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 dark:text-slate-500">
                 {sidebarCollapsed ? link.label[0] : ''}
               </span>
               <span className={`${sidebarCollapsed ? 'sr-only' : 'ml-2'}`}>{link.label}</span>
@@ -43,7 +45,7 @@ function Sidebar() {
         <button
           type="button"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className={`w-full rounded-md border border-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-700 hover:bg-slate-800 ${
+          className={`w-full rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30 ${
             sidebarCollapsed ? 'px-2' : ''
           }`}
         >

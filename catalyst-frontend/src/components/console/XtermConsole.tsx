@@ -45,6 +45,21 @@ function XtermConsole({ entries }: XtermConsoleProps) {
     }
   };
 
+  const getTerminalTheme = () => {
+    const isDark = document.documentElement.classList.contains('dark');
+    return isDark
+      ? {
+          background: '#050914',
+          foreground: '#e8edf7',
+          selectionBackground: '#1b2240',
+        }
+      : {
+          background: '#f8fafc',
+          foreground: '#0f172a',
+          selectionBackground: '#e2e8f0',
+        };
+  };
+
   useEffect(() => {
     let active = true;
     const terminal = new Terminal({
@@ -53,11 +68,7 @@ function XtermConsole({ entries }: XtermConsoleProps) {
       disableStdin: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
       fontSize: 12,
-      theme: {
-        background: '#050914',
-        foreground: '#e8edf7',
-        selectionBackground: '#1b2240',
-      },
+      theme: getTerminalTheme(),
       scrollback: 2000,
     });
     const fitAddon = new FitAddon();
@@ -93,6 +104,16 @@ function XtermConsole({ entries }: XtermConsoleProps) {
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
+    const observer = new MutationObserver(() => {
+      terminal.setOption('theme', getTerminalTheme());
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
 
     if (entries.length === 0) {
       terminal.reset();
@@ -116,7 +137,8 @@ function XtermConsole({ entries }: XtermConsoleProps) {
   }, [entries]);
 
   const containerClass = useMemo(
-    () => 'h-[60vh] w-full rounded-lg border border-slate-800 bg-slate-950',
+    () =>
+      'h-[60vh] w-full rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950',
     [],
   );
 

@@ -5,10 +5,12 @@ function TasksPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-50">Scheduled Tasks</h1>
-          <p className="text-sm text-slate-400">Automate backups, restarts, and commands.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Scheduled Tasks</h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Automate backups, restarts, and commands.
+          </p>
         </div>
-        <button className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500">
+        <button className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500">
           Create Task
         </button>
       </div>

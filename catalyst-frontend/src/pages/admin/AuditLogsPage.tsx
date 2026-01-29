@@ -49,12 +49,14 @@ function AuditLogsPage() {
     <div className="space-y-4">
       <AdminTabs />
       <div>
-        <h1 className="text-2xl font-semibold text-slate-50">Audit Logs</h1>
-        <p className="text-sm text-slate-400">Track admin and user actions across the platform.</p>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Audit Logs</h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          Track admin and user actions across the platform.
+        </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-        <label className="text-xs text-slate-300">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+        <label className="text-xs text-slate-500 dark:text-slate-300">
           Action contains
           <Input
             value={action}
@@ -63,7 +65,7 @@ function AuditLogsPage() {
             className="mt-1 w-48"
           />
         </label>
-        <label className="text-xs text-slate-300">
+        <label className="text-xs text-slate-500 dark:text-slate-300">
           Resource
           <Input
             value={resource}
@@ -72,7 +74,7 @@ function AuditLogsPage() {
             className="mt-1 w-40"
           />
         </label>
-        <label className="text-xs text-slate-300">
+        <label className="text-xs text-slate-500 dark:text-slate-300">
           User ID
           <Input
             value={userId}
@@ -81,7 +83,7 @@ function AuditLogsPage() {
             className="mt-1 w-48"
           />
         </label>
-        <label className="text-xs text-slate-300">
+        <label className="text-xs text-slate-500 dark:text-slate-300">
           From
           <Input
             type="datetime-local"
@@ -94,7 +96,7 @@ function AuditLogsPage() {
             className="mt-1 w-48"
           />
         </label>
-        <label className="text-xs text-slate-300">
+        <label className="text-xs text-slate-500 dark:text-slate-300">
           To
           <Input
             type="datetime-local"
@@ -107,7 +109,7 @@ function AuditLogsPage() {
             className="mt-1 w-48"
           />
         </label>
-        <label className="text-xs text-slate-300">
+        <label className="text-xs text-slate-500 dark:text-slate-300">
           Quick range
           <Select
             value={range || 'custom'}
@@ -139,7 +141,7 @@ function AuditLogsPage() {
           </Select>
         </label>
         <Button
-          className="rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-700 hover:bg-slate-900"
+          className="rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
           onClick={() => {
             setAction('');
             setResource('');
@@ -153,7 +155,7 @@ function AuditLogsPage() {
           Clear filters
         </Button>
         <Button
-          className="rounded-lg border border-slate-800 bg-transparent px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-700 hover:bg-slate-900"
+          className="rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
           onClick={async () => {
             const payload = await adminApi.exportAuditLogs({
               action: action || undefined,
@@ -179,51 +181,58 @@ function AuditLogsPage() {
       </div>
 
       {isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-200">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
           Loading audit logs...
         </div>
       ) : logs.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60">
-          <div className="grid grid-cols-12 gap-3 border-b border-slate-800 px-4 py-3 text-xs uppercase text-slate-500">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+          <div className="grid grid-cols-12 gap-3 border-b border-slate-200 px-4 py-3 text-xs uppercase text-slate-500 dark:text-slate-400 dark:border-slate-800 dark:text-slate-500">
             <div className="col-span-3">User</div>
             <div className="col-span-3">Action</div>
             <div className="col-span-2">Resource</div>
             <div className="col-span-2">IP</div>
             <div className="col-span-2 text-right">Timestamp</div>
           </div>
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
             {logs.map((log) => (
-              <div key={log.id} className="grid grid-cols-12 gap-3 px-4 py-3 text-sm text-slate-200">
+              <div
+                key={log.id}
+                className="grid grid-cols-12 gap-3 px-4 py-3 text-sm text-slate-600 dark:text-slate-300"
+              >
                 <div className="col-span-3">
-                  <div className="font-semibold text-slate-100">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">
                     {log.user?.username ?? 'Unknown'}
                   </div>
-                  <div className="text-xs text-slate-500">{log.user?.email ?? log.userId ?? 'n/a'}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                    {log.user?.email ?? log.userId ?? 'n/a'}
+                  </div>
                 </div>
-                <div className="col-span-3 text-slate-100">{log.action}</div>
-                <div className="col-span-2 text-slate-300">{log.resource}</div>
-                <div className="col-span-2 text-xs text-slate-400">{log.ipAddress ?? 'n/a'}</div>
-                <div className="col-span-2 text-right text-xs text-slate-400">
+                <div className="col-span-3 text-slate-900 dark:text-slate-100">{log.action}</div>
+                <div className="col-span-2 text-slate-600 dark:text-slate-300">{log.resource}</div>
+                <div className="col-span-2 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
+                  {log.ipAddress ?? 'n/a'}
+                </div>
+                <div className="col-span-2 text-right text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
                   {new Date(log.timestamp).toLocaleString()}
                 </div>
               </div>
             ))}
           </div>
           {pagination ? (
-            <div className="flex items-center justify-between border-t border-slate-800 px-4 py-3 text-xs text-slate-400">
+            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 dark:border-slate-800 dark:text-slate-500">
               <span>
                 Page {pagination.page} of {pagination.totalPages}
               </span>
               <div className="flex gap-2">
                 <button
-                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                   disabled={page <= 1}
                 >
                   Previous
                 </button>
                 <button
-                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 disabled:opacity-50 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => setPage((prev) => (pagination.page < pagination.totalPages ? prev + 1 : prev))}
                   disabled={pagination.page >= pagination.totalPages}
                 >

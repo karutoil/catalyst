@@ -205,37 +205,37 @@ function CreateServerModal() {
   return (
     <div>
       <button
-        className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
+        className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500"
         onClick={() => setOpen(true)}
       >
         New Server
       </button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-lg max-h-[90vh] rounded-xl border border-slate-800 bg-slate-950 shadow-xl flex flex-col">
-            <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-800">
-              <h2 className="text-lg font-semibold text-slate-100">Create server</h2>
+          <div className="w-full max-w-lg max-h-[90vh] rounded-xl border border-slate-200 bg-white shadow-xl flex flex-col dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-200 dark:border-slate-800">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Create server</h2>
               <button
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setOpen(false)}
               >
                 Close
               </button>
             </div>
-            <div className="overflow-y-auto px-6 py-4 space-y-3 text-sm text-slate-100">
+            <div className="overflow-y-auto px-6 py-4 space-y-3 text-sm text-slate-900 dark:text-slate-100">
               <label className="block space-y-1">
-                <span className="text-slate-300">Name</span>
+                <span className="text-slate-600 dark:text-slate-300">Name</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="minecraft-01"
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Template</span>
+                <span className="text-slate-600 dark:text-slate-300">Template</span>
                 <select
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={templateId}
                   onChange={(e) => {
                     const newTemplateId = e.target.value;
@@ -265,9 +265,9 @@ function CreateServerModal() {
                 </select>
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Node</span>
+                <span className="text-slate-600 dark:text-slate-300">Node</span>
                 <select
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={nodeId}
                   onChange={(e) => setNodeId(e.target.value)}
                 >
@@ -281,9 +281,9 @@ function CreateServerModal() {
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Memory (MB)</span>
+                  <span className="text-slate-600 dark:text-slate-300">Memory (MB)</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                     value={memory}
                     onChange={(e) => setMemory(e.target.value)}
                     type="number"
@@ -291,9 +291,9 @@ function CreateServerModal() {
                   />
                 </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">CPU cores</span>
+                <span className="text-slate-600 dark:text-slate-300">CPU cores</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={cpu}
                   onChange={(e) => setCpu(e.target.value)}
                   type="number"
@@ -302,9 +302,9 @@ function CreateServerModal() {
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Disk (MB)</span>
+                <span className="text-slate-600 dark:text-slate-300">Disk (MB)</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={disk}
                   onChange={(e) => setDisk(e.target.value)}
                   type="number"
@@ -314,9 +314,9 @@ function CreateServerModal() {
               </label>
               </div>
               <label className="block space-y-1">
-                <span className="text-slate-300">Primary Port</span>
+                <span className="text-slate-600 dark:text-slate-300">Primary Port</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
                   type="number"
@@ -325,13 +325,13 @@ function CreateServerModal() {
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Additional port bindings</span>
-                <div className="space-y-2 text-xs text-slate-400">
+                <span className="text-slate-600 dark:text-slate-300">Additional port bindings</span>
+                <div className="space-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <p>Format: container:host (example: 25566:25570). Host defaults to container.</p>
                   {portBindings.map((binding, index) => (
                     <div key={`${binding}-${index}`} className="flex items-center gap-2">
                       <input
-                        className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                         value={binding}
                         onChange={(event) => {
                           const next = [...portBindings];
@@ -342,7 +342,7 @@ function CreateServerModal() {
                       />
                       <button
                         type="button"
-                        className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500"
+                        className="rounded-md border border-rose-200 px-2 py-1 text-[10px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
                         onClick={() => {
                           setPortBindings(portBindings.filter((_, i) => i !== index));
                         }}
@@ -353,7 +353,7 @@ function CreateServerModal() {
                   ))}
                   <button
                     type="button"
-                    className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                    className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                     onClick={() => setPortBindings([...portBindings, ''])}
                   >
                     Add binding
@@ -361,9 +361,9 @@ function CreateServerModal() {
                 </div>
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Network</span>
+                <span className="text-slate-600 dark:text-slate-300">Network</span>
                 <select
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={networkMode}
                   onChange={(e) =>
                     setNetworkMode(e.target.value as 'bridge' | 'mc-lan' | 'mc-lan-static')
@@ -376,13 +376,13 @@ function CreateServerModal() {
               </label>
               {networkMode === 'mc-lan-static' ? (
                 <div className="space-y-2">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Choose an IP from the node pool or leave auto-assign selected.
                   </p>
                   <label className="block space-y-1">
-                    <span className="text-slate-300">Primary IP allocation</span>
+                    <span className="text-slate-600 dark:text-slate-300">Primary IP allocation</span>
                     <select
-                      className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                       value={primaryIp}
                       onChange={(e) => setPrimaryIp(e.target.value)}
                     >
@@ -395,21 +395,21 @@ function CreateServerModal() {
                     </select>
                   </label>
                   {ipLoadError ? (
-                    <p className="text-xs text-amber-300">{ipLoadError}</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-300">{ipLoadError}</p>
                   ) : null}
                   {!ipLoadError && availableIps.length === 0 ? (
-                    <p className="text-xs text-slate-500">No available IPs found.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500">No available IPs found.</p>
                   ) : null}
                 </div>
               ) : networkMode === 'bridge' ? (
                 <div className="space-y-2">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Choose a node allocation for the default IP and port.
                   </p>
                   <label className="block space-y-1">
-                    <span className="text-slate-300">Primary allocation</span>
+                    <span className="text-slate-600 dark:text-slate-300">Primary allocation</span>
                     <select
-                      className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                       value={allocationId}
                       onChange={(event) => setAllocationId(event.target.value)}
                     >
@@ -423,29 +423,33 @@ function CreateServerModal() {
                     </select>
                   </label>
                   {allocLoadError ? (
-                    <p className="text-xs text-amber-300">{allocLoadError}</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-300">{allocLoadError}</p>
                   ) : null}
                   {!allocLoadError && availableAllocations.length === 0 ? (
-                    <p className="text-xs text-slate-500">No available allocations found.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500">No available allocations found.</p>
                   ) : null}
                 </div>
               ) : null}
               {templateVariables.length > 0 && (
-                <div className="space-y-3 border-t border-slate-800 pt-3">
-                  <h3 className="text-sm font-semibold text-slate-200">Environment Variables</h3>
+                <div className="space-y-3 border-t border-slate-200 dark:border-slate-800 pt-3">
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Environment Variables
+                  </h3>
                   {templateVariables.map((variable) => (
                     <label key={variable.name} className="block space-y-1">
-                      <span className="text-slate-300">
+                      <span className="text-slate-600 dark:text-slate-300">
                         {variable.name}
                         {variable.required && <span className="text-red-400 ml-1">*</span>}
                       </span>
                       {variable.description && (
-                        <p className="text-xs text-slate-500">{variable.description}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-500">
+                          {variable.description}
+                        </p>
                       )}
                       {variable.input === 'checkbox' ? (
                         <input
                           type="checkbox"
-                          className="rounded border-slate-800 bg-slate-900 text-sky-600 focus:ring-sky-500"
+                          className="rounded border-slate-200 bg-white text-primary-600 focus:ring-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-primary-400"
                           checked={environment[variable.name] === 'true'}
                           onChange={(e) => setEnvironment(prev => ({
                             ...prev,
@@ -454,7 +458,7 @@ function CreateServerModal() {
                         />
                       ) : (
                         <input
-                          className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                           type={variable.input === 'number' ? 'number' : 'text'}
                           value={environment[variable.name] || ''}
                           onChange={(e) => setEnvironment(prev => ({
@@ -469,15 +473,15 @@ function CreateServerModal() {
                 </div>
               )}
             </div>
-            <div className="p-6 pt-4 border-t border-slate-800 flex justify-end gap-2 text-xs">
+            <div className="p-6 pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 text-xs">
               <button
-                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setOpen(false)}
               >
                 Cancel
               </button>
               <button
-                className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-4 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 onClick={() => mutation.mutate()}
                 disabled={disableSubmit}
               >

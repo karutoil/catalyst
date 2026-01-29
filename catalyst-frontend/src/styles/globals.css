@@ -12,37 +12,37 @@
   --brand-black: 224 60% 5%;
 
   --background: 210 40% 98%;
-  --foreground: 224 25% 14%;
-  --muted: 214 32% 92%;
-  --muted-foreground: 224 12% 40%;
-  --popover: 210 40% 96%;
-  --popover-foreground: 224 25% 14%;
+  --foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --popover: 210 40% 98%;
+  --popover-foreground: 222 47% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 224 25% 14%;
-  --border: 214 20% 85%;
-  --input: 214 20% 85%;
-  --primary: var(--brand-cyan);
+  --card-foreground: 222 47% 11%;
+  --border: 214 20% 90%;
+  --input: 214 20% 90%;
+  --primary: 189 94% 42%;
   --primary-foreground: 220 18% 15%;
-  --secondary: 214 32% 92%;
-  --secondary-foreground: 224 25% 14%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
   --accent: var(--brand-magenta);
   --accent-foreground: 0 0% 100%;
   --destructive: 0 70% 54%;
   --destructive-foreground: 0 0% 100%;
-  --ring: var(--brand-cyan);
+  --ring: 189 94% 42%;
   --radius: 0.5rem;
 
-  --slate-50: 224 25% 14%;
-  --slate-100: 224 22% 20%;
-  --slate-200: 224 18% 28%;
-  --slate-300: 224 14% 40%;
-  --slate-400: 224 12% 50%;
-  --slate-500: 224 10% 60%;
-  --slate-600: 224 12% 70%;
-  --slate-700: 224 16% 80%;
-  --slate-800: 224 20% 90%;
-  --slate-900: 224 28% 95%;
-  --slate-950: 210 40% 98%;
+  --slate-50: 210 40% 98%;
+  --slate-100: 210 40% 96%;
+  --slate-200: 214 32% 91%;
+  --slate-300: 213 27% 84%;
+  --slate-400: 215 20% 65%;
+  --slate-500: 215 16% 47%;
+  --slate-600: 215 19% 35%;
+  --slate-700: 215 25% 27%;
+  --slate-800: 217 33% 17%;
+  --slate-900: 222 47% 11%;
+  --slate-950: 224 71% 4%;
 
   --sky-50: 190 100% 96%;
   --sky-100: 190 100% 92%;
@@ -67,37 +67,37 @@
 }
 
 .dark {
-  --background: var(--brand-black);
-  --foreground: 220 20% 94%;
-  --muted: 224 25% 14%;
-  --muted-foreground: 220 14% 70%;
-  --popover: 224 32% 9%;
-  --popover-foreground: 220 20% 94%;
-  --card: 224 32% 10%;
-  --card-foreground: 220 20% 94%;
-  --border: 223 24% 18%;
-  --input: 223 24% 18%;
-  --primary: var(--brand-cyan);
+  --background: 222 38% 14%;
+  --foreground: 210 40% 98%;
+  --muted: 222 38% 14%;
+  --muted-foreground: 215 20% 75%;
+  --popover: 222 38% 14%;
+  --popover-foreground: 210 40% 98%;
+  --card: 222 38% 14%;
+  --card-foreground: 210 40% 98%;
+  --border: 217 24% 20%;
+  --input: 217 24% 20%;
+  --primary: 189 94% 42%;
   --primary-foreground: 220 30% 12%;
-  --secondary: 224 26% 15%;
-  --secondary-foreground: 220 20% 90%;
+  --secondary: 217 32% 18%;
+  --secondary-foreground: 210 40% 98%;
   --accent: var(--brand-magenta);
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 56%;
   --destructive-foreground: 0 0% 100%;
-  --ring: var(--brand-cyan);
+  --ring: 189 94% 42%;
 
-  --slate-50: 220 20% 94%;
-  --slate-100: 220 18% 90%;
-  --slate-200: 220 16% 82%;
-  --slate-300: 220 14% 70%;
-  --slate-400: 220 12% 58%;
-  --slate-500: 221 14% 48%;
-  --slate-600: 223 18% 36%;
-  --slate-700: 224 24% 26%;
-  --slate-800: 224 28% 18%;
-  --slate-900: 224 32% 12%;
-  --slate-950: var(--brand-black);
+  --slate-50: 210 40% 98%;
+  --slate-100: 210 40% 96%;
+  --slate-200: 214 32% 91%;
+  --slate-300: 213 27% 84%;
+  --slate-400: 215 20% 65%;
+  --slate-500: 215 16% 47%;
+  --slate-600: 215 19% 35%;
+  --slate-700: 215 25% 27%;
+  --slate-800: 217 33% 17%;
+  --slate-900: 222 47% 11%;
+  --slate-950: 224 71% 4%;
 
   --sky-50: 189 100% 92%;
   --sky-100: 189 100% 86%;
@@ -138,23 +138,11 @@ body {
 }
 
 .app-shell {
-  background:
-    radial-gradient(1200px 600px at 10% 0%, hsl(var(--brand-yellow) / 0.25), transparent 60%),
-    radial-gradient(1000px 500px at 90% 0%, hsl(var(--brand-magenta) / 0.28), transparent 60%),
-    radial-gradient(1200px 700px at 50% 50%, hsl(var(--brand-cyan) / 0.2), transparent 65%),
-    radial-gradient(900px 600px at 95% 70%, hsl(var(--brand-violet) / 0.35), transparent 60%),
-    radial-gradient(900px 600px at 0% 100%, hsl(var(--brand-blue) / 0.35), transparent 60%),
-    hsl(var(--background));
+  background: hsl(var(--background));
 }
 
 .light .app-shell {
-  background:
-    radial-gradient(1100px 600px at 10% 0%, hsl(var(--brand-yellow) / 0.18), transparent 65%),
-    radial-gradient(900px 500px at 90% 0%, hsl(var(--brand-magenta) / 0.2), transparent 65%),
-    radial-gradient(1000px 650px at 50% 50%, hsl(var(--brand-cyan) / 0.14), transparent 70%),
-    radial-gradient(800px 600px at 95% 70%, hsl(var(--brand-violet) / 0.2), transparent 65%),
-    radial-gradient(800px 600px at 0% 100%, hsl(var(--brand-blue) / 0.18), transparent 65%),
-    hsl(var(--background));
+  background: hsl(var(--background));
 }
 
 .container {

@@ -86,24 +86,30 @@ function BackupSection({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-100">Backups</h2>
-          <p className="text-xs text-slate-400">Create, restore, and manage server backups.</p>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Backups</h2>
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            Create, restore, and manage server backups.
+          </p>
         </div>
         <CreateBackupModal serverId={serverId} disabled={isSuspended} />
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-slate-100">Backup settings</div>
-            <div className="text-xs text-slate-400">Storage mode and retention rules.</div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Backup settings</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400">
+              Storage mode and retention rules.
+            </div>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-3">
+        <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
           <div>
-            <label className="text-[11px] uppercase tracking-wide text-slate-500">Storage mode</label>
+            <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Storage mode
+            </label>
             <select
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
               value={storageMode}
               onChange={(event) => setStorageMode(event.target.value)}
               disabled={isSuspended}
@@ -114,9 +120,11 @@ function BackupSection({
             </select>
           </div>
           <div>
-            <label className="text-[11px] uppercase tracking-wide text-slate-500">Keep last N</label>
+            <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Keep last N
+            </label>
             <input
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
               type="number"
               min={0}
               max={1000}
@@ -126,9 +134,11 @@ function BackupSection({
             />
           </div>
           <div>
-            <label className="text-[11px] uppercase tracking-wide text-slate-500">Max age (days)</label>
+            <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Max age (days)
+            </label>
             <input
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
               type="number"
               min={0}
               max={3650}
@@ -141,7 +151,7 @@ function BackupSection({
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <button
             type="button"
-            className="rounded-md bg-sky-600 px-3 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+            className="rounded-md bg-primary-600 px-3 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
             onClick={async () => {
               try {
                 const parsedCount = retentionCount.trim() === '' ? undefined : Number(retentionCount);
@@ -178,11 +188,11 @@ function BackupSection({
         </div>
       ) : backups.length ? (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
             <span>{data?.total ?? backups.length} backups</span>
             <div className="flex items-center gap-2">
               <button
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700 disabled:opacity-60"
+                className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 hover:border-slate-200 dark:border-slate-700 disabled:opacity-60"
                 onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 disabled={page === 1}
               >
@@ -192,7 +202,7 @@ function BackupSection({
                 Page {page} of {totalPages}
               </span>
               <button
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700 disabled:opacity-60"
+                className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 hover:border-slate-200 dark:border-slate-700 disabled:opacity-60"
                 onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 disabled={page >= totalPages}
               >
@@ -212,7 +222,7 @@ function BackupSection({
             />
         </div>
       ) : (
-        <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-10 text-center text-sm text-slate-400">
+        <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-6 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
           No backups yet. Create a backup to protect your server data.
         </div>
       )}

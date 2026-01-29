@@ -151,11 +151,13 @@ function UsersPage() {
       <AdminTabs />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-50">User Management</h1>
-          <p className="text-sm text-slate-400">Create and manage administrator accounts.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">User Management</h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Create and manage administrator accounts.
+          </p>
         </div>
         <button
-          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500"
+          className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500"
           onClick={() => {
             setIsCreateOpen(true);
             setRoleSearch('');
@@ -165,8 +167,8 @@ function UsersPage() {
           Create user
         </button>
       </div>
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-        <label className="text-xs text-slate-300">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+        <label className="text-xs text-slate-600 dark:text-slate-300">
           Search
           <Input
             value={search}
@@ -181,43 +183,48 @@ function UsersPage() {
       </div>
 
       {isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-200">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
           Loading users...
         </div>
       ) : users.length ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60">
-          <div className="grid grid-cols-12 gap-3 border-b border-slate-800 px-4 py-3 text-xs uppercase text-slate-500">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="grid grid-cols-12 gap-3 border-b border-slate-200 px-4 py-3 text-xs uppercase text-slate-500 dark:text-slate-500 dark:border-slate-800">
             <div className="col-span-4">User</div>
             <div className="col-span-3">Email</div>
             <div className="col-span-3">Roles</div>
             <div className="col-span-2 text-right">Actions</div>
           </div>
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
             {users.map((user) => (
-              <div key={user.id} className="grid grid-cols-12 gap-3 px-4 py-3 text-sm text-slate-200">
+              <div
+                key={user.id}
+                className="grid grid-cols-12 gap-3 px-4 py-3 text-sm text-slate-600 dark:text-slate-200"
+              >
                 <div className="col-span-4">
-                  <div className="font-semibold text-slate-100">{user.username}</div>
-                  <div className="text-xs text-slate-500">Created {new Date(user.createdAt).toLocaleDateString()}</div>
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">{user.username}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-500">
+                    Created {new Date(user.createdAt).toLocaleDateString()}
+                  </div>
                 </div>
-                <div className="col-span-3 text-slate-300">{user.email}</div>
+                <div className="col-span-3 text-slate-600 dark:text-slate-300">{user.email}</div>
                 <div className="col-span-3 flex flex-wrap gap-2">
                   {user.roles.length ? (
                     user.roles.map((role) => (
                       <span
                         key={role.id}
-                        className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300"
+                        className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
                       >
                         {role.name}
                       </span>
                     ))
                   ) : (
-                    <span className="text-xs text-slate-500">No roles</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-500">No roles</span>
                   )}
                 </div>
                 <div className="col-span-2 flex justify-end">
                   <div className="flex gap-2">
                     <button
-                      className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:border-slate-500"
+                      className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-primary-500/30"
                       onClick={() => {
                         const nextId = user.id;
                         const requestId = editingRequestRef.current + 1;
@@ -257,20 +264,20 @@ function UsersPage() {
             ))}
           </div>
           {pagination ? (
-            <div className="flex items-center justify-between border-t border-slate-800 px-4 py-3 text-xs text-slate-400">
+            <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
               <span>
                 Page {pagination.page} of {pagination.totalPages}
               </span>
               <div className="flex gap-2">
                 <button
-                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
+                  className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 disabled:opacity-50"
                   onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                   disabled={page <= 1}
                 >
                   Previous
                 </button>
                 <button
-                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 disabled:opacity-50"
+                  className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 disabled:opacity-50"
                   onClick={() => setPage((prev) => (pagination.page < pagination.totalPages ? prev + 1 : prev))}
                   disabled={pagination.page >= pagination.totalPages}
                 >
@@ -292,50 +299,50 @@ function UsersPage() {
       )}
       {isCreateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-2xl rounded-xl border border-slate-800 bg-slate-950 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-              <h2 className="text-lg font-semibold text-slate-100">Create user</h2>
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Create user</h2>
               <button
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setIsCreateOpen(false)}
               >
                 Close
               </button>
             </div>
-            <div className="space-y-4 px-6 py-4 text-sm text-slate-100">
+            <div className="space-y-4 px-6 py-4 text-sm text-slate-900 dark:text-slate-100">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <label className="text-xs text-slate-300">
+                <label className="text-xs text-slate-600 dark:text-slate-300">
                   Email
                   <input
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     placeholder="user@example.com"
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   />
                 </label>
-                <label className="text-xs text-slate-300">
+                <label className="text-xs text-slate-600 dark:text-slate-300">
                   Username
                   <input
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder="username"
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   />
                 </label>
-                <label className="text-xs text-slate-300">
+                <label className="text-xs text-slate-600 dark:text-slate-300">
                   Password (min 8 chars)
                   <input
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="********"
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   />
                 </label>
               </div>
-              <div className="text-xs text-slate-300">
-                <div className="mb-1 text-slate-400">Roles</div>
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                <div className="mb-1 text-slate-500 dark:text-slate-400">Roles</div>
                 <Input
                   value={editRoleSearch}
                   onChange={(event) => setEditRoleSearch(event.target.value)}
@@ -346,24 +353,24 @@ function UsersPage() {
                   {filteredEditRoles.map((role) => (
                     <label
                       key={role.id}
-                      className="flex items-center gap-2 rounded-md border border-slate-800 px-2 py-1"
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1 dark:border-slate-800"
                     >
                       <input
                         type="checkbox"
                         checked={roleIds.includes(role.id)}
                         onChange={() => setRoleIds((prev) => toggleItem(prev, role.id))}
-                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500"
+                        className="h-4 w-4 rounded border-slate-200 bg-white text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-400"
                       />
-                      <span className="text-xs text-slate-200">{role.name}</span>
+                      <span className="text-xs text-slate-700 dark:text-slate-200">{role.name}</span>
                     </label>
                   ))}
                   {!filteredRoles.length ? (
-                    <span className="text-xs text-slate-500">No roles match</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-500">No roles match</span>
                   ) : null}
                 </div>
               </div>
-              <div className="text-xs text-slate-300">
-                <div className="mb-1 text-slate-400">Server access</div>
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                <div className="mb-1 text-slate-500 dark:text-slate-400">Server access</div>
                 <Input
                   value={editServerSearch}
                   onChange={(event) => setEditServerSearch(event.target.value)}
@@ -374,27 +381,27 @@ function UsersPage() {
                   {filteredEditServers.map((server) => (
                     <label
                       key={server.id}
-                      className="flex items-center gap-2 rounded-md border border-slate-800 px-2 py-1"
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1 dark:border-slate-800"
                     >
                       <input
                         type="checkbox"
                         checked={serverIds.includes(server.id)}
                         onChange={() => setServerIds((prev) => toggleItem(prev, server.id))}
-                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500"
+                        className="h-4 w-4 rounded border-slate-200 bg-white text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-400"
                       />
-                      <span className="text-xs text-slate-200">{server.name}</span>
-                      <span className="text-[10px] text-slate-500">({server.id})</span>
+                      <span className="text-xs text-slate-700 dark:text-slate-200">{server.name}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-500">({server.id})</span>
                     </label>
                   ))}
                   {!filteredServers.length ? (
-                    <span className="text-xs text-slate-500">No servers match</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-500">No servers match</span>
                   ) : null}
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-800 px-6 py-4 text-xs">
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 text-xs dark:border-slate-800">
               <button
-                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => {
                   setIsCreateOpen(false);
                   setRoleSearch('');
@@ -404,7 +411,7 @@ function UsersPage() {
                 Cancel
               </button>
               <button
-                className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-4 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 disabled={!canSubmit || createMutation.isPending}
                 onClick={() => createMutation.mutate()}
               >
@@ -416,47 +423,47 @@ function UsersPage() {
       ) : null}
       {editingUserId ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-2xl rounded-xl border border-slate-800 bg-slate-950 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-              <h2 className="text-lg font-semibold text-slate-100">Edit user</h2>
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Edit user</h2>
               <button
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setEditingUserId(null)}
               >
                 Close
               </button>
             </div>
-            <div className="space-y-4 px-6 py-4 text-sm text-slate-100">
+            <div className="space-y-4 px-6 py-4 text-sm text-slate-900 dark:text-slate-100">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <label className="text-xs text-slate-300">
+                <label className="text-xs text-slate-600 dark:text-slate-300">
                   Email
                   <input
                     type="email"
                     value={editEmail}
                     onChange={(event) => setEditEmail(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   />
                 </label>
-                <label className="text-xs text-slate-300">
+                <label className="text-xs text-slate-600 dark:text-slate-300">
                   Username
                   <input
                     value={editUsername}
                     onChange={(event) => setEditUsername(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   />
                 </label>
-                <label className="text-xs text-slate-300">
+                <label className="text-xs text-slate-600 dark:text-slate-300">
                   Password (leave blank to keep)
                   <input
                     type="password"
                     value={editPassword}
                     onChange={(event) => setEditPassword(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   />
                 </label>
               </div>
-              <div className="text-xs text-slate-300">
-                <div className="mb-1 text-slate-400">Roles</div>
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                <div className="mb-1 text-slate-500 dark:text-slate-400">Roles</div>
                 <Input
                   value={roleSearch}
                   onChange={(event) => setRoleSearch(event.target.value)}
@@ -467,24 +474,24 @@ function UsersPage() {
                   {filteredRoles.map((role) => (
                     <label
                       key={role.id}
-                      className="flex items-center gap-2 rounded-md border border-slate-800 px-2 py-1"
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1 dark:border-slate-800"
                     >
                       <input
                         type="checkbox"
                         checked={editRoleIds.includes(role.id)}
                         onChange={() => setEditRoleIds((prev) => toggleItem(prev, role.id))}
-                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500"
+                        className="h-4 w-4 rounded border-slate-200 bg-white text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-400"
                       />
-                      <span className="text-xs text-slate-200">{role.name}</span>
+                      <span className="text-xs text-slate-700 dark:text-slate-200">{role.name}</span>
                     </label>
                   ))}
                   {!filteredRoles.length ? (
-                    <span className="text-xs text-slate-500">No roles match</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-500">No roles match</span>
                   ) : null}
                 </div>
               </div>
-              <div className="text-xs text-slate-300">
-                <div className="mb-1 text-slate-400">Server access</div>
+              <div className="text-xs text-slate-600 dark:text-slate-300">
+                <div className="mb-1 text-slate-500 dark:text-slate-400">Server access</div>
                 <Input
                   value={serverSearch}
                   onChange={(event) => setServerSearch(event.target.value)}
@@ -495,27 +502,27 @@ function UsersPage() {
                   {filteredServers.map((server) => (
                     <label
                       key={server.id}
-                      className="flex items-center gap-2 rounded-md border border-slate-800 px-2 py-1"
+                      className="flex items-center gap-2 rounded-md border border-slate-200 px-2 py-1 dark:border-slate-800"
                     >
                       <input
                         type="checkbox"
                         checked={editServerIds.includes(server.id)}
                         onChange={() => setEditServerIds((prev) => toggleItem(prev, server.id))}
-                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-sky-500"
+                        className="h-4 w-4 rounded border-slate-200 bg-white text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-400"
                       />
-                      <span className="text-xs text-slate-200">{server.name}</span>
-                      <span className="text-[10px] text-slate-500">({server.id})</span>
+                      <span className="text-xs text-slate-700 dark:text-slate-200">{server.name}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-500">({server.id})</span>
                     </label>
                   ))}
                   {!filteredServers.length ? (
-                    <span className="text-xs text-slate-500">No servers match</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-500">No servers match</span>
                   ) : null}
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-800 px-6 py-4 text-xs">
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 text-xs dark:border-slate-800">
               <button
-                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => {
                   setEditingUserId(null);
                   setEditRoleSearch('');
@@ -525,7 +532,7 @@ function UsersPage() {
                 Cancel
               </button>
               <button
-                className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-4 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 onClick={() => editingUserId && updateMutation.mutate(editingUserId)}
                 disabled={!canSubmitEdit || updateMutation.isPending}
               >

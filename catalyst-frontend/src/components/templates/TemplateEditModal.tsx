@@ -216,7 +216,7 @@ function TemplateEditModal({ template }: { template: Template }) {
   return (
     <div>
       <button
-        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700"
+        className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30"
         onClick={() => {
           resetFromTemplate();
           setOpen(true);
@@ -225,19 +225,19 @@ function TemplateEditModal({ template }: { template: Template }) {
         Edit
       </button>
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-xl flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-              <h2 className="text-lg font-semibold text-slate-100">Edit template</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white dark:bg-slate-950/60 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Edit template</h2>
               <div className="flex items-center gap-2">
                 <button
-                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-200 hover:border-slate-700"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => importFileRef.current?.click()}
                 >
                   Import JSON
                 </button>
                 <button
-                  className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => setOpen(false)}
                 >
                   Close
@@ -251,37 +251,37 @@ function TemplateEditModal({ template }: { template: Template }) {
                 />
               </div>
             </div>
-            <div className="space-y-4 overflow-y-auto px-6 py-4 text-sm text-slate-100">
+            <div className="space-y-4 overflow-y-auto px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
               {importError ? <p className="text-xs text-rose-400">{importError}</p> : null}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Name</span>
+                  <span className="text-slate-500 dark:text-slate-400">Name</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Author</span>
+                  <span className="text-slate-500 dark:text-slate-400">Author</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={author}
                     onChange={(event) => setAuthor(event.target.value)}
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Version</span>
+                  <span className="text-slate-500 dark:text-slate-400">Version</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={version}
                     onChange={(event) => setVersion(event.target.value)}
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Icon URL (optional)</span>
+                  <span className="text-slate-500 dark:text-slate-400">Icon URL (optional)</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={iconUrl}
                     onChange={(event) => setIconUrl(event.target.value)}
                     placeholder="https://example.com/icon.png"
@@ -289,9 +289,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                 </label>
               </div>
               <label className="block space-y-1">
-                <span className="text-slate-300">Description</span>
+                <span className="text-slate-500 dark:text-slate-400">Description</span>
                 <textarea
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   rows={2}
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
@@ -299,35 +299,35 @@ function TemplateEditModal({ template }: { template: Template }) {
               </label>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Container image</span>
+                  <span className="text-slate-500 dark:text-slate-400">Container image</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={image}
                     onChange={(event) => setImage(event.target.value)}
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Install image (optional)</span>
+                  <span className="text-slate-500 dark:text-slate-400">Install image (optional)</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={installImage}
                     onChange={(event) => setInstallImage(event.target.value)}
                   />
                 </label>
               </div>
               <label className="block space-y-1">
-                <span className="text-slate-300">Config file path (optional)</span>
+                <span className="text-slate-500 dark:text-slate-400">Config file path (optional)</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   value={configFile}
                   onChange={(event) => setConfigFile(event.target.value)}
                   placeholder="/config/server.properties"
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Config files (optional)</span>
+                <span className="text-slate-500 dark:text-slate-400">Config files (optional)</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   value={configFiles.join(', ')}
                   onChange={(event) => {
                     const next = event.target.value
@@ -340,9 +340,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Startup command</span>
+                <span className="text-slate-500 dark:text-slate-400">Startup command</span>
                 <textarea
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   rows={2}
                   value={startup}
                   onChange={(event) => setStartup(event.target.value)}
@@ -350,17 +350,17 @@ function TemplateEditModal({ template }: { template: Template }) {
               </label>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <label className="block space-y-1 md:col-span-2">
-                  <span className="text-slate-300">Stop command</span>
+                  <span className="text-slate-500 dark:text-slate-400">Stop command</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={stopCommand}
                     onChange={(event) => setStopCommand(event.target.value)}
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Signal</span>
+                  <span className="text-slate-500 dark:text-slate-400">Signal</span>
                   <select
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={sendSignalTo}
                     onChange={(event) => setSendSignalTo(event.target.value as 'SIGTERM' | 'SIGKILL')}
                   >
@@ -370,9 +370,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                 </label>
               </div>
               <label className="block space-y-1">
-                <span className="text-slate-300">Install script (optional)</span>
+                <span className="text-slate-500 dark:text-slate-400">Install script (optional)</span>
                 <textarea
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                   rows={5}
                   value={installScript}
                   onChange={(event) => setInstallScript(event.target.value)}
@@ -380,17 +380,17 @@ function TemplateEditModal({ template }: { template: Template }) {
               </label>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Ports (comma separated)</span>
+                  <span className="text-slate-500 dark:text-slate-400">Ports (comma separated)</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     value={supportedPorts}
                     onChange={(event) => setSupportedPorts(event.target.value)}
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Allocated memory (MB)</span>
+                  <span className="text-slate-500 dark:text-slate-400">Allocated memory (MB)</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     type="number"
                     min={128}
                     value={allocatedMemoryMb}
@@ -398,9 +398,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-slate-300">Allocated CPU cores</span>
+                  <span className="text-slate-500 dark:text-slate-400">Allocated CPU cores</span>
                   <input
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                     type="number"
                     min={1}
                     step={1}
@@ -409,11 +409,13 @@ function TemplateEditModal({ template }: { template: Template }) {
                   />
                 </label>
               </div>
-              <div className="space-y-3 border-t border-slate-800 pt-3">
+              <div className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-800">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-slate-200">Variables</h3>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-200">
+                    Variables
+                  </h3>
                   <button
-                    className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                    className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                     onClick={() => setVariables((prev) => [...prev, createVariableDraft()])}
                     type="button"
                   >
@@ -421,12 +423,17 @@ function TemplateEditModal({ template }: { template: Template }) {
                   </button>
                 </div>
                 {variables.map((variable, index) => (
-                  <div key={`${variable.name}-${index}`} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                  <div
+                    key={`${variable.name}-${index}`}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-3 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900/40 dark:hover:border-primary-500/30"
+                  >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs font-semibold text-slate-300">Variable {index + 1}</div>
+                      <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        Variable {index + 1}
+                      </div>
                       {variables.length > 1 ? (
                         <button
-                          className="text-xs text-rose-300 hover:text-rose-200"
+                          className="text-xs text-rose-500 transition-all duration-300 hover:text-rose-400 dark:text-rose-300"
                           onClick={() =>
                             setVariables((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
                           }
@@ -438,9 +445,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                     </div>
                     <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="block space-y-1">
-                        <span className="text-slate-400">Name</span>
+                        <span className="text-slate-500 dark:text-slate-400">Name</span>
                         <input
-                          className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                           value={variable.name}
                           onChange={(event) =>
                             setVariables((prev) =>
@@ -452,9 +459,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                         />
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-slate-400">Default</span>
+                        <span className="text-slate-500 dark:text-slate-400">Default</span>
                         <input
-                          className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                           value={variable.defaultValue}
                           onChange={(event) =>
                             setVariables((prev) =>
@@ -466,9 +473,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                         />
                       </label>
                       <label className="block space-y-1 md:col-span-2">
-                        <span className="text-slate-400">Description</span>
+                        <span className="text-slate-500 dark:text-slate-400">Description</span>
                         <input
-                          className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                           value={variable.description}
                           onChange={(event) =>
                             setVariables((prev) =>
@@ -479,10 +486,10 @@ function TemplateEditModal({ template }: { template: Template }) {
                           }
                         />
                       </label>
-                      <label className="flex items-center gap-2 text-xs text-slate-300">
+                      <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">
                         <input
                           type="checkbox"
-                          className="rounded border-slate-800 bg-slate-900 text-sky-600 focus:ring-sky-500"
+                          className="rounded border-slate-300 bg-white text-primary-600 focus:ring-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-primary-400 dark:focus:ring-primary-400"
                           checked={variable.required}
                           onChange={(event) =>
                             setVariables((prev) =>
@@ -495,9 +502,9 @@ function TemplateEditModal({ template }: { template: Template }) {
                         Required
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-slate-400">Input type</span>
+                        <span className="text-slate-500 dark:text-slate-400">Input type</span>
                         <select
-                          className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                           value={variable.input}
                           onChange={(event) =>
                             setVariables((prev) =>
@@ -519,9 +526,11 @@ function TemplateEditModal({ template }: { template: Template }) {
                         </select>
                       </label>
                       <label className="block space-y-1 md:col-span-2">
-                        <span className="text-slate-400">Rules (comma separated)</span>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Rules (comma separated)
+                        </span>
                         <input
-                          className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                           value={variable.rules}
                           onChange={(event) =>
                             setVariables((prev) =>
@@ -538,15 +547,15 @@ function TemplateEditModal({ template }: { template: Template }) {
                 ))}
               </div>
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-800 px-6 py-4 text-xs">
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4 text-xs dark:border-slate-800">
               <button
-                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setOpen(false)}
               >
                 Cancel
               </button>
               <button
-                className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-4 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 onClick={() => mutation.mutate()}
                 disabled={disableSubmit}
               >

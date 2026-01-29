@@ -171,7 +171,7 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
   return (
     <div>
       <button
-        className="rounded-md border border-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 hover:border-slate-700 disabled:opacity-60"
+        className="rounded-md border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 disabled:opacity-60 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
         onClick={() => {
           if (!disabled) setOpen(true);
         }}
@@ -181,30 +181,30 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
       </button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-950 p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-950">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-100">Update server</h2>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Update server</h2>
               <button
-                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setOpen(false)}
               >
                 Close
               </button>
             </div>
-            <div className="mt-4 space-y-3 text-sm text-slate-100">
+            <div className="mt-4 space-y-3 text-sm text-slate-900 dark:text-slate-100">
               <label className="block space-y-1">
-                <span className="text-slate-300">Name</span>
+                <span className="text-slate-600 dark:text-slate-300">Name</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="minecraft-01"
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Memory (MB)</span>
+                <span className="text-slate-600 dark:text-slate-300">Memory (MB)</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={memory}
                   onChange={(e) => setMemory(e.target.value)}
                   type="number"
@@ -212,9 +212,9 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">CPU cores</span>
+                <span className="text-slate-600 dark:text-slate-300">CPU cores</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={cpu}
                   onChange={(e) => setCpu(e.target.value)}
                   type="number"
@@ -223,9 +223,9 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
                 />
               </label>
               <label className="block space-y-1">
-                <span className="text-slate-300">Disk (MB)</span>
+                <span className="text-slate-600 dark:text-slate-300">Disk (MB)</span>
                 <input
-                  className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={disk}
                   onChange={(e) => setDisk(e.target.value)}
                   type="number"
@@ -233,20 +233,20 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
                   step={1024}
                 />
                 {isRunning && isShrink ? (
-                  <span className="text-xs text-amber-300">
+                  <span className="text-xs text-amber-600 dark:text-amber-300">
                     Shrinking requires the server to be stopped.
                   </span>
                 ) : null}
               </label>
               {isIpamNetwork ? (
                 <div className="space-y-2">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Choose a primary IP or leave auto-assign selected.
                   </p>
                   <label className="block space-y-1">
-                    <span className="text-slate-300">Primary IP allocation</span>
+                    <span className="text-slate-600 dark:text-slate-300">Primary IP allocation</span>
                     <select
-                      className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                       value={primaryIp}
                       onChange={(event) => setPrimaryIp(event.target.value)}
                       disabled={isRunning}
@@ -264,20 +264,20 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
                         ))}
                     </select>
                   </label>
-                  {ipLoadError ? <p className="text-xs text-amber-300">{ipLoadError}</p> : null}
+                  {ipLoadError ? <p className="text-xs text-amber-600 dark:text-amber-300">{ipLoadError}</p> : null}
                   {!ipLoadError && availableIps.length === 0 ? (
-                    <p className="text-xs text-slate-500">No available IPs found.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500">No available IPs found.</p>
                   ) : null}
                 </div>
               ) : isBridgeNetwork ? (
                 <div className="space-y-2">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Choose the primary allocation (IP:port) for this server.
                   </p>
                   <label className="block space-y-1">
-                    <span className="text-slate-300">Primary allocation</span>
+                    <span className="text-slate-600 dark:text-slate-300">Primary allocation</span>
                     <select
-                      className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-slate-100 focus:border-sky-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                       value={allocationId}
                       onChange={(event) => setAllocationId(event.target.value)}
                       disabled={isRunning}
@@ -291,27 +291,27 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
                       ))}
                     </select>
                   </label>
-                  {allocLoadError ? <p className="text-xs text-amber-300">{allocLoadError}</p> : null}
+                  {allocLoadError ? <p className="text-xs text-amber-600 dark:text-amber-300">{allocLoadError}</p> : null}
                   {!allocLoadError && availableAllocations.length === 0 ? (
-                    <p className="text-xs text-slate-500">No allocations found.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500">No allocations found.</p>
                   ) : null}
                 </div>
               ) : null}
             </div>
             <div className="mt-4 flex justify-end gap-2 text-xs">
               <button
-                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => setOpen(false)}
               >
                 Cancel
               </button>
-                <button
-                  className="rounded-md bg-sky-600 px-4 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
-                  onClick={() => mutation.mutate()}
-                  disabled={mutation.isPending || (isRunning && isShrink) || disabled}
-                >
-                  Save changes
-                </button>
+              <button
+                className="rounded-md bg-primary-600 px-4 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                onClick={() => mutation.mutate()}
+                disabled={mutation.isPending || (isRunning && isShrink) || disabled}
+              >
+                Save changes
+              </button>
             </div>
           </div>
         </div>

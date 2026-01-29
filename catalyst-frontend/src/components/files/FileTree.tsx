@@ -41,7 +41,7 @@ function FileTreeNode({ serverId, entry, depth, activePath, expanded, onToggle, 
       <div className="flex items-center gap-1" style={{ paddingLeft: depth * 12 }}>
         <button
           type="button"
-          className="flex h-5 w-5 items-center justify-center rounded border border-slate-800 text-[10px] text-slate-400 hover:border-slate-700"
+          className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 text-[10px] text-slate-500 dark:text-slate-400 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-500 dark:hover:border-primary-500/30"
           onClick={() => onToggle(entry.path)}
           aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
         >
@@ -51,8 +51,8 @@ function FileTreeNode({ serverId, entry, depth, activePath, expanded, onToggle, 
           type="button"
           className={`flex-1 rounded-md px-2 py-1 text-left text-xs ${
             normalizePath(activePath) === entry.path
-              ? 'bg-slate-900 text-slate-100'
-              : 'text-slate-300 hover:bg-slate-900/60'
+              ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/20 dark:text-primary-400'
+              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
           }`}
           onClick={() => onNavigate(entry.path)}
         >
@@ -62,7 +62,7 @@ function FileTreeNode({ serverId, entry, depth, activePath, expanded, onToggle, 
       {isExpanded ? (
         <div className="mt-1 space-y-1">
           {isLoading ? (
-            <div className="pl-7 text-xs text-slate-500">Loading...</div>
+            <div className="pl-7 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Loading...</div>
           ) : childDirectories.length ? (
             childDirectories.map((child) => (
               <FileTreeNode
@@ -77,7 +77,7 @@ function FileTreeNode({ serverId, entry, depth, activePath, expanded, onToggle, 
               />
             ))
           ) : (
-            <div className="pl-7 text-xs text-slate-500">No subfolders</div>
+            <div className="pl-7 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">No subfolders</div>
           )}
         </div>
       ) : null}
@@ -114,17 +114,17 @@ function FileTree({ serverId, activePath, onNavigate }: Props) {
         type="button"
         className={`w-full rounded-md px-2 py-1 text-left text-xs ${
           normalizePath(activePath) === '/'
-            ? 'bg-slate-900 text-slate-100'
-            : 'text-slate-300 hover:bg-slate-900/60'
+            ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/20 dark:text-primary-400'
+            : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
         }`}
         onClick={() => onNavigate('/')}
       >
         /
       </button>
       {isLoading ? (
-        <div className="text-xs text-slate-500">Loading directories...</div>
+        <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Loading directories...</div>
       ) : isError ? (
-        <div className="text-xs text-rose-300">Unable to load directory tree.</div>
+        <div className="text-xs text-rose-500 dark:text-rose-300">Unable to load directory tree.</div>
       ) : directories.length ? (
         directories.map((entry) => (
           <FileTreeNode
@@ -139,7 +139,7 @@ function FileTree({ serverId, activePath, onNavigate }: Props) {
           />
         ))
       ) : (
-        <div className="text-xs text-slate-500">No folders found.</div>
+        <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">No folders found.</div>
       )}
     </div>
   );

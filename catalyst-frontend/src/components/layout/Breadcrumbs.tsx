@@ -30,10 +30,10 @@ function Breadcrumbs() {
   }
 
   return (
-    <nav className="text-sm text-slate-400" aria-label="Breadcrumb">
+    <nav className="text-sm text-slate-500 dark:text-slate-400" aria-label="Breadcrumb">
       <ol className="flex items-center gap-2">
         <li>
-          <Link className="font-medium text-slate-200 hover:text-white" to="/dashboard">
+          <Link className="font-medium text-slate-600 dark:text-slate-200 hover:text-white" to="/dashboard">
             Dashboard
           </Link>
         </li>
@@ -41,9 +41,9 @@ function Breadcrumbs() {
           <li key={crumb.href} className="flex items-center gap-2">
             <span className="text-slate-600">/</span>
             {crumb.isLast ? (
-              <span className="font-semibold text-slate-100">{crumb.label}</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">{crumb.label}</span>
             ) : (
-              <Link className="font-medium text-slate-200 hover:text-white" to={crumb.href}>
+              <Link className="font-medium text-slate-600 dark:text-slate-200 hover:text-white" to={crumb.href}>
                 {crumb.label}
               </Link>
             )}

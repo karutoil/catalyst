@@ -22,20 +22,22 @@ function NodesPage({ hideHeader }: Props) {
   return (
     <div className={hideHeader ? '' : 'space-y-4'}>
       {!hideHeader ? (
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-50">Nodes</h1>
-            <p className="text-sm text-slate-400">Track connected infrastructure nodes.</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Nodes</h1>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Track connected infrastructure nodes.
+              </p>
+            </div>
+            {isAdmin ? (
+              <NodeCreateModal locationId={locationId} />
+            ) : (
+              <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Admin access required</span>
+            )}
           </div>
-          {isAdmin ? (
-            <NodeCreateModal locationId={locationId} />
-          ) : (
-            <span className="text-xs text-slate-500">Admin access required</span>
-          )}
-        </div>
-      ) : null}
+        ) : null}
       {isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-200">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
           Loading nodes...
         </div>
       ) : nodes.length ? (

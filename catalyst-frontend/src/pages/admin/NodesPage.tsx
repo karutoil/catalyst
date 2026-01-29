@@ -23,17 +23,17 @@ function AdminNodesPage() {
       <AdminTabs />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-50">Nodes</h1>
-          <p className="text-sm text-slate-400">Track connected infrastructure nodes.</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Nodes</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Track connected infrastructure nodes.</p>
         </div>
         {isAdmin ? (
           <NodeCreateModal locationId={locationId} />
         ) : (
-          <span className="text-xs text-slate-500">Admin access required</span>
+          <span className="text-xs text-slate-500 dark:text-slate-500">Admin access required</span>
         )}
       </div>
-      <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-        <label className="text-xs text-slate-300">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 px-4 py-3">
+        <label className="text-xs text-slate-600 dark:text-slate-300">
           Search
           <Input
             value={search}
@@ -44,7 +44,7 @@ function AdminNodesPage() {
         </label>
       </div>
       {isLoading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-200">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 px-4 py-6 text-slate-600 dark:text-slate-200">
           Loading nodes...
         </div>
       ) : nodes.length ? (

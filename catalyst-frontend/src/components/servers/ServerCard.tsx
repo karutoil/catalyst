@@ -34,27 +34,33 @@ function ServerCard({ server }: { server: Server }) {
   const isSuspended = server.status === 'suspended';
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark dark:hover:border-primary-500/30">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Link
               to={`/servers/${server.id}`}
-              className="text-lg font-semibold text-slate-50 hover:text-white"
+              className="text-lg font-semibold text-slate-900 transition-all duration-300 hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
             >
               {server.name}
             </Link>
             <ServerStatusBadge status={server.status} />
           </div>
-          <div className="text-xs text-slate-400">Node: {server.nodeName ?? server.nodeId}</div>
-          <div className="text-xs text-slate-400">IP: {host}:{port}</div>
+          <div className="text-xs text-slate-600 dark:text-slate-400">
+            Node: {server.nodeName ?? server.nodeId}
+          </div>
+          <div className="text-xs text-slate-600 dark:text-slate-400">
+            IP: {host}:{port}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <ServerControls serverId={server.id} status={server.status} />
           <Link
             to={isSuspended ? '#' : `/servers/${server.id}/console`}
-            className={`rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200 ${
-              isSuspended ? 'cursor-not-allowed opacity-60' : 'hover:border-slate-700'
+            className={`rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 ${
+              isSuspended
+                ? 'cursor-not-allowed opacity-60'
+                : 'hover:border-primary-500 hover:text-slate-900 dark:hover:border-primary-500/30'
             }`}
             onClick={(event) => {
               if (isSuspended) {
@@ -67,18 +73,28 @@ function ServerCard({ server }: { server: Server }) {
           </Link>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
-        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1">
-          <div className="text-[10px] uppercase tracking-wide text-slate-500">CPU</div>
-          <div className="font-semibold text-slate-100">{formatPercent(cpuPercent)}</div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600 dark:text-slate-300">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
+            CPU
+          </div>
+          <div className="font-semibold text-slate-900 dark:text-slate-100">
+            {formatPercent(cpuPercent)}
+          </div>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1">
-          <div className="text-[10px] uppercase tracking-wide text-slate-500">Memory</div>
-          <div className="font-semibold text-slate-100">{formatPercent(memoryPercent)}</div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
+            Memory
+          </div>
+          <div className="font-semibold text-slate-900 dark:text-slate-100">
+            {formatPercent(memoryPercent)}
+          </div>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1">
-          <div className="text-[10px] uppercase tracking-wide text-slate-500">Disk</div>
-          <div className="font-semibold text-slate-100">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
+            Disk
+          </div>
+          <div className="font-semibold text-slate-900 dark:text-slate-100">
             {server.diskUsageMb != null && diskTotalMb
               ? `${server.diskUsageMb} / ${diskTotalMb} MB (${formatPercent(diskPercent)})`
               : formatPercent(diskPercent)}

@@ -65,8 +65,8 @@ function AdminDashboardPage() {
     <div className="space-y-6">
       <AdminTabs />
       <div>
-        <h1 className="text-2xl font-semibold text-slate-50">Admin Dashboard</h1>
-        <p className="text-sm text-slate-400">Overview of administrative tools and recent activity.</p>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Admin Dashboard</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Overview of administrative tools and recent activity.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -78,10 +78,10 @@ function AdminDashboardPage() {
         ].map((card) => (
           <div
             key={card.title}
-            className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 shadow"
+            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 px-4 py-4 shadow"
           >
-            <div className="text-xs uppercase text-slate-500">{card.title}</div>
-            <div className="mt-2 text-2xl font-semibold text-slate-100">{card.value}</div>
+            <div className="text-xs uppercase text-slate-500 dark:text-slate-500">{card.title}</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{card.value}</div>
           </div>
         ))}
       </div>
@@ -91,39 +91,46 @@ function AdminDashboardPage() {
           <Link
             key={section.to}
             to={section.to}
-            className="rounded-xl border border-slate-800 bg-slate-950/60 px-5 py-4 transition hover:border-slate-700 hover:bg-slate-900/60"
+            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 px-5 py-4 transition hover:border-slate-200 dark:border-slate-700 hover:bg-white dark:bg-slate-900/60"
           >
-            <div className="text-lg font-semibold text-slate-100">{section.title}</div>
-            <p className="mt-1 text-sm text-slate-400">{section.description}</p>
+            <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">{section.title}</div>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{section.description}</p>
           </Link>
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-5 py-4">
+      <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-primary-500/30">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Recent audit logs</h2>
-            <p className="text-xs text-slate-400">Latest 5 actions across the platform.</p>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Recent audit logs</h2>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              Latest 5 actions across the platform.
+            </p>
           </div>
-          <Link to="/admin/audit-logs" className="text-xs font-semibold text-sky-400 hover:text-sky-300">
+          <Link
+            to="/admin/audit-logs"
+            className="text-xs font-semibold text-primary-600 transition-all duration-300 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+          >
             View all
           </Link>
         </div>
         {auditLoading ? (
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-6 text-sm text-slate-200">
+          <div className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
             Loading audit logs...
           </div>
         ) : logs.length ? (
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
             {logs.map((log) => (
               <div key={log.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                 <div>
-                  <div className="font-semibold text-slate-100">{log.action}</div>
-                  <div className="text-xs text-slate-400">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">{log.action}</div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
                     {log.user?.username ?? log.user?.email ?? log.userId ?? 'Unknown user'} · {log.resource}
                   </div>
                 </div>
-                <div className="text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-500">
+                  {new Date(log.timestamp).toLocaleString()}
+                </div>
               </div>
             ))}
           </div>

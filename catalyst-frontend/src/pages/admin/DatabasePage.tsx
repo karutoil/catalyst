@@ -81,61 +81,63 @@ function DatabasePage() {
     <div className="space-y-4">
       <AdminTabs />
       <div>
-        <h1 className="text-2xl font-semibold text-slate-50">Database</h1>
-        <p className="text-sm text-slate-400">Manage database hosts for server provisioning.</p>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Database</h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          Manage database hosts for server provisioning.
+        </p>
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-6 py-5">
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">Database Hosts</h2>
-            <p className="text-xs text-slate-400">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Database Hosts</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Register MySQL hosts used to provision per-server databases.
             </p>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <label className="block text-xs text-slate-300">
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
             Name
             <input
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
               value={dbName}
               onChange={(event) => setDbName(event.target.value)}
               placeholder="primary-mysql"
             />
           </label>
-          <label className="block text-xs text-slate-300">
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
             Host
             <input
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
               value={dbHost}
               onChange={(event) => setDbHost(event.target.value)}
               placeholder="mysql.internal"
             />
           </label>
-          <label className="block text-xs text-slate-300">
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
             Port
             <input
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
               value={dbPort}
               onChange={(event) => setDbPort(event.target.value)}
               placeholder="3306"
             />
           </label>
-          <label className="block text-xs text-slate-300">
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
             Username
             <input
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
               value={dbUsername}
               onChange={(event) => setDbUsername(event.target.value)}
               placeholder="catalyst_admin"
             />
           </label>
-          <label className="block text-xs text-slate-300">
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
             Password
             <input
               type="password"
-              className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
               value={dbPassword}
               onChange={(event) => setDbPassword(event.target.value)}
               placeholder="secret"
@@ -144,7 +146,7 @@ function DatabasePage() {
         </div>
         <div className="mt-4 flex justify-end">
           <button
-            className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+            className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
             disabled={!canSubmitDbHost || createHostMutation.isPending}
             onClick={() => createHostMutation.mutate()}
           >
@@ -155,7 +157,7 @@ function DatabasePage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {isLoading ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-300">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
             Loading database hosts...
           </div>
         ) : databaseHosts.length === 0 ? (
@@ -167,18 +169,20 @@ function DatabasePage() {
           databaseHosts.map((dbHostEntry) => (
             <div
               key={dbHostEntry.id}
-              className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-100">{dbHostEntry.name}</div>
-                  <div className="text-xs text-slate-400">
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {dbHostEntry.name}
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
                     {dbHostEntry.host}:{dbHostEntry.port}
                   </div>
                 </div>
                 <div className="flex gap-2 text-xs">
                   <button
-                    className="rounded-md border border-slate-700 px-2 py-1 text-slate-200 hover:border-slate-500"
+                    className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                     onClick={() => {
                       setDbHostId(dbHostEntry.id);
                       setDbName(dbHostEntry.name);
@@ -191,7 +195,7 @@ function DatabasePage() {
                     Edit
                   </button>
                   <button
-                    className="rounded-md border border-rose-700 px-2 py-1 text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                    className="rounded-md border border-rose-200 px-2 py-1 text-rose-600 transition-all duration-300 hover:border-rose-400 disabled:opacity-60 dark:border-rose-500/30 dark:text-rose-400"
                     onClick={() => deleteHostMutation.mutate(dbHostEntry.id)}
                     disabled={deleteHostMutation.isPending}
                   >
@@ -200,12 +204,12 @@ function DatabasePage() {
                 </div>
               </div>
               {dbHostId === dbHostEntry.id ? (
-                <div className="mt-4 space-y-3 text-xs text-slate-300">
+                <div className="mt-4 space-y-3 text-xs text-slate-500 dark:text-slate-300">
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <label className="block">
                       Name
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                         value={dbName}
                         onChange={(event) => setDbName(event.target.value)}
                       />
@@ -213,7 +217,7 @@ function DatabasePage() {
                     <label className="block">
                       Host
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                         value={dbHost}
                         onChange={(event) => setDbHost(event.target.value)}
                       />
@@ -221,7 +225,7 @@ function DatabasePage() {
                     <label className="block">
                       Port
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                         value={dbPort}
                         onChange={(event) => setDbPort(event.target.value)}
                       />
@@ -229,7 +233,7 @@ function DatabasePage() {
                     <label className="block">
                       Username
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                         value={dbUsername}
                         onChange={(event) => setDbUsername(event.target.value)}
                       />
@@ -238,7 +242,7 @@ function DatabasePage() {
                       Password
                       <input
                         type="password"
-                        className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
                         value={dbPassword}
                         onChange={(event) => setDbPassword(event.target.value)}
                       />
@@ -246,14 +250,14 @@ function DatabasePage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                      className="rounded-md bg-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                       onClick={() => updateHostMutation.mutate({ hostId: dbHostEntry.id })}
                       disabled={updateHostMutation.isPending}
                     >
                       Save
                     </button>
                     <button
-                      className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:border-slate-500"
+                      className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
                       onClick={() => setDbHostId(null)}
                     >
                       Cancel

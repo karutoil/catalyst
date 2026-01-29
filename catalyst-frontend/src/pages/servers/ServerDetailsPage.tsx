@@ -726,7 +726,7 @@ function ServerDetailsPage() {
             checked={checked}
             onChange={(event) => onValueChange(event.target.checked ? 'true' : 'false')}
           />
-          <div className="h-5 w-10 rounded-full bg-slate-600 transition peer-checked:bg-sky-500">
+          <div className="h-5 w-10 rounded-full bg-slate-200 transition peer-checked:bg-primary-500 dark:bg-slate-700">
             <div className="h-4 w-4 translate-x-0.5 translate-y-0.5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
           </div>
         </label>
@@ -736,7 +736,7 @@ function ServerDetailsPage() {
     return (
       <input
         type={entry.type === 'number' ? 'number' : 'text'}
-        className={`${className} rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-50 focus:border-sky-400 focus:outline-none`}
+        className={`${className} rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400`}
         value={entry.value}
         onChange={(event) => onValueChange(event.target.value)}
         placeholder="Value"
@@ -903,7 +903,7 @@ function ServerDetailsPage() {
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-slate-200">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
         Loading server...
       </div>
     );
@@ -911,7 +911,7 @@ function ServerDetailsPage() {
 
   if (isError || !server) {
     return (
-      <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-6 text-rose-200">
+      <div className="rounded-xl border border-rose-200 bg-rose-100/60 px-4 py-6 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
         Unable to load server details.
       </div>
     );
@@ -940,30 +940,30 @@ function ServerDetailsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold text-slate-50">{server.name}</h1>
+              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">{server.name}</h1>
               <ServerStatusBadge status={server.status} />
             </div>
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-slate-600 dark:text-slate-400">
               Node: {nodeLabel} (IP: {nodeIp}, Port: {nodePort})
             </div>
           </div>
           <ServerControls serverId={server.id} status={server.status} />
         </div>
         {isSuspended ? (
-          <div className="mt-4 rounded-lg border border-rose-900 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
+          <div className="mt-4 rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-3 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
             <div className="font-semibold">Server suspended</div>
-            <div className="text-rose-300">
+            <div className="text-rose-600 dark:text-rose-300">
               {server?.suspensionReason ? `Reason: ${server.suspensionReason}` : 'No reason provided.'}
             </div>
           </div>
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
+      <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         {Object.entries(tabLabels)
           .filter(([key]) => key !== 'admin' || isAdmin)
           .map(([key, label]) => {
@@ -972,10 +972,10 @@ function ServerDetailsPage() {
             <button
               key={key}
               type="button"
-              className={`rounded-full px-3 py-1.5 font-semibold transition ${
+              className={`rounded-full px-3 py-1.5 font-semibold transition-all duration-300 ${
                 isActive
-                  ? 'bg-sky-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/20'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
               }`}
               onClick={() => navigate(`/servers/${server.id}/${key}`)}
             >
@@ -986,21 +986,23 @@ function ServerDetailsPage() {
       </div>
 
       {activeTab === 'console' ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-950">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2 text-xs text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-primary-500/30">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 dark:border-slate-800 dark:text-slate-500">
             <span>Console output</span>
             <div className="flex items-center gap-2">
               <span
                 className={`flex items-center gap-2 rounded-full border px-2.5 py-1 ${
-                  isConnected ? 'border-emerald-500/40 text-emerald-300' : 'border-amber-500/40 text-amber-300'
+                  isConnected
+                    ? 'border-emerald-200 text-emerald-600 dark:border-emerald-500/30 dark:text-emerald-300'
+                    : 'border-amber-200 text-amber-600 dark:border-amber-500/30 dark:text-amber-300'
                 }`}
               >
-                <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                 {isConnected ? 'Live' : 'Connecting'}
               </span>
               <button
                 type="button"
-                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-700"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30"
                 onClick={() => {
                   clearConsole();
                 }}
@@ -1010,14 +1012,16 @@ function ServerDetailsPage() {
             </div>
           </div>
           <div className="px-4 py-3">
-            {consoleLoading ? <div className="mb-2 text-xs text-slate-500">Loading recent logs...</div> : null}
+            {consoleLoading ? (
+              <div className="mb-2 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Loading recent logs...</div>
+            ) : null}
             {consoleError ? (
-              <div className="mb-2 rounded-md border border-rose-900 bg-rose-950/40 px-3 py-2 text-rose-200">
+              <div className="mb-2 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                 <div className="flex items-center justify-between gap-3">
                   <span>Unable to load historical logs.</span>
                   <button
                     type="button"
-                    className="rounded-md border border-rose-700 px-2 py-1 text-[11px] text-rose-200 hover:border-rose-600"
+                    className="rounded-md border border-rose-200 px-2 py-1 text-[11px] text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
                     onClick={() => refetchConsole()}
                   >
                     Retry
@@ -1027,9 +1031,9 @@ function ServerDetailsPage() {
             ) : null}
             <XtermConsole entries={entries} />
             <form onSubmit={handleSend} className="mt-3 flex items-center gap-3">
-              <span className="text-xs text-slate-500">&gt;</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">&gt;</span>
               <input
-                className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                 value={command}
                 onChange={(event) => setCommand(event.target.value)}
                 placeholder={canSend ? 'Type here' : 'Connect to send commands'}
@@ -1037,7 +1041,7 @@ function ServerDetailsPage() {
               />
               <button
                 type="submit"
-                className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!canSend}
               >
                 Send
@@ -1048,67 +1052,75 @@ function ServerDetailsPage() {
       ) : null}
 
       {activeTab === 'files' ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <FileManager serverId={server.id} isSuspended={isSuspended} />
         </div>
       ) : null}
 
       {activeTab === 'backups' ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <BackupSection serverId={server.id} serverStatus={server.status} isSuspended={isSuspended} />
         </div>
       ) : null}
 
       {activeTab === 'tasks' ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold text-slate-100">Scheduled tasks</div>
-              <div className="text-xs text-slate-400">Automate restarts, backups, and commands.</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Scheduled tasks
+              </div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                Automate restarts, backups, and commands.
+              </div>
             </div>
             <CreateTaskModal serverId={server.id} disabled={isSuspended} />
           </div>
           <div className="mt-4">
             {tasksLoading ? (
-              <div className="text-sm text-slate-400">Loading tasks...</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400">Loading tasks...</div>
             ) : tasks.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-8 text-center text-sm text-slate-400">
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
                 No tasks configured for this server yet.
               </div>
             ) : (
               <div className="space-y-3">
                 {tasks.map((task) => (
-                  <div key={task.id} className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30" key={task.id}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-slate-100">{task.name}</div>
-                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {task.name}
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         {task.action}
                       </span>
                     </div>
-                    <div className="mt-1 text-xs text-slate-400">
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                       {task.description || 'No description'}
                     </div>
-                    <div className="mt-2 text-xs text-slate-500">Schedule: {task.schedule}</div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-400 sm:grid-cols-4">
-                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
-                        <div className="text-slate-500">Next run</div>
-                        <div className="text-slate-200">{formatDateTime(task.nextRunAt)}</div>
+                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-500">
+                      Schedule: {task.schedule}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-slate-400 sm:grid-cols-4">
+                      <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
+                        <div className="text-slate-500 dark:text-slate-500">Next run</div>
+                        <div className="text-slate-700 dark:text-slate-200">{formatDateTime(task.nextRunAt)}</div>
                       </div>
-                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
-                        <div className="text-slate-500">Last run</div>
-                        <div className="text-slate-200">{formatDateTime(task.lastRunAt)}</div>
+                      <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
+                        <div className="text-slate-500 dark:text-slate-500">Last run</div>
+                        <div className="text-slate-700 dark:text-slate-200">{formatDateTime(task.lastRunAt)}</div>
                       </div>
-                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
-                        <div className="text-slate-500">Status</div>
-                        <div className="text-slate-200">{task.lastStatus ?? '—'}</div>
+                      <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
+                        <div className="text-slate-500 dark:text-slate-500">Status</div>
+                        <div className="text-slate-700 dark:text-slate-200">{task.lastStatus ?? '—'}</div>
                       </div>
-                      <div className="rounded-md border border-slate-800 bg-slate-950/50 px-2 py-1">
-                        <div className="text-slate-500">Runs</div>
-                        <div className="text-slate-200">{task.runCount ?? 0}</div>
+                      <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
+                        <div className="text-slate-500 dark:text-slate-500">Runs</div>
+                        <div className="text-slate-700 dark:text-slate-200">{task.runCount ?? 0}</div>
                       </div>
                     </div>
                     {task.lastError ? (
-                      <div className="mt-2 rounded-md border border-rose-900/70 bg-rose-950/40 px-3 py-2 text-[11px] text-rose-200">
+                      <div className="mt-2 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-[11px] text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                         {task.lastError}
                       </div>
                     ) : null}
@@ -1116,10 +1128,10 @@ function ServerDetailsPage() {
                       <EditTaskModal serverId={server.id} task={task} disabled={isSuspended} />
                       <button
                         type="button"
-                        className={`rounded-md border px-3 py-1 font-semibold ${
+                        className={`rounded-md border px-3 py-1 font-semibold transition-all duration-300 ${
                           task.enabled === false
-                            ? 'border-emerald-600 text-emerald-200 hover:border-emerald-500'
-                            : 'border-amber-600 text-amber-200 hover:border-amber-500'
+                            ? 'border-emerald-200 text-emerald-700 hover:border-emerald-300 dark:border-emerald-500/40 dark:text-emerald-300'
+                            : 'border-amber-200 text-amber-700 hover:border-amber-300 dark:border-amber-500/40 dark:text-amber-300'
                         }`}
                         onClick={() => pauseMutation.mutate(task as { id: string; enabled: boolean })}
                         disabled={pauseMutation.isPending || isSuspended}
@@ -1128,7 +1140,7 @@ function ServerDetailsPage() {
                       </button>
                       <button
                         type="button"
-                        className="rounded-md border border-rose-700 px-3 py-1 font-semibold text-rose-200 hover:border-rose-500"
+                        className="rounded-md border border-rose-200 px-3 py-1 font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
                         onClick={() => deleteMutation.mutate(task.id)}
                         disabled={deleteMutation.isPending || isSuspended}
                       >
@@ -1144,18 +1156,18 @@ function ServerDetailsPage() {
       ) : null}
 
       {activeTab === 'databases' ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-100">Databases</div>
-              <div className="text-xs text-slate-400">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Databases</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">
                 Create and manage per-server database credentials.
               </div>
             </div>
             {canManageDatabases ? (
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <select
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={databaseHostId}
                   onChange={(event) => setDatabaseHostId(event.target.value)}
                   disabled={isSuspended}
@@ -1168,7 +1180,7 @@ function ServerDetailsPage() {
                   ))}
                 </select>
                 <input
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={databaseName}
                   onChange={(event) => setDatabaseName(event.target.value)}
                   placeholder="database_name"
@@ -1176,7 +1188,7 @@ function ServerDetailsPage() {
                 />
                 <button
                   type="button"
-                  className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  className="rounded-md bg-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                   onClick={() => createDatabaseMutation.mutate()}
                   disabled={!databaseHostId || createDatabaseMutation.isPending || isSuspended}
                 >
@@ -1184,18 +1196,20 @@ function ServerDetailsPage() {
                 </button>
               </div>
             ) : (
-              <div className="text-xs text-slate-400">No database permissions assigned.</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                No database permissions assigned.
+              </div>
             )}
           </div>
 
           {databasesLoading ? (
-            <div className="mt-4 text-sm text-slate-400">Loading databases...</div>
+            <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">Loading databases...</div>
           ) : databasesError ? (
-            <div className="mt-4 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+            <div className="mt-4 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
               Unable to load databases.
             </div>
           ) : databases.length === 0 ? (
-            <div className="mt-4 rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-8 text-center text-sm text-slate-400">
+            <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
               No databases created yet.
             </div>
           ) : (
@@ -1203,12 +1217,14 @@ function ServerDetailsPage() {
               {databases.map((database) => (
                 <div
                   key={database.id}
-                  className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3"
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-primary-500/30"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-slate-100">{database.name}</div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {database.name}
+                      </div>
+                      <div className="text-xs text-slate-600 dark:text-slate-400">
                         Host: {database.hostName} ({database.host}:{database.port})
                       </div>
                     </div>
@@ -1216,7 +1232,7 @@ function ServerDetailsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:border-primary-500/30"
                           onClick={() => rotateDatabaseMutation.mutate(database.id)}
                           disabled={rotateDatabaseMutation.isPending || isSuspended}
                         >
@@ -1224,7 +1240,7 @@ function ServerDetailsPage() {
                         </button>
                         <button
                           type="button"
-                          className="rounded-md border border-rose-700 px-2 py-1 text-xs text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                          className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-600 transition-all duration-300 hover:border-rose-400 disabled:opacity-60 dark:border-rose-500/30 dark:text-rose-300"
                           onClick={() => deleteDatabaseMutation.mutate(database.id)}
                           disabled={deleteDatabaseMutation.isPending || isSuspended}
                         >
@@ -1233,18 +1249,24 @@ function ServerDetailsPage() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-3">
-                    <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                      <div className="text-slate-400">Database</div>
-                      <div className="font-semibold text-slate-100">{database.name}</div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
+                    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-slate-500 dark:text-slate-400">Database</div>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
+                        {database.name}
+                      </div>
                     </div>
-                    <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                      <div className="text-slate-400">Username</div>
-                      <div className="font-semibold text-slate-100">{database.username}</div>
+                    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-slate-500 dark:text-slate-400">Username</div>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
+                        {database.username}
+                      </div>
                     </div>
-                    <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                      <div className="text-slate-400">Password</div>
-                      <div className="font-semibold text-slate-100">{database.password}</div>
+                    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-slate-500 dark:text-slate-400">Password</div>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100">
+                        {database.password}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1261,24 +1283,30 @@ function ServerDetailsPage() {
               cpu={liveMetrics?.cpuPercent ?? server?.cpuPercent ?? 0}
               memory={liveMetrics?.memoryPercent ?? server?.memoryPercent ?? 0}
             />
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 lg:col-span-2">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30 lg:col-span-2">
               <div className="mb-3 flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-100">Live snapshot</div>
-                <div className={`flex items-center gap-2 text-xs ${isConnected ? 'text-emerald-300' : 'text-slate-400'}`}>
-                  <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Live snapshot
+                </div>
+                <div
+                  className={`flex items-center gap-2 text-xs ${
+                    isConnected ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500'}`} />
                   {isConnected ? 'Live' : 'Offline'}
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
-                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                  <div className="text-slate-400">Memory used</div>
-                  <div className="text-sm font-semibold text-slate-100">
+              <div className="grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-2">
+                <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="text-slate-500 dark:text-slate-400">Memory used</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {liveMetrics?.memoryUsageMb ? `${liveMetrics.memoryUsageMb} MB` : 'n/a'}
                   </div>
                 </div>
-                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                  <div className="text-slate-400">Disk usage</div>
-                  <div className="text-sm font-semibold text-slate-100">
+                <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="text-slate-500 dark:text-slate-400">Disk usage</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {liveDiskUsageMb != null && (liveDiskTotalMb || diskLimitMb)
                       ? `${liveDiskUsageMb} / ${liveDiskTotalMb || diskLimitMb} MB${
                           diskPercent != null ? ` (${diskPercent.toFixed(0)}%)` : ''
@@ -1286,29 +1314,31 @@ function ServerDetailsPage() {
                       : 'n/a'}
                   </div>
                 </div>
-                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                  <div className="text-slate-400">Disk IO (last tick)</div>
-                  <div className="text-sm font-semibold text-slate-100">
+                <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="text-slate-500 dark:text-slate-400">Disk IO (last tick)</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {liveDiskIoMb != null ? `${liveDiskIoMb} MB` : 'n/a'}
                   </div>
                 </div>
-                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                  <div className="text-slate-400">Network RX</div>
-                  <div className="text-sm font-semibold text-slate-100">
+                <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="text-slate-500 dark:text-slate-400">Network RX</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {formatBytes(Number(metricsHistory?.latest?.networkRxBytes ?? 0))}
                   </div>
                 </div>
-                <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2">
-                  <div className="text-slate-400">Network TX</div>
-                  <div className="text-sm font-semibold text-slate-100">
+                <div className="rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="text-slate-500 dark:text-slate-400">Network TX</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {formatBytes(Number(metricsHistory?.latest?.networkTxBytes ?? 0))}
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
-            <div className="text-sm font-semibold text-slate-100">Historical metrics</div>
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Historical metrics
+            </div>
             <MetricsTimeRangeSelector
               selectedRange={metricsTimeRange}
               onRangeChange={setMetricsTimeRange}
@@ -1331,24 +1361,24 @@ function ServerDetailsPage() {
 
       {activeTab === 'users' ? (
         <div className="space-y-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-100">Invite user</div>
-                <div className="text-xs text-slate-400">
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Invite user</div>
+                <div className="text-xs text-slate-600 dark:text-slate-400">
                   Send an invite to grant access to this server.
                 </div>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
               <input
-                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                 value={inviteEmail}
                 onChange={(event) => setInviteEmail(event.target.value)}
                 placeholder="user@example.com"
               />
               <select
-                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                 value={invitePreset}
                 onChange={(event) =>
                   setInvitePreset(event.target.value as 'readOnly' | 'power' | 'full' | 'custom')
@@ -1361,7 +1391,7 @@ function ServerDetailsPage() {
               </select>
               <button
                 type="button"
-                className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                 onClick={() => createInviteMutation.mutate()}
                 disabled={!inviteEmail.trim() || createInviteMutation.isPending}
               >
@@ -1369,12 +1399,12 @@ function ServerDetailsPage() {
               </button>
             </div>
             {invitePreset === 'custom' ? (
-              <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-2">
                 {permissionOptions.map((perm) => (
                   <label key={perm} className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+                      className="h-4 w-4 rounded border-slate-200 bg-white text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-400"
                       checked={invitePermissions.includes(perm)}
                       onChange={(event) => {
                         setInvitePermissions((current) =>
@@ -1389,37 +1419,39 @@ function ServerDetailsPage() {
                 ))}
               </div>
             ) : (
-              <div className="mt-3 text-xs text-slate-400">
+              <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
                 {permissionsData?.presets?.[invitePreset]?.join(', ') || 'No preset loaded.'}
               </div>
             )}
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-            <div className="text-sm font-semibold text-slate-100">Active access</div>
-            <div className="mt-4 space-y-3 text-xs text-slate-300">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Active access</div>
+            <div className="mt-4 space-y-3 text-xs text-slate-600 dark:text-slate-300">
               {permissionsData?.data?.length ? (
                 permissionsData.data.map((entry) => (
                   <div
                     key={entry.id}
-                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3"
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-primary-500/30"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold text-slate-100">{entry.user.username}</div>
-                        <div className="text-xs text-slate-400">{entry.user.email}</div>
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {entry.user.username}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">{entry.user.email}</div>
                       </div>
                       {entry.userId !== server.ownerId ? (
                         <button
                           type="button"
-                          className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500"
+                          className="rounded-md border border-rose-200 px-2 py-1 text-[10px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
                           onClick={() => removeAccessMutation.mutate(entry.userId)}
                           disabled={removeAccessMutation.isPending}
                         >
                           Remove
                         </button>
                       ) : (
-                        <span className="rounded-full border border-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-300">
+                        <span className="rounded-full border border-slate-200 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300">
                           Owner
                         </span>
                       )}
@@ -1429,7 +1461,7 @@ function ServerDetailsPage() {
                         <label key={`${entry.id}-${perm}`} className="flex items-center gap-2">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+                            className="h-4 w-4 rounded border-slate-200 bg-white text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-400"
                             checked={(accessPermissions[entry.userId] ?? entry.permissions).includes(perm)}
                             onChange={(event) => {
                               if (entry.userId === server.ownerId) return;
@@ -1453,7 +1485,7 @@ function ServerDetailsPage() {
                       <div className="mt-3">
                         <button
                           type="button"
-                          className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                          className="rounded-md bg-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                           onClick={() => saveAccessMutation.mutate(entry)}
                           disabled={saveAccessMutation.isPending}
                         >
@@ -1464,31 +1496,31 @@ function ServerDetailsPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-6 text-center text-xs text-slate-400">
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 py-6 text-center text-xs text-slate-500 dark:text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
                   No additional users yet.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-            <div className="text-sm font-semibold text-slate-100">Pending invites</div>
-            <div className="mt-4 space-y-2 text-xs text-slate-300">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Pending invites</div>
+            <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-slate-300">
               {invites.length ? (
                 invites.map((invite) => (
                   <div
                     key={invite.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-primary-500/30"
                   >
                     <div>
-                      <div className="text-sm font-semibold text-slate-100">{invite.email}</div>
-                      <div className="text-[11px] text-slate-400">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{invite.email}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
                         Expires {new Date(invite.expiresAt).toLocaleString()}
                       </div>
                     </div>
                     <button
                       type="button"
-                      className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500"
+                      className="rounded-md border border-rose-200 px-2 py-1 text-[10px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
                       onClick={() => cancelInviteMutation.mutate(invite.id)}
                       disabled={cancelInviteMutation.isPending}
                     >
@@ -1497,7 +1529,7 @@ function ServerDetailsPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-6 py-6 text-center text-xs text-slate-400">
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 py-6 text-center text-xs text-slate-500 dark:text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
                   No pending invites.
                 </div>
               )}
@@ -1509,63 +1541,75 @@ function ServerDetailsPage() {
       {activeTab === 'configuration' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-              <div className="text-sm font-semibold text-slate-100">Server settings</div>
-              <div className="mt-3 space-y-2 text-sm text-slate-300">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Server settings</div>
+              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
                 <div className="flex items-center justify-between">
                   <span>Template</span>
-                  <span className="text-slate-100">{server.template?.name ?? server.templateId}</span>
+                  <span className="text-slate-900 dark:text-slate-100">
+                    {server.template?.name ?? server.templateId}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Image</span>
-                  <span className="text-slate-100">{server.template?.image ?? 'n/a'}</span>
+                  <span className="text-slate-900 dark:text-slate-100">
+                    {server.template?.image ?? 'n/a'}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Memory</span>
-                  <span className="text-slate-100">{server.allocatedMemoryMb} MB</span>
+                  <span className="text-slate-900 dark:text-slate-100">
+                    {server.allocatedMemoryMb} MB
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>CPU cores</span>
-                  <span className="text-slate-100">{server.allocatedCpuCores}</span>
+                  <span className="text-slate-900 dark:text-slate-100">
+                    {server.allocatedCpuCores}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Primary port</span>
-                  <span className="text-slate-100">{server.primaryPort}</span>
+                  <span className="text-slate-900 dark:text-slate-100">{server.primaryPort}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Network</span>
-                  <span className="text-slate-100">{server.networkMode}</span>
+                  <span className="text-slate-900 dark:text-slate-100">{server.networkMode}</span>
                 </div>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-              <div className="text-sm font-semibold text-slate-100">Environment</div>
-              <div className="mt-3 space-y-2 text-xs text-slate-300">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Environment</div>
+              <div className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
                 {server.environment ? (
                   Object.entries(server.environment).map(([key, value]) => (
                     <div key={key} className="flex items-center justify-between gap-4">
-                      <span className="uppercase tracking-wide text-slate-400">{key}</span>
-                      <span className="text-slate-100">{String(value)}</span>
+                      <span className="uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        {key}
+                      </span>
+                      <span className="text-slate-900 dark:text-slate-100">{String(value)}</span>
                     </div>
                   ))
                 ) : (
-                  <div className="text-slate-500">No environment variables set.</div>
+                  <div className="text-slate-500 dark:text-slate-500">No environment variables set.</div>
                 )}
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-primary-500/30">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-100">Config files</div>
-                <div className="text-xs text-slate-400">
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Config files
+                </div>
+                <div className="text-xs text-slate-600 dark:text-slate-400">
                   {combinedConfigPaths.length ? combinedConfigPaths.join(', ') : 'No config files defined in template.'}
                 </div>
               </div>
             </div>
             <div className="mt-3">
               <input
-                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-50 focus:border-sky-400 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
                 placeholder="Search config keys or values..."
                 value={configSearch}
                 onChange={(event) => setConfigSearch(event.target.value)}
@@ -1573,19 +1617,21 @@ function ServerDetailsPage() {
             </div>
             <div className="mt-3 space-y-3">
               {!combinedConfigPaths.length ? (
-                <div className="text-xs text-slate-500">Add features.configFiles to the template to enable dynamic settings.</div>
+                <div className="text-xs text-slate-500 dark:text-slate-500">
+                  Add features.configFiles to the template to enable dynamic settings.
+                </div>
               ) : (
                 <div className="space-y-3">
                   {filteredConfigFiles.length === 0 ? (
-                    <div className="rounded-md border border-slate-700 bg-slate-800/80 px-3 py-2 text-xs text-slate-300">
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300">
                       No matches found.
                     </div>
                   ) : (
                     filteredConfigFiles.map((configFile) => (
-                      <div key={configFile.path} className="rounded-lg border border-slate-600 bg-slate-800/90">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 transition-all duration-300 hover:border-primary-500 dark:border-slate-600 dark:bg-slate-800/90 dark:hover:border-primary-500/30" key={configFile.path}>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs text-slate-50 hover:bg-slate-700/80"
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs text-slate-700 transition-all duration-300 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700/80"
                         onClick={() => {
                           if (configSearch) return;
                           const fileIndex = fileIndexByPath.get(configFile.path) ?? -1;
@@ -1593,7 +1639,7 @@ function ServerDetailsPage() {
                         }}
                       >
                         <span className="font-semibold">{configFile.path}</span>
-                        <span className="rounded-full border border-slate-500 bg-slate-700/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-100">
+                        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-500 dark:bg-slate-700/90 dark:text-slate-100">
                           {configSearch
                             ? 'Expanded'
                             : openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1)
@@ -1602,20 +1648,22 @@ function ServerDetailsPage() {
                         </span>
                       </button>
                       {configSearch || openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1) ? (
-                        <div className="border-t border-slate-600 px-3 py-3">
+                        <div className="border-t border-slate-200 px-3 py-3 dark:border-slate-600">
                           {!configFile.loaded ? (
-                            <div className="text-xs text-slate-400">Loading config values...</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              Loading config values...
+                            </div>
                           ) : configFile.error ? (
-                            <div className="rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+                            <div className="rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                               {configFile.error}
                             </div>
                           ) : (
-                            <div className="space-y-3 text-xs text-slate-200">
-                              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-[11px] uppercase tracking-wide text-slate-200">
+                            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-200">
+                              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] uppercase tracking-wide text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold">View mode</span>
                                   {configSearch ? (
-                                    <span className="rounded-full border border-slate-500 bg-slate-700/80 px-2 py-0.5 text-[10px] font-semibold text-slate-100">
+                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-500 dark:bg-slate-700/80 dark:text-slate-100">
                                       Filtered
                                     </span>
                                   ) : null}
@@ -1623,10 +1671,10 @@ function ServerDetailsPage() {
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide ${
+                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide transition-all duration-300 ${
                                       configFile.viewMode === 'form'
-                                        ? 'border-sky-400/80 bg-sky-500/30 text-sky-100'
-                                        : 'border-slate-500 text-slate-200 hover:border-slate-400'
+                                        ? 'border-primary-500/60 bg-primary-500/10 text-primary-600 dark:text-primary-300'
+                                        : 'border-slate-200 text-slate-600 hover:border-primary-500 dark:border-slate-500 dark:text-slate-200'
                                     }`}
                                     onClick={() =>
                                       setConfigFiles((current) =>
@@ -1640,10 +1688,10 @@ function ServerDetailsPage() {
                                   </button>
                                   <button
                                     type="button"
-                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide ${
+                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide transition-all duration-300 ${
                                       configFile.viewMode === 'raw'
-                                        ? 'border-sky-400/80 bg-sky-500/30 text-sky-100'
-                                        : 'border-slate-500 text-slate-200 hover:border-slate-400'
+                                        ? 'border-primary-500/60 bg-primary-500/10 text-primary-600 dark:text-primary-300'
+                                        : 'border-slate-200 text-slate-600 hover:border-primary-500 dark:border-slate-500 dark:text-slate-200'
                                     }`}
                                     onClick={() =>
                                       setConfigFiles((current) =>
@@ -1659,7 +1707,7 @@ function ServerDetailsPage() {
                               </div>
                               {configFile.viewMode === 'raw' ? (
                                 <textarea
-                                  className="min-h-[240px] w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 font-mono text-xs text-slate-50 focus:border-sky-400 focus:outline-none"
+                                  className="min-h-[240px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-700 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
                                   value={configFile.rawContent}
                                   onChange={(event) =>
                                     setConfigFiles((current) =>
@@ -1674,7 +1722,7 @@ function ServerDetailsPage() {
                                   {configFile.sections.map((section, sectionIndex) => (
                                     <div
                                       key={`${configFile.path}-${section.title}`}
-                                      className="rounded-xl border border-slate-600 bg-slate-800/90 p-4"
+                                      className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800/90"
                                     >
                                       <button
                                         type="button"
@@ -1698,11 +1746,11 @@ function ServerDetailsPage() {
                                           )
                                         }
                                       >
-                                        <div className="flex items-center gap-3 text-sm font-semibold text-slate-100">
-                                          <span className="h-2 w-2 rounded-full bg-sky-300" />
+                                        <div className="flex items-center gap-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                          <span className="h-2 w-2 rounded-full bg-primary-500" />
                                           <span className="uppercase tracking-wide">{section.title}</span>
                                         </div>
-                                        <span className="rounded-full border border-slate-500 bg-slate-700/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-100">
+                                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-500 dark:bg-slate-700/90 dark:text-slate-100">
                                           {section.collapsed ? 'Expand' : 'Collapse'}
                                         </span>
                                       </button>
@@ -1713,10 +1761,12 @@ function ServerDetailsPage() {
                                               entry.type === 'object' ? (
                                                 <div key={`${entry.key}-${entryIndex}`} className="p-3">
                                                   <div className="flex items-center justify-between">
-                                                    <h4 className="text-sm font-semibold text-slate-50">{entry.key || 'Object'}</h4>
+                                                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
+                                                      {entry.key || 'Object'}
+                                                    </h4>
                                                     <button
                                                       type="button"
-                                                      className="text-[10px] font-semibold uppercase tracking-wide text-sky-300 hover:text-sky-200"
+                                                      className="text-[10px] font-semibold uppercase tracking-wide text-primary-600 transition-all duration-300 hover:text-primary-500 dark:text-primary-300 dark:hover:text-primary-200"
                                                       onClick={() =>
                                                         addConfigEntry(fileIndexByPath.get(configFile.path) ?? 0, sectionIndex, entryIndex)
                                                       }
@@ -1728,18 +1778,18 @@ function ServerDetailsPage() {
                                                     {(entry.children ?? []).map((child, childIndex) => (
                                                       <div
                                                         key={`${entry.key}-${child.key}-${childIndex}`}
-                                                        className="space-y-3 border-b border-slate-700/60 px-3 py-3 last:border-b-0"
+                                                        className="space-y-3 border-b border-slate-200 dark:border-slate-700/60 px-3 py-3 last:border-b-0"
                                                       >
                                                         <div className="flex items-start justify-between gap-3">
-                                                          <div className="text-base font-semibold text-slate-50">
-                                                            {child.key || 'Key'}
-                                                          </div>
-                                                          <button
-                                                            type="button"
-                                                            className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-700/70 bg-rose-500/10 text-[11px] font-semibold text-rose-200 hover:border-rose-500 hover:bg-rose-500/20"
-                                                            onClick={() =>
-                                                              removeConfigEntry(
-                                                                fileIndexByPath.get(configFile.path) ?? 0,
+                                                      <div className="text-base font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
+                                                        {child.key || 'Key'}
+                                                      </div>
+                                                      <button
+                                                        type="button"
+                                                        className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-200 bg-rose-100/60 text-[11px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-700/70 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:border-rose-500"
+                                                        onClick={() =>
+                                                          removeConfigEntry(
+                                                            fileIndexByPath.get(configFile.path) ?? 0,
                                                                 sectionIndex,
                                                                 entryIndex,
                                                                 childIndex,
@@ -1765,15 +1815,15 @@ function ServerDetailsPage() {
                                               ) : (
                                                 <div
                                                   key={`${entry.key}-${entryIndex}`}
-                                                  className="space-y-3 border-b border-slate-700/60 px-3 py-3 last:border-b-0"
+                                                  className="space-y-3 border-b border-slate-200 px-3 py-3 last:border-b-0 dark:border-slate-700/60"
                                                 >
                                                   <div className="flex items-start justify-between gap-3">
-                                                    <div className="text-base font-semibold text-slate-50">
+                                                    <div className="text-base font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
                                                       {entry.key || 'Key'}
                                                     </div>
                                                     <button
                                                       type="button"
-                                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-700/70 bg-rose-500/10 text-[11px] font-semibold text-rose-200 hover:border-rose-500 hover:bg-rose-500/20"
+                                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-200 bg-rose-100/60 text-[11px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-700/70 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:border-rose-500"
                                                       onClick={() =>
                                                         removeConfigEntry(
                                                           fileIndexByPath.get(configFile.path) ?? 0,
@@ -1800,7 +1850,7 @@ function ServerDetailsPage() {
                                           <div className="flex flex-wrap items-center gap-2">
                                             <button
                                               type="button"
-                                              className="rounded-md border border-slate-800 px-3 py-1 text-xs text-slate-200 hover:border-slate-700"
+                                              className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:border-primary-500/30"
                                               onClick={() =>
                                                 addConfigEntry(fileIndexByPath.get(configFile.path) ?? 0, sectionIndex)
                                               }
@@ -1817,7 +1867,7 @@ function ServerDetailsPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   type="button"
-                                  className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                                  className="rounded-md bg-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                                   onClick={() => configMutation.mutate(fileIndexByPath.get(configFile.path) ?? 0)}
                                   disabled={configMutation.isPending}
                                 >
@@ -1841,16 +1891,18 @@ function ServerDetailsPage() {
       {activeTab === 'admin' ? (
         isAdmin ? (
           <div className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-100">Suspension</div>
-                  <div className="text-xs text-slate-400">Suspend or restore access to the server.</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Suspension</div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    Suspend or restore access to the server.
+                  </div>
                 </div>
                 {server.status === 'suspended' ? (
                   <button
                     type="button"
-                    className="rounded-md border border-emerald-600 px-3 py-1 text-xs font-semibold text-emerald-200 hover:border-emerald-500 disabled:opacity-60"
+                    className="rounded-md border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 transition-all duration-300 hover:border-emerald-300 disabled:opacity-60 dark:border-emerald-500/40 dark:text-emerald-300"
                     onClick={() => unsuspendMutation.mutate()}
                     disabled={unsuspendMutation.isPending}
                   >
@@ -1861,9 +1913,11 @@ function ServerDetailsPage() {
               {server.status !== 'suspended' ? (
                 <div className="mt-3 flex flex-wrap items-end gap-3 text-xs">
                   <div className="flex-1">
-                    <label className="text-[11px] uppercase tracking-wide text-slate-500">Reason (optional)</label>
+                    <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Reason (optional)
+                    </label>
                     <input
-                      className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                       value={suspendReason}
                       onChange={(event) => setSuspendReason(event.target.value)}
                       placeholder="Billing, abuse, or other admin notes"
@@ -1871,7 +1925,7 @@ function ServerDetailsPage() {
                   </div>
                   <button
                     type="button"
-                    className="rounded-md bg-rose-700 px-3 py-2 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
+                    className="rounded-md bg-rose-600 px-3 py-2 font-semibold text-white shadow-lg shadow-rose-500/20 transition-all duration-300 hover:bg-rose-500 disabled:opacity-60"
                     onClick={() => suspendMutation.mutate(suspendReason.trim() || undefined)}
                     disabled={suspendMutation.isPending}
                   >
@@ -1881,24 +1935,28 @@ function ServerDetailsPage() {
               ) : null}
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-100">Port allocations</div>
-                  <div className="text-xs text-slate-400">Add or remove host-to-container bindings.</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    Port allocations
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    Add or remove host-to-container bindings.
+                  </div>
                 </div>
-                <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                <span className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-500">
                   {server.status === 'stopped' ? 'Stopped' : 'Stop server to edit'}
                 </span>
               </div>
               {allocationsError ? (
-                <div className="mt-3 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">
+                <div className="mt-3 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                   {allocationsError}
                 </div>
               ) : null}
-              <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-2">
                 <input
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={newContainerPort}
                   onChange={(event) => setNewContainerPort(event.target.value)}
                   placeholder="Container port"
@@ -1908,7 +1966,7 @@ function ServerDetailsPage() {
                   disabled={server.status !== 'stopped' || isSuspended}
                 />
                 <input
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={newHostPort}
                   onChange={(event) => setNewHostPort(event.target.value)}
                   placeholder="Host port (optional)"
@@ -1919,7 +1977,7 @@ function ServerDetailsPage() {
                 />
                 <button
                   type="button"
-                  className="rounded-md bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                   onClick={() => addAllocationMutation.mutate()}
                   disabled={server.status !== 'stopped' || isSuspended || addAllocationMutation.isPending}
                 >
@@ -1928,21 +1986,21 @@ function ServerDetailsPage() {
               </div>
               <div className="mt-4 space-y-2 text-xs">
                 {allocations.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-800 bg-slate-900/50 px-4 py-4 text-center text-slate-400">
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-center text-slate-500 dark:text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
                     No allocations configured.
                   </div>
                 ) : (
                   allocations.map((allocation) => (
                     <div
                       key={`${allocation.containerPort}-${allocation.hostPort}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/70 dark:hover:border-primary-500/30"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-slate-100">
+                        <span className="text-slate-900 dark:text-slate-100">
                           {allocation.containerPort} → {allocation.hostPort}
                         </span>
                         {allocation.isPrimary ? (
-                          <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+                          <span className="rounded-full bg-primary-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-300">
                             Primary
                           </span>
                         ) : null}
@@ -1950,7 +2008,7 @@ function ServerDetailsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                          className="rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:border-primary-500/30"
                           onClick={() => setPrimaryMutation.mutate(allocation.containerPort)}
                           disabled={
                             allocation.isPrimary ||
@@ -1963,7 +2021,7 @@ function ServerDetailsPage() {
                         </button>
                         <button
                           type="button"
-                          className="rounded-md border border-rose-700 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                          className="rounded-md border border-rose-200 px-2 py-1 text-[10px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 disabled:opacity-60 dark:border-rose-500/30 dark:text-rose-300"
                           onClick={() => removeAllocationMutation.mutate(allocation.containerPort)}
                           disabled={
                             allocation.isPrimary ||
@@ -1981,18 +2039,24 @@ function ServerDetailsPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-100">Crash recovery</div>
-                  <div className="text-xs text-slate-400">Configure automatic restart behavior for crashes.</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    Crash recovery
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    Configure automatic restart behavior for crashes.
+                  </div>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-2">
                 <div>
-                  <label className="text-[11px] uppercase tracking-wide text-slate-500">Restart policy</label>
+                  <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Restart policy
+                  </label>
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                     value={restartPolicy}
                     onChange={(event) => setRestartPolicy(event.target.value)}
                     disabled={isSuspended}
@@ -2003,9 +2067,11 @@ function ServerDetailsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] uppercase tracking-wide text-slate-500">Max crash count</label>
+                  <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Max crash count
+                  </label>
                   <input
-                    className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                     type="number"
                     min={0}
                     max={100}
@@ -2018,7 +2084,7 @@ function ServerDetailsPage() {
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                 <button
                   type="button"
-                  className="rounded-md bg-sky-600 px-3 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  className="rounded-md bg-primary-600 px-3 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                   onClick={() => restartPolicyMutation.mutate()}
                   disabled={isSuspended || restartPolicyMutation.isPending}
                 >
@@ -2026,13 +2092,13 @@ function ServerDetailsPage() {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-700 px-3 py-2 font-semibold text-slate-200 hover:border-slate-500 disabled:opacity-60"
+                  className="rounded-md border border-slate-200 px-3 py-2 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:border-primary-500/30"
                   onClick={() => resetCrashCountMutation.mutate()}
                   disabled={isSuspended || resetCrashCountMutation.isPending}
                 >
                   Reset crash count
                 </button>
-                <div className="text-[11px] text-slate-400">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   Crashes: {server.crashCount ?? 0} / {server.maxCrashCount ?? 0}
                   {server.lastCrashAt ? ` · Last crash ${new Date(server.lastCrashAt).toLocaleString()}` : ''}
                   {server.lastExitCode !== null && server.lastExitCode !== undefined
@@ -2042,25 +2108,31 @@ function ServerDetailsPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-              <div className="text-sm font-semibold text-slate-100">Resource allocation</div>
-              <p className="mt-2 text-xs text-slate-400">Adjust memory, CPU, disk, or primary IP assignments.</p>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Resource allocation
+              </div>
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                Adjust memory, CPU, disk, or primary IP assignments.
+              </p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 <UpdateServerModal serverId={server.id} disabled={isSuspended} />
                 <TransferServerModal serverId={server.id} disabled={isSuspended} />
               </div>
             </div>
 
-            <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-4">
-              <div className="text-sm font-semibold text-rose-100">Danger zone</div>
-              <p className="mt-2 text-xs text-rose-200">Deleting the server removes all data and cannot be undone.</p>
+            <div className="rounded-xl border border-rose-200 bg-rose-100/60 px-4 py-4 dark:border-rose-500/30 dark:bg-rose-500/10">
+              <div className="text-sm font-semibold text-rose-700 dark:text-rose-200">Danger zone</div>
+              <p className="mt-2 text-xs text-rose-600 dark:text-rose-200">
+                Deleting the server removes all data and cannot be undone.
+              </p>
               <div className="mt-3">
                 <DeleteServerDialog serverId={server.id} serverName={server.name} disabled={isSuspended} />
               </div>
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-rose-800 bg-rose-950/40 px-4 py-6 text-rose-200">
+          <div className="rounded-xl border border-rose-200 bg-rose-100/60 px-4 py-6 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
             Admin access required.
           </div>
         )
@@ -2069,12 +2141,14 @@ function ServerDetailsPage() {
       {activeTab === 'settings' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-              <div className="text-sm font-semibold text-slate-100">Rename server</div>
-              <p className="mt-2 text-xs text-slate-400">Update how this server appears in your list.</p>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Rename server</div>
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                Update how this server appears in your list.
+              </p>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                 <input
-                  className="min-w-[220px] flex-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                  className="min-w-[220px] flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={serverName}
                   onChange={(event) => setServerName(event.target.value)}
                   placeholder="Server name"
@@ -2082,7 +2156,7 @@ function ServerDetailsPage() {
                 />
                 <button
                   type="button"
-                  className="rounded-md bg-sky-600 px-3 py-2 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+                  className="rounded-md bg-primary-600 px-3 py-2 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                   onClick={() => renameServerMutation.mutate()}
                   disabled={
                     isSuspended ||
@@ -2095,15 +2169,15 @@ function ServerDetailsPage() {
                 </button>
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4">
-              <div className="text-sm font-semibold text-slate-100">Maintenance</div>
-              <p className="mt-2 text-xs text-slate-400">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Maintenance</div>
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
                 Reinstalling will re-run the template install script and may overwrite files.
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 <button
                   type="button"
-                  className="rounded-md bg-amber-600 px-3 py-1 font-semibold text-white shadow hover:bg-amber-500 disabled:opacity-60"
+                  className="rounded-md bg-amber-600 px-3 py-1 font-semibold text-white shadow-lg shadow-amber-500/20 transition-all duration-300 hover:bg-amber-500 disabled:opacity-60"
                   disabled={server.status !== 'stopped' || isSuspended}
                   onClick={handleReinstall}
                 >

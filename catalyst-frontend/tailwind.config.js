@@ -16,7 +16,13 @@ module.exports = {
         input: 'hsl(var(--input))',
         muted: 'hsl(var(--muted))',
         'muted-foreground': 'hsl(var(--muted-foreground))',
-        primary: 'hsl(var(--primary))',
+        primary: {
+          400: '#22d3ee',
+          500: '#06b6d4',
+          600: '#0891b2',
+          900: '#164e63',
+          DEFAULT: '#06b6d4',
+        },
         'primary-foreground': 'hsl(var(--primary-foreground))',
         secondary: 'hsl(var(--secondary))',
         'secondary-foreground': 'hsl(var(--secondary-foreground))',
@@ -25,6 +31,11 @@ module.exports = {
         destructive: 'hsl(var(--destructive))',
         'destructive-foreground': 'hsl(var(--destructive-foreground))',
         ring: 'hsl(var(--ring))',
+        gray: {
+          750: '#2d3748',
+          850: '#1a202c',
+          950: '#0d1117',
+        },
         brand: {
           yellow: 'hsl(var(--brand-yellow))',
           magenta: 'hsl(var(--brand-magenta))',
@@ -63,6 +74,10 @@ module.exports = {
         lg: '0.5rem',
         md: '0.375rem',
         sm: '0.25rem',
+      },
+      boxShadow: {
+        'surface-light': '0 14px 30px -18px rgba(15, 23, 42, 0.28), 0 3px 12px -8px rgba(15, 23, 42, 0.12)',
+        'surface-dark': '0 18px 36px -18px rgba(2, 6, 23, 0.7), 0 6px 18px -12px rgba(2, 6, 23, 0.6)',
       },
       keyframes: {
         'accordion-down': {

@@ -53,28 +53,28 @@ function ServerControls({ serverId, status }: Props) {
   return (
     <div className="flex flex-wrap gap-2 text-xs">
       <button
-        className="rounded-md bg-emerald-600 px-3 py-1 font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-60"
+        className="rounded-md bg-emerald-600 px-3 py-1 font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:bg-emerald-500 disabled:opacity-60"
         disabled={start.isPending || status === 'running' || isSuspended}
         onClick={() => start.mutate()}
       >
         Start
       </button>
       <button
-        className="rounded-md bg-slate-700 px-3 py-1 font-semibold text-white shadow hover:bg-slate-600 disabled:opacity-60"
+        className="rounded-md bg-slate-600 px-3 py-1 font-semibold text-white shadow-lg shadow-slate-500/20 transition-all duration-300 hover:bg-slate-500 disabled:opacity-60"
         disabled={stop.isPending || status === 'stopped' || isSuspended}
         onClick={() => stop.mutate()}
       >
         Stop
       </button>
       <button
-        className="rounded-md bg-sky-600 px-3 py-1 font-semibold text-white shadow hover:bg-sky-500 disabled:opacity-60"
+        className="rounded-md bg-primary-600 px-3 py-1 font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
         disabled={restart.isPending || isSuspended}
         onClick={() => restart.mutate()}
       >
         Restart
       </button>
       <button
-        className="rounded-md bg-rose-700 px-3 py-1 font-semibold text-white shadow hover:bg-rose-600 disabled:opacity-60"
+        className="rounded-md bg-rose-600 px-3 py-1 font-semibold text-white shadow-lg shadow-rose-500/20 transition-all duration-300 hover:bg-rose-500 disabled:opacity-60"
         disabled={kill.isPending || isSuspended}
         onClick={() => kill.mutate()}
       >

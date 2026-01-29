@@ -5,7 +5,7 @@ type SparklineProps = {
   label?: string;
 };
 
-function Sparkline({ data, height = 36, strokeClassName = 'stroke-sky-400', label }: SparklineProps) {
+function Sparkline({ data, height = 36, strokeClassName = 'stroke-primary-500', label }: SparklineProps) {
   const max = data.length ? Math.max(...data, 1) : 1;
   const min = data.length ? Math.min(...data, 0) : 0;
   const range = Math.max(1, max - min);
@@ -37,7 +37,13 @@ function Sparkline({ data, height = 36, strokeClassName = 'stroke-sky-400', labe
         />
       ) : null}
       {!data.length ? (
-        <rect x="0" y="0" width="100" height="100" className="fill-slate-900/40 stroke-slate-800" />
+        <rect
+          x="0"
+          y="0"
+          width="100"
+          height="100"
+          className="fill-slate-200/40 stroke-slate-300 dark:fill-slate-900/40 dark:stroke-slate-800"
+        />
       ) : null}
     </svg>
   );
