@@ -153,8 +153,17 @@ NODE_HOSTNAME="agent-containerd-$(random_string).example"
 log_info "Creating node via API"
 payload=$(jq -n --arg name "$NODE_NAME" --arg hostname "$NODE_HOSTNAME" '{name: $name, hostname: $hostname, locationId: "cmkspe7nq0000sw3ctcc39e8z", publicAddress: "127.0.0.1", maxMemoryMb: 8192, maxCpuCores: 4}')
 response=$(http_post "${BACKEND_URL}/api/nodes" "$payload" "Authorization: Bearer $TOKEN")
-CREATED_NODE_ID=$(echo "$response" | head -n-1 | jq -r '.data.id')
-NODE_SECRET=$(echo "$response" | head -n-1 | jq -r '.data.secret')
+HTTP_CODE=$(echo "$response" | tail -n1)
+BODY=$(echo "$response" | head -n-1)
+CREATED_NODE_ID=$(echo "$BODY" | jq -r '.data.id' 2>/dev/null || true)
+NODE_SECRET=$(echo "$BODY" | jq -r '.data.secret' 2>/dev/null || true)
+
+# Debug: if node creation failed or returned null, print full response
+if [ -z "$CREATED_NODE_ID" ] || [ "$CREATED_NODE_ID" = "null" ]; then
+    log_error "Node creation returned empty/null (HTTP $HTTP_CODE)"
+    log_info "Full response body:"
+    echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+fi
 
 assert_not_empty "$CREATED_NODE_ID" "Node created"
 assert_not_empty "$NODE_SECRET" "Node secret present"

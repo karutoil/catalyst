@@ -6,7 +6,7 @@ const links = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/servers', label: 'Servers' },
   { to: '/alerts', label: 'Alerts' },
-  { to: '/admin/users', label: 'Admin', adminOnly: true },
+  { to: '/admin', label: 'Admin', adminOnly: true },
 ];
 
 function Sidebar() {

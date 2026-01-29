@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 
 const tabs = [
+  { to: '/admin', label: 'Overview', end: true },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/servers', label: 'Servers' },
   { to: '/admin/nodes', label: 'Nodes' },
@@ -19,6 +20,7 @@ function AdminTabs() {
         <NavLink
           key={tab.to}
           to={tab.to}
+          end={tab.end}
           className={({ isActive }) =>
             `rounded-full px-3 py-1.5 font-semibold transition ${
               isActive
