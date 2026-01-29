@@ -30,6 +30,13 @@ const privilegeErrorCodes = new Set([
   "ER_DBACCESS_DENIED_ERROR",
 ]);
 
+const authPluginErrorCodes = new Set([
+  "ER_PLUGIN_IS_NOT_LOADED",
+  "ER_PLUGIN_NOT_LOADED",
+  "ER_INVALID_PLUGIN",
+  "ER_NOT_SUPPORTED_AUTH_MODE",
+]);
+
 const getConnectTimeoutMs = () => {
   const raw = Number(process.env.DATABASE_HOST_CONNECT_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 5000;
@@ -93,15 +100,27 @@ export const provisionDatabase = async (
     await withDatabaseConnection(host, async (connection) => {
       const databaseId = mysql.escapeId(databaseName);
       const escapedUser = mysql.escape(username);
+      const escapedPassword = mysql.escape(password);
       let databaseCreated = false;
       let userCreated = false;
 
       try {
         await connection.execute(`CREATE DATABASE ${databaseId}`);
         databaseCreated = true;
-        await connection.execute(`CREATE USER ${escapedUser}@'%' IDENTIFIED BY ?`, [
-          password,
-        ]);
+        const createUser = async (useNative: boolean) => {
+          const clause = useNative
+            ? `CREATE USER ${escapedUser}@'%' IDENTIFIED WITH mysql_native_password BY ${escapedPassword}`
+            : `CREATE USER ${escapedUser}@'%' IDENTIFIED BY ${escapedPassword}`;
+          await connection.execute(clause);
+        };
+        try {
+          await createUser(true);
+        } catch (error: any) {
+          if (!authPluginErrorCodes.has(error?.code)) {
+            throw error;
+          }
+          await createUser(false);
+        }
         userCreated = true;
         await connection.execute(`GRANT ALL PRIVILEGES ON ${databaseId}.* TO ${escapedUser}@'%'`);
         await connection.execute("FLUSH PRIVILEGES");
@@ -136,9 +155,21 @@ export const rotateDatabasePassword = async (
   try {
     await withDatabaseConnection(host, async (connection) => {
       const escapedUser = mysql.escape(username);
-      await connection.execute(`ALTER USER ${escapedUser}@'%' IDENTIFIED BY ?`, [
-        password,
-      ]);
+      const escapedPassword = mysql.escape(password);
+      const alterUser = async (useNative: boolean) => {
+        const clause = useNative
+          ? `ALTER USER ${escapedUser}@'%' IDENTIFIED WITH mysql_native_password BY ${escapedPassword}`
+          : `ALTER USER ${escapedUser}@'%' IDENTIFIED BY ${escapedPassword}`;
+        await connection.execute(clause);
+      };
+      try {
+        await alterUser(true);
+      } catch (error: any) {
+        if (!authPluginErrorCodes.has(error?.code)) {
+          throw error;
+        }
+        await alterUser(false);
+      }
       await connection.execute("FLUSH PRIVILEGES");
     });
   } catch (error: any) {
