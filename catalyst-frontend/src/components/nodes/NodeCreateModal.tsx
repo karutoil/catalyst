@@ -15,11 +15,17 @@ function NodeCreateModal({ locationId }: Props) {
   const [publicAddress, setPublicAddress] = useState('');
   const [memory, setMemory] = useState('16384');
   const [cpu, setCpu] = useState('8');
+  const [deployInfo, setDeployInfo] = useState<{
+    deployUrl: string;
+    deploymentToken: string;
+    secret: string;
+    expiresAt: string;
+  } | null>(null);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () =>
-      nodesApi.create({
+    mutationFn: async () => {
+      const created = await nodesApi.create({
         name,
         description: description || undefined,
         locationId,
@@ -27,10 +33,14 @@ function NodeCreateModal({ locationId }: Props) {
         publicAddress,
         maxMemoryMb: Number(memory),
         maxCpuCores: Number(cpu),
-      }),
-    onSuccess: () => {
+      });
+      const info = created?.id ? await nodesApi.deploymentToken(created.id) : null;
+      return info;
+    },
+    onSuccess: (info) => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] });
       notifySuccess('Node registered');
+      setDeployInfo(info ?? null);
       setOpen(false);
       setName('');
       setDescription('');
@@ -159,6 +169,42 @@ function NodeCreateModal({ locationId }: Props) {
                 disabled={disableSubmit}
               >
                 {mutation.isPending ? 'Registering...' : 'Register node'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {deployInfo ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-800 bg-slate-950 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+              <h2 className="text-lg font-semibold text-slate-100">Deploy agent</h2>
+              <button
+                className="rounded-md border border-slate-800 px-2 py-1 text-xs text-slate-300 hover:border-slate-700"
+                onClick={() => setDeployInfo(null)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-3 px-6 py-4 text-sm text-slate-200">
+              <div className="text-slate-300">
+                Run this on the node to install and register the agent (valid for 24 hours).
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-xs text-slate-100">
+                <code className="whitespace-pre-wrap">
+                  {`bash <(curl -s ${deployInfo.deployUrl})`}
+                </code>
+              </div>
+              <div className="text-xs text-slate-500">
+                Token expires: {new Date(deployInfo.expiresAt).toLocaleString()}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-800 px-6 py-4 text-xs">
+              <button
+                className="rounded-md border border-slate-800 px-3 py-1 font-semibold text-slate-200 hover:border-slate-700"
+                onClick={() => setDeployInfo(null)}
+              >
+                Done
               </button>
             </div>
           </div>

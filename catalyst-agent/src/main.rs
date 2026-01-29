@@ -146,8 +146,18 @@ impl CatalystAgent {
 
 #[tokio::main]
 async fn main() -> AgentResult<()> {
+    let mut config_path: Option<String> = None;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--config" {
+            config_path = args.next();
+        }
+    }
+
+    let config_path = config_path.as_deref().unwrap_or("./config.toml");
     // Load config first so logging level/format can be applied.
-    let config = AgentConfig::from_file("./config.toml")
+    let config = AgentConfig::from_file(config_path)
+        .or_else(|_| AgentConfig::from_file("/opt/catalyst-agent/config.toml"))
         .or_else(|_| AgentConfig::from_env())
         .map_err(|e| AgentError::ConfigError(e.to_string()))?;
 

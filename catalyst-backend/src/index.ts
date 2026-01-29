@@ -1,4 +1,6 @@
 import Fastify from "fastify";
+import fs from "fs";
+import path from "path";
 import fastifyJwt from "@fastify/jwt";
 import fastifyWebsocket from "@fastify/websocket";
 import fastifyCors from "@fastify/cors";
@@ -205,6 +207,24 @@ async function bootstrap() {
         // Use user ID for authenticated requests, IP for unauthenticated
         return (request as any).user?.userId || request.ip;
       },
+      allowList: async (request) => {
+        const query = (request.query as { nodeId?: string; token?: string }) || {};
+        const headerNodeId =
+          typeof (request.headers["x-catalyst-node-id"] ?? request.headers["x-catalyst-nodeid"]) === "string"
+            ? (request.headers["x-catalyst-node-id"] ?? request.headers["x-catalyst-nodeid"])
+            : null;
+        const headerToken =
+          typeof request.headers["x-catalyst-node-token"] === "string"
+            ? request.headers["x-catalyst-node-token"]
+            : null;
+        const nodeId = headerNodeId ?? (typeof query.nodeId === "string" ? query.nodeId : null);
+        const token = headerToken ?? (typeof query.token === "string" ? query.token : null);
+        if (!nodeId || !token) {
+          return false;
+        }
+        const node = await prisma.node.findUnique({ where: { id: nodeId } });
+        return Boolean(node && node.secret === token);
+      },
       skipOnError: false,
     });
 
@@ -303,6 +323,26 @@ async function bootstrap() {
     await app.register(taskRoutes, { prefix: "/api/servers" });
     await app.register(alertRoutes, { prefix: "/api" });
 
+    // Agent binary download endpoint (public)
+    app.get("/api/agent/download", async (_request, reply) => {
+      const agentPath = path.resolve(
+        process.cwd(),
+        "..",
+        "catalyst-agent",
+        "target",
+        "release",
+        "catalyst-agent"
+      );
+
+      if (!fs.existsSync(agentPath)) {
+        return reply.status(404).send({ error: "Agent binary not found" });
+      }
+
+      reply.header("Content-Type", "application/octet-stream");
+      reply.header("Content-Disposition", "attachment; filename=catalyst-agent");
+      return reply.send(fs.createReadStream(agentPath));
+    });
+
     // Node deployment script endpoint (public)
     app.get("/api/deploy/:token", async (request, reply) => {
       const { token } = request.params as { token: string };
@@ -316,8 +356,11 @@ async function bootstrap() {
         return reply.status(401).send({ error: "Invalid or expired token" });
       }
 
+      const baseUrl = `${request.protocol}://${request.headers.host}`;
       const script = generateDeploymentScript(
+        baseUrl,
         deployToken.node.publicAddress,
+        deployToken.node.id,
         deployToken.secret,
         deployToken.node.hostname
       );
@@ -358,7 +401,9 @@ async function bootstrap() {
 // ============================================================================
 
 function generateDeploymentScript(
+  backendUrl: string,
   backendAddress: string,
+  nodeId: string,
   secret: string,
   hostName: string
 ): string {
@@ -369,25 +414,70 @@ set -e
 echo "Installing Catalyst Agent..."
 
 # Install dependencies
-apt-get update
-apt-get install -y curl wget unzip build-essential pkg-config libssl-dev
+detect_pkg_manager() {
+  if command -v apt-get >/dev/null 2>&1; then echo "apt"; return; fi
+  if command -v apk >/dev/null 2>&1; then echo "apk"; return; fi
+  if command -v dnf >/dev/null 2>&1; then echo "dnf"; return; fi
+  if command -v yum >/dev/null 2>&1; then echo "yum"; return; fi
+  if command -v pacman >/dev/null 2>&1; then echo "pacman"; return; fi
+  if command -v zypper >/dev/null 2>&1; then echo "zypper"; return; fi
+  echo ""
+}
+
+install_packages() {
+  local pm="$1"
+  case "$pm" in
+    apt)
+      apt-get update
+      apt-get install -y curl wget unzip pkg-config build-essential libssl-dev
+      ;;
+    apk)
+      apk add --no-cache curl wget unzip pkgconfig build-base openssl-dev
+      ;;
+    yum)
+      yum install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel
+      ;;
+    dnf)
+      dnf install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel
+      ;;
+    pacman)
+      pacman -Sy --noconfirm curl wget unzip pkgconf base-devel openssl
+      ;;
+    zypper)
+      zypper --non-interactive install curl wget unzip pkg-config gcc gcc-c++ make libopenssl-devel
+      ;;
+    *)
+      echo "Unsupported package manager. Please install curl, wget, unzip, pkg-config, build tools, and OpenSSL dev headers."
+      exit 1
+      ;;
+  esac
+}
+
+PKG_MANAGER="$(detect_pkg_manager)"
+if [ -z "$PKG_MANAGER" ]; then
+  echo "No supported package manager found."
+  exit 1
+fi
+install_packages "$PKG_MANAGER"
 
 # Create agent directory
 mkdir -p /opt/catalyst-agent
 cd /opt/catalyst-agent
 
-# Download agent binary (placeholder - in production, host prebuilt binaries)
+# Download agent binary
 echo "Downloading Catalyst Agent binary..."
-# REPLACE WITH ACTUAL BINARY DOWNLOAD URL
-# For now, assume pre-compiled binary is available
+curl -fsSL "${backendUrl}/api/agent/download" -o /opt/catalyst-agent/catalyst-agent
+chmod +x /opt/catalyst-agent/catalyst-agent
 
-# Create config file
-cat > /opt/catalyst-agent/config.toml << 'EOF'
+# Create config file (overwrite on install/reinstall)
+cat > /opt/catalyst-agent/config.toml << EOF
 [server]
 backend_url = "ws://${backendAddress}"
-node_id = "node-\${UUID}"
+node_id = "${nodeId}"
 secret = "${secret}"
 hostname = "${hostName}"
+data_dir = "/var/lib/catalyst"
+max_connections = 100
 
 [containerd]
 socket_path = "/run/containerd/containerd.sock"
@@ -395,6 +485,7 @@ namespace = "catalyst"
 
 [logging]
 level = "info"
+format = "json"
 EOF
 
 # Create systemd service
