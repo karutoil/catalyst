@@ -46,6 +46,9 @@ function TemplateEditModal({ template }: { template: Template }) {
   const [allocatedMemoryMb, setAllocatedMemoryMb] = useState(String(template.allocatedMemoryMb));
   const [allocatedCpuCores, setAllocatedCpuCores] = useState(String(template.allocatedCpuCores));
   const [iconUrl, setIconUrl] = useState(template.features?.iconUrl ?? '');
+  const [templateFeatures, setTemplateFeatures] = useState<Record<string, any>>(
+    template.features ?? {},
+  );
   const [variables, setVariables] = useState<VariableDraft[]>(
     template.variables?.length
       ? template.variables.map((variable) => createVariableDraft(variable))
@@ -98,6 +101,7 @@ function TemplateEditModal({ template }: { template: Template }) {
     setAllocatedMemoryMb(String(template.allocatedMemoryMb));
     setAllocatedCpuCores(String(template.allocatedCpuCores));
     setIconUrl(template.features?.iconUrl ?? '');
+    setTemplateFeatures(template.features ?? {});
     setVariables(
       template.variables?.length
         ? template.variables.map((variable) => createVariableDraft(variable))
@@ -135,6 +139,7 @@ function TemplateEditModal({ template }: { template: Template }) {
     setAllocatedMemoryMb(payload.allocatedMemoryMb ? String(payload.allocatedMemoryMb) : '1024');
     setAllocatedCpuCores(payload.allocatedCpuCores ? String(payload.allocatedCpuCores) : '2');
     setIconUrl(String(payload.features?.iconUrl ?? ''));
+    setTemplateFeatures(payload.features ?? {});
     const importedVariables = Array.isArray(payload.variables)
       ? payload.variables.map((variable: any) => ({
           name: String(variable?.name ?? ''),
@@ -183,7 +188,7 @@ function TemplateEditModal({ template }: { template: Template }) {
         variables: buildVariables(),
         installScript: installScript || undefined,
         features: {
-          ...(template.features ?? {}),
+          ...templateFeatures,
           iconUrl: iconUrl || undefined,
           ...(configFile ? { configFile } : {}),
           ...(configFiles.length ? { configFiles } : {}),

@@ -8,7 +8,16 @@ export type ModManagerSearchResponse = {
 };
 
 export const modManagerApi = {
-  search: async (serverId: string, params: { provider: string; query: string; page?: number }) => {
+  search: async (
+    serverId: string,
+    params: {
+      provider: string;
+      query?: string;
+      target?: 'mods' | 'datapacks' | 'modpacks';
+      gameVersion?: string;
+      page?: number;
+    },
+  ) => {
     const { data } = await apiClient.get<{ success: boolean; data?: ModManagerSearchResponse }>(
       `/api/servers/${serverId}/mod-manager/search`,
       { params },

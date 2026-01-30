@@ -108,35 +108,6 @@ function ServerDetailsPage() {
     enabled: Boolean(serverId),
   });
   const {
-    data: modSearchResults,
-    isLoading: modSearchLoading,
-    isError: modSearchError,
-    refetch: refetchModSearch,
-  } = useQuery({
-    queryKey: ['mod-manager-search', serverId, modProvider, modQuery],
-    queryFn: () =>
-      modManagerApi.search(serverId ?? '', {
-        provider: modProvider,
-        query: modQuery.trim(),
-      }),
-    enabled: Boolean(serverId && modProvider && modQuery.trim()),
-  });
-
-  const {
-    data: modVersions,
-    isLoading: modVersionsLoading,
-    isError: modVersionsError,
-  } = useQuery({
-    queryKey: ['mod-manager-versions', serverId, modProvider, selectedProject],
-    queryFn: () =>
-      modManagerApi.versions(serverId ?? '', {
-        provider: modProvider,
-        projectId: selectedProject ?? '',
-      }),
-    enabled: Boolean(serverId && modProvider && selectedProject),
-  });
-
-  const {
     entries,
     send,
     isLoading: consoleLoading,
@@ -180,11 +151,49 @@ function ServerDetailsPage() {
   const [accessPermissions, setAccessPermissions] = useState<Record<string, string[]>>({});
   const modManagerConfig = server?.template?.features?.modManager;
   const modManagerProviders = modManagerConfig?.providers ?? [];
-  const [modProvider, setModProvider] = useState(modManagerProviders[0] ?? 'modrinth');
+  const [modProvider, setModProvider] = useState('modrinth');
   const [modQuery, setModQuery] = useState('');
   const [modTarget, setModTarget] = useState<'mods' | 'datapacks' | 'modpacks'>('mods');
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<string>('');
+
+  const serverGameVersion =
+    server?.environment?.MC_VERSION ||
+    server?.environment?.MINECRAFT_VERSION ||
+    server?.environment?.GAME_VERSION ||
+    server?.environment?.SERVER_VERSION ||
+    server?.environment?.VERSION;
+  const {
+    data: modSearchResults,
+    isLoading: modSearchLoading,
+    isError: modSearchError,
+    refetch: refetchModSearch,
+  } = useQuery({
+    queryKey: ['mod-manager-search', serverId, modProvider, modQuery, modTarget, serverGameVersion],
+    queryFn: () =>
+      modManagerApi.search(serverId ?? '', {
+        provider: modProvider,
+        target: modTarget,
+        query: modQuery.trim() || undefined,
+        gameVersion: serverGameVersion,
+      }),
+    enabled: Boolean(serverId && modProvider),
+  });
+
+  const {
+    data: modVersions,
+    isLoading: modVersionsLoading,
+    isError: modVersionsError,
+  } = useQuery({
+    queryKey: ['mod-manager-versions', serverId, modProvider, selectedProject],
+    queryFn: () =>
+      modManagerApi.versions(serverId ?? '', {
+        provider: modProvider,
+        projectId: selectedProject ?? '',
+      }),
+    enabled: Boolean(serverId && modProvider && selectedProject),
+  });
+
 
   const createDatabaseMutation = useMutation({
     mutationFn: () => {
@@ -1458,6 +1467,205 @@ function ServerDetailsPage() {
       {activeTab === 'alerts' ? (
         <div className="space-y-4">
           <AlertsPage serverId={server.id} />
+        </div>
+      ) : null}
+
+      {activeTab === 'modManager' ? (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Mod manager</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                Search and install mods, datapacks, and modpacks.
+              </div>
+            </div>
+          </div>
+          {!modManagerConfig ? (
+            <div className="mt-4">
+              <EmptyState title="Mod manager not enabled" description="This template does not define a mod manager." />
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <label className="block text-xs text-slate-500 dark:text-slate-300">
+                  Provider
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={modProvider}
+                    onChange={(event) => setModProvider(event.target.value)}
+                  >
+                    {modManagerProviders.map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-300 md:col-span-2">
+                  Search
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                      value={modQuery}
+                      onChange={(event) => setModQuery(event.target.value)}
+                      placeholder="Search mods, datapacks, modpacks"
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
+                      onClick={() => refetchModSearch()}
+                      disabled={!modQuery.trim() || modSearchLoading}
+                    >
+                      Search
+                    </button>
+                  </div>
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <label className="block text-xs text-slate-500 dark:text-slate-300">
+                  Target
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={modTarget}
+                    onChange={(event) => setModTarget(event.target.value as typeof modTarget)}
+                  >
+                    <option value="mods">Mods</option>
+                    <option value="datapacks">Datapacks</option>
+                    <option value="modpacks">Modpacks</option>
+                  </select>
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-300 md:col-span-2">
+                  Version
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={selectedVersion}
+                    onChange={(event) => setSelectedVersion(event.target.value)}
+                    disabled={!selectedProject || modVersionsLoading}
+                  >
+                    <option value="">Select a version</option>
+                    {modVersionOptions.map((version: any) => {
+                      const id = version.id ?? version.fileId ?? version.fileID ?? version.file?.id;
+                      const label =
+                        version.name ||
+                        version.version_number ||
+                        version.displayName ||
+                        version.fileName ||
+                        String(id);
+                      return (
+                        <option key={id} value={String(id)}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                  onClick={() => installModMutation.mutate()}
+                  disabled={!selectedProject || !selectedVersion || installModMutation.isPending}
+                >
+                  Install
+                </button>
+              </div>
+              {modSearchLoading ? (
+                <div className="text-sm text-slate-500 dark:text-slate-400">Searching mods...</div>
+              ) : modSearchError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  Unable to load search results.
+                </div>
+              ) : modResults.length === 0 ? (
+                <EmptyState title="No results yet" description="Search for a mod or datapack to begin." />
+              ) : (
+                <div className="space-y-3">
+                  {modResults.map((entry: any) => {
+                    const id =
+                      entry.project_id ||
+                      entry.id ||
+                      entry.modId ||
+                      entry.slug ||
+                      entry.name;
+                    const title = entry.title || entry.name || entry.slug || 'Untitled';
+                    const summary = entry.description || entry.summary || entry.excerpt || '';
+                    const isActive = selectedProject === String(id);
+                    const imageUrl =
+                      modProvider === 'modrinth'
+                        ? entry.icon_url
+                        : entry.logo?.thumbnailUrl || entry.logo?.url;
+                    const providerLabel =
+                      modProvider === 'modrinth' ? 'Modrinth' : 'CurseForge';
+                    let externalUrl = '';
+                    if (modProvider === 'modrinth') {
+                      const slug = entry.slug || entry.project_id || entry.id;
+                      const projectType = entry.project_type || 'project';
+                      externalUrl = slug
+                        ? `https://modrinth.com/${projectType}/${slug}`
+                        : '';
+                    } else {
+                      externalUrl = entry.links?.websiteUrl || '';
+                      if (!externalUrl) {
+                        const slug = entry.slug || entry.id;
+                        externalUrl = slug
+                          ? `https://www.curseforge.com/minecraft/mc-mods/${slug}`
+                          : '';
+                      }
+                    }
+                    return (
+                      <div key={String(id)} className="flex flex-wrap items-stretch gap-2">
+                        <button
+                          type="button"
+                          className={`flex-1 rounded-lg border px-4 py-3 text-left transition-all duration-300 ${
+                            isActive
+                              ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-400/70 dark:bg-primary-500/10 dark:text-primary-200'
+                              : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-primary-500/30'
+                          }`}
+                          onClick={() => setSelectedProject(String(id))}
+                        >
+                          <div className="flex items-start gap-3">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt=""
+                                loading="lazy"
+                                className="h-10 w-10 rounded-md object-cover"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-md bg-slate-200 dark:bg-slate-800" />
+                            )}
+                            <div>
+                              <div className="text-sm font-semibold">{title}</div>
+                              {summary ? (
+                                <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                                  {summary}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                        {externalUrl ? (
+                          <a
+                            className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
+                            href={externalUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View on {providerLabel}
+                          </a>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {modVersionsError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  Unable to load versions for the selected project.
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       ) : null}
 
