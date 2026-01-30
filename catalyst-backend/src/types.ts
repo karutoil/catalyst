@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyInstance } from "fastify";
 
 declare module "fastify" {
   interface FastifyRequest {
-    user: {
+    user?: {
       userId: string;
       email?: string;
       username?: string;
@@ -14,20 +14,11 @@ declare module "fastify" {
   }
 }
 
-declare module "@fastify/jwt" {
-  interface FastifyJWT {
-    user: {
-      userId: string;
-      email?: string;
-      username?: string;
-    };
-  }
-}
-
 declare global {
   namespace NodeJS {
     interface ProcessEnv {
       FRONTEND_URL?: string;
+      PASSKEY_RP_ID?: string;
     }
   }
 }

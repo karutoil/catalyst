@@ -6,7 +6,7 @@
 backend_url = "ws://localhost:3000/ws"
 
 # Unique node identifier (UUID or hostname)
-node_id = "cmkt6h7wd0002ephrk1e9dq1t"
+node_id = "cml0ai9k000027yto58m2n3oh"
 
 # Node secret key (obtain from backend when creating node)
 secret = "dev-secret-key-12345"

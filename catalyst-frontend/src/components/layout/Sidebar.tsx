@@ -4,6 +4,7 @@ import { useUIStore } from '../../stores/uiStore';
 
 const links = [
   { to: '/dashboard', label: 'Dashboard' },
+  { to: '/profile', label: 'Profile' },
   { to: '/servers', label: 'Servers' },
   { to: '/admin', label: 'Admin', adminOnly: true },
 ];

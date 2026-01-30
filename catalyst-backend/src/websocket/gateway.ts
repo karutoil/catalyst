@@ -2,6 +2,7 @@ import pino from "pino";
 import crypto from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { FastifyRequest } from "fastify";
+import { auth } from "../auth";
 import {
   WsEvent,
   ServerState,
@@ -176,16 +177,17 @@ export class WebSocketGateway {
 
   private async handleClientConnection(socket: any, token: string) {
     try {
-      // Verify JWT token
-      const decoded = await this.verifyJwt(token);
-      if (!decoded) {
+      const session = await auth.api.getSession({
+        headers: new Headers({ authorization: `Bearer ${token}` }),
+      });
+      if (!session) {
         socket.end();
         return;
       }
 
-      const clientId = `${decoded.userId}-${Date.now()}`;
+      const clientId = `${session.user.id}-${Date.now()}`;
       const client: ClientConnection = {
-        userId: decoded.userId,
+        userId: session.user.id,
         socket,
         authenticated: true,
         subscriptions: new Set<string>(),
@@ -1219,27 +1221,6 @@ export class WebSocketGateway {
           serverUuid,
         })
       );
-    }
-  }
-
-  private async verifyJwt(
-    token: string
-  ): Promise<{ userId: string } | null> {
-    try {
-      const jwtModule = await import("jsonwebtoken");
-      const verify =
-        (jwtModule as { verify?: typeof import("jsonwebtoken").verify }).verify ??
-        (jwtModule as { default?: { verify?: typeof import("jsonwebtoken").verify } }).default?.verify;
-      if (!verify) {
-        throw new Error("JWT verify unavailable");
-      }
-      const decoded = verify(
-        token,
-        process.env.JWT_SECRET || "dev-secret-key-change-in-production"
-      );
-      return decoded as { userId: string };
-    } catch {
-      return null;
     }
   }
 

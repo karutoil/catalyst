@@ -6,4 +6,5 @@ export interface User {
   username: string;
   role: Role;
   permissions?: string[];
+  twoFactorEnabled?: boolean;
 }

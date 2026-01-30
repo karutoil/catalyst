@@ -16,7 +16,10 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
+  const token =
+    useAuthStore.getState().token ||
+    sessionStorage.getItem('catalyst-session-token') ||
+    localStorage.getItem('catalyst-auth-token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

@@ -98,14 +98,8 @@ export class RbacMiddleware {
 export function createAuthDecorator(rbac: RbacMiddleware) {
   return (permission: Permission) => {
     return async (request: any, reply: any) => {
-      if (!request.jwtVerify) {
+      if (!request.user?.userId) {
         return reply.status(401).send({ error: "Unauthorized" });
-      }
-
-      try {
-        await request.jwtVerify();
-      } catch {
-        return reply.status(401).send({ error: "Invalid token" });
       }
 
       const userId = request.user.userId;

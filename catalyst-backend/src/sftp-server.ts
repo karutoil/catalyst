@@ -2,19 +2,17 @@ import { readFileSync } from 'fs';
 import ssh2 from 'ssh2';
 import { join } from 'path';
 import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import { createReadStream, createWriteStream } from 'fs';
 import { generateKeyPairSync } from 'crypto';
+import { auth } from './auth';
 
 const { Server: SSHServer, utils } = ssh2;
-const { verify } = jwt;
 type SFTPStream = ssh2.SFTPStream;
 
 const prisma = new PrismaClient();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const SFTP_PORT = parseInt(process.env.SFTP_PORT || '2022');
 const SERVER_FILES_ROOT = process.env.SERVER_FILES_ROOT || '/var/lib/catalyst/servers';
 
@@ -42,11 +40,6 @@ try {
   console.log('Generated new SFTP host key at', HOST_KEY_PATH);
 }
 
-interface JWTPayload {
-  userId: string;
-  username: string;
-}
-
 interface SFTPSession {
   userId: string;
   username: string;
@@ -55,19 +48,23 @@ interface SFTPSession {
   permissions: string[];
 }
 
-async function validateJWTAndGetServer(username: string, password: string): Promise<SFTPSession | null> {
+async function validateTokenAndGetServer(username: string, password: string): Promise<SFTPSession | null> {
   try {
     // Username format: serverId
     const serverId = username;
 
-    // Password is JWT token
-    const decoded = verify(password, JWT_SECRET) as JWTPayload;
+    const session = await auth.api.getSession({
+      headers: new Headers({ authorization: `Bearer ${password}` }),
+    });
+    if (!session) {
+      return null;
+    }
 
     // Check if user has access to this server via ServerAccess
     const serverAccess = await prisma.serverAccess.findFirst({
       where: {
         serverId,
-        userId: decoded.userId,
+        userId: session.user.id,
       },
       include: {
         server: {
@@ -79,7 +76,7 @@ async function validateJWTAndGetServer(username: string, password: string): Prom
     });
 
     if (!serverAccess) {
-      console.log(`SFTP: User ${decoded.username} attempted access to server ${serverId} - not found or no permission`);
+      console.log(`SFTP: User ${session.user.email} attempted access to server ${serverId} - not found or no permission`);
       return null;
     }
 
@@ -94,11 +91,11 @@ async function validateJWTAndGetServer(username: string, password: string): Prom
       console.error(`Failed to create server directory ${serverPath}:`, err);
     }
 
-    console.log(`SFTP: User ${decoded.username} authenticated for server ${serverId}`);
+    console.log(`SFTP: User ${session.user.email} authenticated for server ${serverId}`);
 
     return {
-      userId: decoded.userId,
-      username: decoded.username,
+      userId: session.user.id,
+      username: (session.user as any).username ?? session.user.email,
       serverId,
       serverPath,
       permissions,
@@ -144,7 +141,7 @@ function startSFTPServer() {
             const username = ctx.username;
             const password = ctx.password;
 
-            session = await validateJWTAndGetServer(username, password);
+            session = await validateTokenAndGetServer(username, password);
 
             if (session) {
               ctx.accept();

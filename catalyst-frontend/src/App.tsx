@@ -8,6 +8,7 @@ import ErrorBoundary from './components/shared/ErrorBoundary';
 import { useUIStore } from './stores/uiStore';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import TwoFactorPage from './pages/auth/TwoFactorPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import ServersPage from './pages/servers/ServersPage';
 import ServerDetailsPage from './pages/servers/ServerDetailsPage';
@@ -26,6 +27,7 @@ import SystemPage from './pages/admin/SystemPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
 import SecurityPage from './pages/admin/SecurityPage';
 import InvitesPage from './pages/InvitesPage';
+import ProfilePage from './pages/ProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
 
 function App() {
@@ -42,6 +44,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/two-factor" element={<TwoFactorPage />} />
         <Route path="/invites/:token" element={<InvitesPage />} />
         <Route
           path="/"
@@ -53,6 +56,7 @@ function App() {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="servers" element={<ServersPage />} />
           <Route path="servers/:serverId/:tab?" element={<ServerDetailsPage />} />
           <Route
