@@ -477,8 +477,24 @@ export async function authRoutes(app: FastifyInstance) {
           authorization: request.headers.authorization || "",
         }),
         body: { password },
+        returnHeaders: true,
       });
-      reply.send({ success: true, data: response });
+      const tokenHeader =
+        "headers" in response ? response.headers.get("set-auth-token") : null;
+      const cookieHeader =
+        "headers" in response ? response.headers.get("set-cookie") : null;
+      const data =
+        "headers" in response && response.response
+          ? response.response
+          : (response as any);
+      if (tokenHeader) {
+        reply.header("set-auth-token", tokenHeader);
+        reply.header("Access-Control-Expose-Headers", "set-auth-token");
+      }
+      if (cookieHeader) {
+        reply.header("set-cookie", cookieHeader);
+      }
+      reply.send({ success: true, data });
     }
   );
 
@@ -495,8 +511,24 @@ export async function authRoutes(app: FastifyInstance) {
           authorization: request.headers.authorization || "",
         }),
         body: { password },
+        returnHeaders: true,
       });
-      reply.send({ success: true, data: response });
+      const tokenHeader =
+        "headers" in response ? response.headers.get("set-auth-token") : null;
+      const cookieHeader =
+        "headers" in response ? response.headers.get("set-cookie") : null;
+      const data =
+        "headers" in response && response.response
+          ? response.response
+          : (response as any);
+      if (tokenHeader) {
+        reply.header("set-auth-token", tokenHeader);
+        reply.header("Access-Control-Expose-Headers", "set-auth-token");
+      }
+      if (cookieHeader) {
+        reply.header("set-cookie", cookieHeader);
+      }
+      reply.send({ success: true, data });
     }
   );
 
@@ -513,8 +545,24 @@ export async function authRoutes(app: FastifyInstance) {
           authorization: request.headers.authorization || "",
         }),
         body: { password },
+        returnHeaders: true,
       });
-      reply.send({ success: true, data: response });
+      const tokenHeader =
+        "headers" in response ? response.headers.get("set-auth-token") : null;
+      const cookieHeader =
+        "headers" in response ? response.headers.get("set-cookie") : null;
+      const data =
+        "headers" in response && response.response
+          ? response.response
+          : (response as any);
+      if (tokenHeader) {
+        reply.header("set-auth-token", tokenHeader);
+        reply.header("Access-Control-Expose-Headers", "set-auth-token");
+      }
+      if (cookieHeader) {
+        reply.header("set-cookie", cookieHeader);
+      }
+      reply.send({ success: true, data });
     }
   );
 

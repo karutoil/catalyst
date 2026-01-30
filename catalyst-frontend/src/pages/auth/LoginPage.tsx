@@ -52,14 +52,14 @@ function LoginPage() {
     return syncPasskeySession();
   };
 
-  const onSubmit = async (values: LoginSchema) => {
+  const onSubmit = async (values: LoginSchema, fallbackOverride = allowPasskeyFallback) => {
     try {
       localStorage.setItem('catalyst-remember-me', values.rememberMe ? 'true' : 'false');
       if (!values.rememberMe) {
         localStorage.removeItem('catalyst-auth-token');
         sessionStorage.removeItem('catalyst-session-token');
       }
-      await login({ ...values, allowPasskeyFallback });
+      await login({ ...values, allowPasskeyFallback: fallbackOverride });
       // Redirect on successful login
       setTimeout(() => {
         navigate(from || '/servers');
@@ -70,7 +70,13 @@ function LoginPage() {
         return;
       }
       if ((err as any).code === 'TWO_FACTOR_REQUIRED') {
-        navigate('/two-factor', { state: { from: location.state?.from, rememberMe: values.rememberMe } });
+        navigate('/two-factor', {
+          state: {
+            from: location.state?.from,
+            rememberMe: values.rememberMe,
+            returnTo: location.pathname,
+          },
+        });
       }
     }
   };
@@ -204,8 +210,9 @@ function LoginPage() {
                 type="button"
                 className="mt-3 w-full text-sm font-medium text-slate-600 transition-all duration-300 hover:text-primary-600 dark:text-slate-300 dark:hover:text-primary-400"
                 onClick={() => {
-                  setPasskeyRequired(false);
                   setAllowPasskeyFallback(true);
+                  setPasskeyRequired(false);
+                  void handleSubmit((values) => onSubmit(values, true))();
                 }}
                 disabled={passkeySubmitting}
               >

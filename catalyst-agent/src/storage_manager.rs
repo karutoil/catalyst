@@ -123,7 +123,9 @@ impl StorageManager {
         self.mount_image(image_path, &migrate_dir).await?;
         let src = format!("{}/", mount_dir.display());
         let dst = format!("{}/", migrate_dir.display());
-        run("rsync", &["-a", src.as_str(), dst.as_str()])?;
+        spawn_blocking(move || run("rsync", &["-a", src.as_str(), dst.as_str()]))
+            .await
+            .map_err(|e| AgentError::FileSystemError(format!("rsync task failed: {}", e)))??;
         self.unmount(&migrate_dir).await?;
         self.clear_dir(mount_dir).await?;
         fs::remove_dir_all(&migrate_dir).await?;
@@ -151,52 +153,88 @@ impl StorageManager {
         allow_online_grow: bool,
     ) -> AgentResult<()> {
         if allow_online_grow && self.is_mounted(mount_dir).await? {
-            run(
-                "fallocate",
-                &["-l", &format!("{}M", size_mb), image_path.to_str().unwrap()],
-            )?;
-            run("resize2fs", &[mount_dir.to_str().unwrap()])?;
+            let image = image_path
+                .to_str()
+                .ok_or_else(|| AgentError::FileSystemError("Invalid image path".to_string()))?
+                .to_string();
+            let mount = mount_dir
+                .to_str()
+                .ok_or_else(|| AgentError::FileSystemError("Invalid mount path".to_string()))?
+                .to_string();
+            let size_arg = format!("{}M", size_mb);
+            spawn_blocking(move || {
+                run("fallocate", &["-l", &size_arg, &image])?;
+                run("resize2fs", &[&mount])?;
+                Ok::<(), AgentError>(())
+            })
+            .await
+            .map_err(|e| AgentError::FileSystemError(format!("Resize task failed: {}", e)))??;
             return Ok(());
         }
         if self.is_mounted(mount_dir).await? {
             self.unmount(mount_dir).await?;
         }
-        run(
-            "fallocate",
-            &["-l", &format!("{}M", size_mb), image_path.to_str().unwrap()],
-        )?;
-        run("resize2fs", &[image_path.to_str().unwrap()])?;
+        let image = image_path
+            .to_str()
+            .ok_or_else(|| AgentError::FileSystemError("Invalid image path".to_string()))?
+            .to_string();
+        let size_arg = format!("{}M", size_mb);
+        spawn_blocking(move || {
+            run("fallocate", &["-l", &size_arg, &image])?;
+            run("resize2fs", &[&image])?;
+            Ok::<(), AgentError>(())
+        })
+        .await
+        .map_err(|e| AgentError::FileSystemError(format!("Resize task failed: {}", e)))??;
         Ok(())
     }
 
     async fn shrink_image(&self, image_path: &Path, size_mb: u64) -> AgentResult<()> {
-        run("e2fsck", &["-f", image_path.to_str().unwrap()])?;
-        run(
-            "resize2fs",
-            &[image_path.to_str().unwrap(), &format!("{}M", size_mb)],
-        )?;
-        run(
-            "fallocate",
-            &["-l", &format!("{}M", size_mb), image_path.to_str().unwrap()],
-        )?;
+        let image = image_path
+            .to_str()
+            .ok_or_else(|| AgentError::FileSystemError("Invalid image path".to_string()))?
+            .to_string();
+        let size_arg = format!("{}M", size_mb);
+        spawn_blocking(move || {
+            run("e2fsck", &["-f", &image])?;
+            run("resize2fs", &[&image, &size_arg])?;
+            run("fallocate", &["-l", &size_arg, &image])?;
+            Ok::<(), AgentError>(())
+        })
+        .await
+        .map_err(|e| AgentError::FileSystemError(format!("Resize task failed: {}", e)))??;
         Ok(())
     }
 
     async fn mount_image(&self, image_path: &Path, mount_dir: &Path) -> AgentResult<()> {
-        run(
-            "mount",
-            &[
-                "-o",
-                "loop",
-                image_path.to_str().unwrap(),
-                mount_dir.to_str().unwrap(),
-            ],
-        )?;
+        let image = image_path
+            .to_str()
+            .ok_or_else(|| AgentError::FileSystemError("Invalid image path".to_string()))?
+            .to_string();
+        let mount = mount_dir
+            .to_str()
+            .ok_or_else(|| AgentError::FileSystemError("Invalid mount path".to_string()))?
+            .to_string();
+        spawn_blocking(move || {
+            run("mount", &["-o", "loop", &image, &mount])?;
+            Ok::<(), AgentError>(())
+        })
+        .await
+        .map_err(|e| AgentError::FileSystemError(format!("Mount task failed: {}", e)))??;
         Ok(())
     }
 
     async fn unmount(&self, mount_dir: &Path) -> AgentResult<()> {
-        run("umount", &[mount_dir.to_str().unwrap()])?;
+        let mount = mount_dir
+            .to_str()
+            .ok_or_else(|| AgentError::FileSystemError("Invalid mount path".to_string()))?
+            .to_string();
+        spawn_blocking(move || {
+            run("umount", &[&mount])?;
+            Ok::<(), AgentError>(())
+        })
+        .await
+        .map_err(|e| AgentError::FileSystemError(format!("Unmount task failed: {}", e)))??;
         Ok(())
     }
 

@@ -30,7 +30,10 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
+      const code = error.response?.data?.code;
+      if (code !== 'TWO_FACTOR_REQUIRED') {
+        useAuthStore.getState().logout();
+      }
     }
     return Promise.reject(error);
   },
