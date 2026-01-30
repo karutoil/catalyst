@@ -40,6 +40,11 @@ export interface EnvironmentVariable {
     input?: "text" | "number" | "select" | "checkbox";
     rules?: string[];
 }
+export interface TemplateImageOption {
+    name: string;
+    label?: string;
+    image: string;
+}
 export interface ServerTemplate {
     id: string;
     name: string;
@@ -47,6 +52,8 @@ export interface ServerTemplate {
     author: string;
     version: string;
     image: string;
+    images?: TemplateImageOption[];
+    defaultImage?: string;
     startup: string;
     stopCommand: string;
     sendSignalTo: "SIGTERM" | "SIGKILL";

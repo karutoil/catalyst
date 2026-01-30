@@ -65,6 +65,8 @@ export async function templateRoutes(app: FastifyInstance) {
         author,
         version,
         image,
+        images,
+        defaultImage,
         installImage,
         startup,
         stopCommand,
@@ -82,6 +84,8 @@ export async function templateRoutes(app: FastifyInstance) {
         author: string;
         version: string;
         image: string;
+        images?: Array<{ name: string; label?: string; image: string }>;
+        defaultImage?: string;
         installImage?: string;
         startup: string;
         stopCommand: string;
@@ -102,6 +106,8 @@ export async function templateRoutes(app: FastifyInstance) {
           author,
           version,
           image,
+          images: Array.isArray(images) ? images : [],
+          defaultImage: defaultImage || null,
           installImage,
           startup,
           stopCommand,
@@ -127,6 +133,10 @@ export async function templateRoutes(app: FastifyInstance) {
       const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
       if (!isAdmin) return;
       const { templateId } = request.params as { templateId: string };
+      const { images, defaultImage } = request.body as {
+        images?: Array<{ name: string; label?: string; image: string }>;
+        defaultImage?: string;
+      };
 
       const template = await prisma.serverTemplate.findUnique({
         where: { id: templateId },
@@ -136,9 +146,17 @@ export async function templateRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Template not found" });
       }
 
+      const nextData: Record<string, unknown> = { ...(request.body as any) };
+      if (images) {
+        nextData.images = Array.isArray(images) ? images : [];
+      }
+      if (defaultImage !== undefined) {
+        nextData.defaultImage = defaultImage || null;
+      }
+
       const updated = await prisma.serverTemplate.update({
         where: { id: templateId },
-        data: request.body as any,
+        data: nextData as any,
       });
 
       reply.send({ success: true, data: updated });

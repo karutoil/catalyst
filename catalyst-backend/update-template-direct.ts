@@ -25,6 +25,8 @@ async function main() {
     where: { id: existing.id },
     data: {
       image: templateData.image,
+      images: templateData.images ?? [],
+      defaultImage: templateData.defaultImage ?? null,
       installImage: templateData.installImage,
       startup: templateData.startup,
       installScript: templateData.installScript,

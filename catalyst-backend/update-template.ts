@@ -12,6 +12,8 @@ async function main() {
     where: { id: 'minecraft-paper' },
     data: {
       image: templateData.image,
+      images: templateData.images ?? [],
+      defaultImage: templateData.defaultImage ?? null,
       installImage: templateData.installImage,
       startup: templateData.startup,
       installScript: templateData.installScript,

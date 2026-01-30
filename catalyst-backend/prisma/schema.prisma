@@ -319,6 +319,8 @@ model ServerTemplate {
   author             String
   version            String
   image              String
+  images             Json     @default("[]")
+  defaultImage       String?
   installImage       String?
   startup            String
   stopCommand        String

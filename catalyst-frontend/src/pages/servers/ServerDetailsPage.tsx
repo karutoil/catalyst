@@ -1863,7 +1863,7 @@ function ServerDetailsPage() {
                 <div className="flex items-center justify-between">
                   <span>Image</span>
                   <span className="text-slate-900 dark:text-slate-100">
-                    {server.template?.image ?? 'n/a'}
+                    {server.environment?.TEMPLATE_IMAGE || server.template?.defaultImage || server.template?.image || 'n/a'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">

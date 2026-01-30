@@ -7,6 +7,12 @@ export interface TemplateVariable {
   rules?: string[];
 }
 
+export interface TemplateImageOption {
+  name: string;
+  label?: string;
+  image: string;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -14,6 +20,8 @@ export interface Template {
   author: string;
   version: string;
   image: string;
+  images?: TemplateImageOption[];
+  defaultImage?: string;
   installImage?: string;
   startup: string;
   stopCommand: string;

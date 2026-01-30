@@ -255,6 +255,29 @@ export async function serverRoutes(app: FastifyInstance) {
     return `/${parts.join("/")}`;
   };
 
+  const resolveTemplateImage = (
+    template: { image: string; images?: any; defaultImage?: string | null },
+    environment: Record<string, string>
+  ) => {
+    const options = Array.isArray(template.images) ? template.images : [];
+    if (!options.length) return template.image;
+    const requested = environment.IMAGE_VARIANT;
+    if (requested) {
+      const match = options.find((option) => option?.name === requested);
+      if (match?.image) {
+        return match.image;
+      }
+    }
+    if (template.defaultImage) {
+      const defaultMatch = options.find((option) => option?.image === template.defaultImage);
+      if (defaultMatch?.image) {
+        return defaultMatch.image;
+      }
+      return template.defaultImage;
+    }
+    return template.image;
+  };
+
   const ensureServerAccess = async (
     serverId: string,
     userId: string,
@@ -582,6 +605,17 @@ export async function serverRoutes(app: FastifyInstance) {
         ...(environment || {}),
       };
 
+      const resolvedImage = resolveTemplateImage(template, resolvedEnvironment);
+      if (!resolvedImage) {
+        return reply.status(400).send({ error: "Template image is required" });
+      }
+      if (template.images && Array.isArray(template.images)) {
+        const hasVariant = template.images.some((option) => option?.name === resolvedEnvironment.IMAGE_VARIANT);
+        if (resolvedEnvironment.IMAGE_VARIANT && !hasVariant) {
+          return reply.status(400).send({ error: "Invalid image variant selected" });
+        }
+      }
+
       // Validate required template variables are provided
       const requiredVars = templateVariables.filter((v) => v.required);
       const missingVars = requiredVars.filter((v) => !resolvedEnvironment?.[v.name]);
@@ -761,7 +795,10 @@ export async function serverRoutes(app: FastifyInstance) {
               primaryPort: allocationPort ?? validatedPrimaryPort,
               portBindings: resolvedPortBindings,
               networkMode: desiredNetworkMode,
-              environment: resolvedEnvironment,
+              environment: {
+                ...resolvedEnvironment,
+                TEMPLATE_IMAGE: resolvedImage,
+              },
             },
           });
 
@@ -773,6 +810,7 @@ export async function serverRoutes(app: FastifyInstance) {
                 primaryPort: allocationPort ?? validatedPrimaryPort,
                 environment: {
                   ...(resolvedEnvironment || {}),
+                  TEMPLATE_IMAGE: resolvedImage,
                   CATALYST_NETWORK_IP: allocationIp,
                 },
               },
@@ -798,6 +836,7 @@ export async function serverRoutes(app: FastifyInstance) {
 
             const nextEnvironment = {
               ...(resolvedEnvironment || {}),
+              TEMPLATE_IMAGE: resolvedImage,
               CATALYST_NETWORK_IP: allocatedIp,
             };
 
@@ -3154,6 +3193,10 @@ export async function serverRoutes(app: FastifyInstance) {
         ...(server.environment as Record<string, string>),
         SERVER_DIR: fullServerDir,
       };
+      if (server.template?.image) {
+        const resolvedImage = resolveTemplateImage(server.template, environment);
+        environment.TEMPLATE_IMAGE = resolvedImage;
+      }
       if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
         environment.CATALYST_NETWORK_IP = server.primaryIp;
       }
@@ -3270,6 +3313,10 @@ export async function serverRoutes(app: FastifyInstance) {
         ...(server.environment as Record<string, string>),
         SERVER_DIR: fullServerDir,
       };
+      if (server.template?.image) {
+        const resolvedImage = resolveTemplateImage(server.template, environment);
+        environment.TEMPLATE_IMAGE = resolvedImage;
+      }
 
       const success = await gateway.sendToAgent(server.nodeId, {
         type: "start_server",
@@ -3455,6 +3502,10 @@ export async function serverRoutes(app: FastifyInstance) {
         ...(server.environment as Record<string, string>),
         SERVER_DIR: fullServerDir,
       };
+      if (server.template?.image) {
+        const resolvedImage = resolveTemplateImage(server.template, environment);
+        environment.TEMPLATE_IMAGE = resolvedImage;
+      }
       if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
         environment.CATALYST_NETWORK_IP = server.primaryIp;
       }

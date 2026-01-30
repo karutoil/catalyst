@@ -19,6 +19,7 @@ function CreateServerModal() {
   const [port, setPort] = useState('25565');
   const [portBindings, setPortBindings] = useState<string[]>([]);
   const [environment, setEnvironment] = useState<Record<string, string>>({});
+  const [imageVariant, setImageVariant] = useState('');
   const [networkMode, setNetworkMode] = useState<'bridge' | 'mc-lan' | 'mc-lan-static'>(
     'mc-lan-static',
   );
@@ -152,6 +153,7 @@ function CreateServerModal() {
         networkMode,
         environment: {
           ...environment,
+          ...(imageVariant ? { IMAGE_VARIANT: imageVariant } : {}),
         },
       };
       if (networkMode === 'mc-lan-static') {
@@ -182,6 +184,7 @@ function CreateServerModal() {
       setTemplateId('');
       setNodeId('');
       setEnvironment({});
+      setImageVariant('');
       setNetworkMode('mc-lan-static');
       setPrimaryIp('');
       setPortBindings([]);
@@ -240,6 +243,7 @@ function CreateServerModal() {
                   onChange={(e) => {
                     const newTemplateId = e.target.value;
                     setTemplateId(newTemplateId);
+                    setImageVariant('');
                     
                     // Initialize environment with default values for all variables
                     const template = templates.find(t => t.id === newTemplateId);
@@ -264,6 +268,23 @@ function CreateServerModal() {
                   ))}
                 </select>
               </label>
+              {selectedTemplate?.images?.length ? (
+                <label className="block space-y-1">
+                  <span className="text-slate-600 dark:text-slate-300">Image variant</span>
+                  <select
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                    value={imageVariant}
+                    onChange={(e) => setImageVariant(e.target.value)}
+                  >
+                    <option value="">Use default</option>
+                    {selectedTemplate.images.map((option) => (
+                      <option key={option.name} value={option.name}>
+                        {option.label ?? option.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="block space-y-1">
                 <span className="text-slate-600 dark:text-slate-300">Node</span>
                 <select

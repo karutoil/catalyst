@@ -36,6 +36,7 @@ function TemplateDetailsPage() {
   const portList = template.supportedPorts?.length
     ? template.supportedPorts.join(', ')
     : 'n/a';
+  const imageVariants = template.images ?? [];
 
   return (
     <div className="space-y-4">
@@ -94,8 +95,24 @@ function TemplateDetailsPage() {
           <div className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
             <div className="flex items-center justify-between gap-4">
               <span>Image</span>
-              <span className="text-slate-900 dark:text-slate-100">{template.image}</span>
+              <span className="text-slate-900 dark:text-slate-100">
+                {template.defaultImage || template.image}
+              </span>
             </div>
+            {imageVariants.length ? (
+              <div className="flex items-center justify-between gap-4">
+                <span>Image variants</span>
+                <span className="text-slate-900 dark:text-slate-100">
+                  {imageVariants.map((option) => option.label ?? option.name).join(', ')}
+                </span>
+              </div>
+            ) : null}
+            {template.defaultImage ? (
+              <div className="flex items-center justify-between gap-4">
+                <span>Default image</span>
+                <span className="text-slate-900 dark:text-slate-100">{template.defaultImage}</span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-4">
               <span>Install image</span>
               <span className="text-slate-900 dark:text-slate-100">{template.installImage ?? 'n/a'}</span>

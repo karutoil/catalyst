@@ -32,6 +32,12 @@ export interface Server {
   template?: {
     name?: string;
     image?: string;
+    images?: Array<{
+      name: string;
+      label?: string;
+      image: string;
+    }>;
+    defaultImage?: string;
     features?: {
       configFile?: string;
       configFiles?: string[];

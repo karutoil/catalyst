@@ -134,6 +134,14 @@ async function main() {
       author: "Catalyst Maintainers",
       version: "1.20.4",
       image: "itzg/minecraft-server:latest",
+      images: [
+        { name: "temurin-25", label: "Eclipse Temurin 25 JRE", image: "eclipse-temurin:25-jre" },
+        { name: "temurin-21", label: "Eclipse Temurin 21 JRE", image: "eclipse-temurin:21-jre" },
+        { name: "temurin-17", label: "Eclipse Temurin 17 JRE", image: "eclipse-temurin:17-jre" },
+        { name: "temurin-11", label: "Eclipse Temurin 11 JRE", image: "eclipse-temurin:11-jre" },
+        { name: "temurin-8", label: "Eclipse Temurin 8 JRE", image: "eclipse-temurin:8-jre" },
+      ],
+      defaultImage: "eclipse-temurin:21-jre",
       startup:
         "java -Xmx{{MEMORY}}M -Xms{{MEMORY}}M -XX:+UseG1GC -jar paper.jar nogui",
       stopCommand: "say SERVER STOPPING",

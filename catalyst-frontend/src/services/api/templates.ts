@@ -23,6 +23,8 @@ export const templatesApi = {
     author: string;
     version: string;
     image: string;
+    images?: Template['images'];
+    defaultImage?: string;
     installImage?: string;
     startup: string;
     stopCommand: string;
@@ -45,6 +47,8 @@ export const templatesApi = {
       author: string;
       version: string;
       image: string;
+      images?: Template['images'];
+      defaultImage?: string;
       installImage?: string;
       startup: string;
       stopCommand: string;

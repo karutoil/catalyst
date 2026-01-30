@@ -5,6 +5,14 @@
   "author": "Catalyst Maintainers",
   "version": "1.20.4",
   "image": "eclipse-temurin:21-jre",
+  "images": [
+    { "name": "temurin-25", "label": "Eclipse Temurin 25 JRE", "image": "eclipse-temurin:25-jre" },
+    { "name": "temurin-21", "label": "Eclipse Temurin 21 JRE", "image": "eclipse-temurin:21-jre" },
+    { "name": "temurin-17", "label": "Eclipse Temurin 17 JRE", "image": "eclipse-temurin:17-jre" },
+    { "name": "temurin-11", "label": "Eclipse Temurin 11 JRE", "image": "eclipse-temurin:11-jre" },
+    { "name": "temurin-8", "label": "Eclipse Temurin 8 JRE", "image": "eclipse-temurin:8-jre" }
+  ],
+  "defaultImage": "eclipse-temurin:21-jre",
   "installImage": "alpine:3.19",
   "startup": "java -Xms{{MEMORY_XMS}}M -Xmx{{MEMORY}}M -XX:MaxMetaspaceSize=512M -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -XX:ShenandoahGCHeuristics=compact -XX:ShenandoahUncommitDelay=30000 -XX:ShenandoahAllocationThreshold=15 -XX:ShenandoahGuaranteedGCInterval=30000 -XX:+PerfDisableSharedMem -XX:+DisableExplicitGC -XX:+ParallelRefProcEnabled -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -jar paper.jar nogui",
   "stopCommand": "stop",

@@ -756,8 +756,10 @@ impl WebSocketHandler {
                 AgentError::InvalidRequest("Missing template".to_string())
             })?;
 
-            let docker_image = template.get("image")
+            let docker_image = msg.get("environment")
+                .and_then(|v| v.get("TEMPLATE_IMAGE"))
                 .and_then(|v| v.as_str())
+                .or_else(|| template.get("image").and_then(|v| v.as_str()))
                 .ok_or_else(|| AgentError::InvalidRequest("Missing image in template".to_string()))?;
 
             let startup_command = template.get("startup")
