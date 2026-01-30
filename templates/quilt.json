@@ -1,0 +1,56 @@
+{
+  "id": "mcjars-quilt",
+  "name": "Minecraft Server (Quilt)",
+  "description": "The Quilt project is an open-source, community-driven modding toolchain designed for Minecraft.",
+  "author": "MCJARS",
+  "version": "1.0.0",
+  "image": "eclipse-temurin:21-jre",
+  "installImage": "alpine:3.19",
+  "startup": "java -Xms{{MEMORY_XMS}}M -Xmx{{MEMORY}}M -jar server.jar nogui",
+  "stopCommand": "stop",
+  "sendSignalTo": "SIGTERM",
+  "variables": [
+    {
+      "name": "TYPE",
+      "description": "MCJARS server type",
+      "default": "QUILT",
+      "required": true,
+      "input": "text"
+    },
+    {
+      "name": "MC_VERSION",
+      "description": "Minecraft version (leave blank for latest)",
+      "default": "",
+      "required": false,
+      "input": "text"
+    },
+    {
+      "name": "MEMORY",
+      "description": "Amount of RAM in MB to allocate to the server",
+      "default": "1024",
+      "required": true,
+      "input": "number"
+    },
+    {
+      "name": "PORT",
+      "description": "Server port (both container and host will use this port)",
+      "default": "25565",
+      "required": true,
+      "input": "number"
+    },
+    {
+      "name": "EULA",
+      "description": "Agree to Minecraft EULA",
+      "default": "true",
+      "required": true,
+      "input": "checkbox"
+    }
+  ],
+  "installScript": "#!/bin/sh\nset -e\n\necho '[Catalyst] Installing MCJARS type: QUILT (mc version: {{MC_VERSION:-latest}})'\n\nmkdir -p {{SERVER_DIR}}\ncd {{SERVER_DIR}}\n\nTYPE=\"QUILT\"\nMC_VERSION=\"{{MC_VERSION}}\"\n\nDOWNLOAD_URL=\"\"\n\n# If MC_VERSION is provided, try type+version endpoint otherwise get latest for type\nif [ -n \"$MC_VERSION\" ]; then\n  # example: /api/v1/builds/FORGE/1.20.4/latest\ncandidate=$(curl -sS \"https://mcjars.app/api/v1/builds/FORGE/$MC_VERSION/latest\" | jq -r '.zipUrl // .build.zipUrl // .jarUrl // .build.jarUrl // (.installation[][]? | select(.type==\"download\" and (.file|endswith(\".zip\"))) | .url) // (.build.installation[][]? | select(.type==\"download\" and (.file|endswith(\".zip\"))) | .url) // empty' 2>/dev/null || true)\n  if [ -n \"$candidate\" ]; then DOWNLOAD_URL=\"$candidate\"; fi\nfi\n\nif [ -z \"$DOWNLOAD_URL\" ]; then\n  # fallback to /api/v2/builds/{type} and pick a jarUrl or a download url from the latest entries\ncandidate=$(curl -sS \"https://mcjars.app/api/v2/builds/FORGE\" | jq -r '(.builds | if type==\"object\" then (to_entries[] | .value.latest) else (.[] | .latest) end) | (.zipUrl // .jarUrl // (.installation[][]? | select(.type==\"download\" and (.file|endswith(\".zip\"))) | .url)) | select(.)' 2>/dev/null | head -n1 || true)\n  if [ -n \"$candidate\" ]; then DOWNLOAD_URL=\"$candidate\"; fi\nfi\n\nif [ -z \"$DOWNLOAD_URL\" ]; then\n  echo \"[Catalyst] ERROR: Could not find a download URL for type QUILT\"\n  exit 1\nfi\n\n# Download file (jar or zip)\nFNAME=\"server.download\"\nif command -v wget >/dev/null 2>&1; then\n  wget -q -O \"$FNAME\" \"$DOWNLOAD_URL\"\nelif command -v curl >/dev/null 2>&1; then\n  curl -sL -o \"$FNAME\" \"$DOWNLOAD_URL\"\nelse\n  echo '[Catalyst] ERROR: Neither wget nor curl found!'\n  exit 1\nfi\n\nif [ ! -f \"$FNAME\" ]; then\n  echo \"[Catalyst] ERROR: Failed to download from $DOWNLOAD_URL\"\n  exit 1\nfi\n\n# Prefer jar URLs; only unzip if URL explicitly points to .zip or filename indicates zip\nif echo \"$DOWNLOAD_URL\" | grep -Ei '\\.jar($|\\?|#|$)' >/dev/null || echo \"$DOWNLOAD_URL\" | grep -Ei '/server\\.jar($|\\?|#|$)' >/dev/null ; then\n  mv \"$FNAME\" server.jar\nelif echo \"$DOWNLOAD_URL\" | grep -Ei '\\.zip($|\\?|#|$)' >/dev/null ; then\n  echo '[Catalyst] Detected zip archive via URL, extracting...'\n  unzip -o \"$FNAME\" || true\n  rm -f \"$FNAME\"\n  # search for best candidate jar (forge server/universal, then server.jar, then any forge jar)\n  JAR=$(find . -type f -iname '*forge*-server.jar' -print -quit || true)\n  if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*server.jar' -print -quit || true); fi\n  if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*-universal.jar' -print -quit || true); fi\n  if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*universal.jar' -print -quit || true); fi\n  if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname 'server.jar' -print -quit || true); fi\n  if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*.jar' -print -quit || true); fi\n  if [ -n \"$JAR\" ]; then\n    mv \"$JAR\" server.jar\n  fi\nelse\n  # fallback: inspect file magic to decide\n  if file \"$FNAME\" | grep -qi 'Zip archive data'; then\n    echo '[Catalyst] Detected zip archive by content, extracting...'\n    unzip -o \"$FNAME\" || true\n    rm -f \"$FNAME\"\n    # search for best candidate jar (forge server/universal, then server.jar, then any forge jar)\n    JAR=$(find . -type f -iname '*forge*-server.jar' -print -quit || true)\n    if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*server.jar' -print -quit || true); fi\n    if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*-universal.jar' -print -quit || true); fi\n    if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*universal.jar' -print -quit || true); fi\n    if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname 'server.jar' -print -quit || true); fi\n    if [ -z \"$JAR\" ]; then JAR=$(find . -type f -iname '*forge*.jar' -print -quit || true); fi\n    if [ -n \"$JAR\" ]; then\n      mv \"$JAR\" server.jar\n    fi\n  else\n    mv \"$FNAME\" server.jar\n  fi\nfi\n\nif [ ! -f server.jar ]; then\n  echo \"[Catalyst] ERROR: Failed to obtain a server.jar after extraction from $DOWNLOAD_URL\"\n  exit 1\nfi\n\necho '[Catalyst] Downloaded server.jar successfully'\n\necho '[Catalyst] Accepting Minecraft EULA...'\necho 'eula=true' > eula.txt\n\ncat > server.properties << 'PROPS'\nserver-port={{PORT}}\nmax-players=20\nPROPS\n\necho '[Catalyst] Installation complete!'\n",
+  "supportedPorts": [
+    25565
+  ],
+  "features": {
+    "restartOnExit": true
+  }
+}

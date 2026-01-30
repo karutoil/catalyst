@@ -130,12 +130,14 @@ export const getSecuritySettings = async (): Promise<SecuritySettings> => {
 
 export const getModManagerSettings = async (): Promise<ModManagerSettings> => {
   const settings = await prisma.systemSetting.findUnique({ where: { id: MOD_MANAGER_SETTING_ID } });
-  if (!settings) {
+  const fallback = await prisma.systemSetting.findUnique({ where: { id: SMTP_SETTING_ID } });
+  const source = settings ?? fallback;
+  if (!source) {
     return { curseforgeApiKey: null, modrinthApiKey: null };
   }
   return {
-    curseforgeApiKey: settings.curseforgeApiKey ?? null,
-    modrinthApiKey: settings.modrinthApiKey ?? null,
+    curseforgeApiKey: source.curseforgeApiKey ?? null,
+    modrinthApiKey: source.modrinthApiKey ?? null,
   };
 };
 

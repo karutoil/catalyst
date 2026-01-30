@@ -337,6 +337,24 @@ export async function serverRoutes(app: FastifyInstance) {
     };
   };
 
+  const extractGameVersion = (environment: any) => {
+    if (!environment || typeof environment !== "object") return null;
+    const candidates = [
+      "MC_VERSION",
+      "MINECRAFT_VERSION",
+      "GAME_VERSION",
+      "SERVER_VERSION",
+      "VERSION",
+    ];
+    for (const key of candidates) {
+      const value = (environment as Record<string, unknown>)[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+    return null;
+  };
+
   const resolveTemplatePath = (pathValue?: string, target?: string) => {
     if (pathValue) {
       return normalizeRequestPath(pathValue);
@@ -1340,15 +1358,17 @@ export async function serverRoutes(app: FastifyInstance) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { serverId } = request.params as { serverId: string };
-      const { provider, query, page } = request.query as {
+      const { provider, query, page, gameVersion } = request.query as {
         provider?: string;
         query?: string;
+        target?: "mods" | "datapacks" | "modpacks";
+        gameVersion?: string;
         page?: string | number;
       };
       const userId = request.user.userId;
 
-      if (!provider || !query) {
-        return reply.status(400).send({ error: "provider and query are required" });
+      if (!provider) {
+        return reply.status(400).send({ error: "provider is required" });
       }
 
       const server = await ensureServerAccess(serverId, userId, "server.read", reply);
@@ -1373,20 +1393,47 @@ export async function serverRoutes(app: FastifyInstance) {
 
       const pageValue = typeof page === "string" ? Number(page) : page ?? 1;
       const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+      const searchQuery = typeof query === "string" ? query.trim() : "";
+      const resolvedGameVersion = gameVersion?.trim() || extractGameVersion(server.environment);
+      const isTrending = !searchQuery;
       let url = "";
       if (provider === "modrinth") {
+        const targetValue = (request.query as any).target;
+        const facets: string[][] = [];
+        if (targetValue) {
+          facets.push([
+            `project_type:${
+              targetValue === "mods"
+                ? "mod"
+                : targetValue === "datapacks"
+                  ? "datapack"
+                  : "modpack"
+            }`,
+          ]);
+        }
+        if (resolvedGameVersion) {
+          facets.push([`versions:${resolvedGameVersion}`]);
+        }
         const params = new URLSearchParams({
-          query,
+          query: searchQuery,
           limit: "20",
+          ...(facets.length ? { facets: JSON.stringify(facets) } : {}),
           offset: String(Math.max(0, (Number(pageValue) - 1) * 20)),
+          ...(isTrending ? { index: "downloads" } : {}),
         });
         url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
       } else {
+        const targetValue = (request.query as any).target;
+        const classId =
+          targetValue === "datapacks" ? "512" : targetValue === "modpacks" ? "4471" : "6";
         const params = new URLSearchParams({
           gameId: "432",
-          searchFilter: query,
+          classId,
           pageSize: "20",
           index: String(Math.max(0, (Number(pageValue) - 1) * 20)),
+          ...(searchQuery ? { searchFilter: searchQuery } : {}),
+          ...(resolvedGameVersion ? { gameVersion: resolvedGameVersion } : {}),
+          ...(isTrending ? { sortField: "2", sortOrder: "desc" } : {}),
         });
         url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
       }

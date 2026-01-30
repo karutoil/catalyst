@@ -233,14 +233,14 @@ DOWNLOAD_URL=""
 
 # If MC_VERSION is provided, try type+version endpoint otherwise get latest for type
 if [ -n "$MC_VERSION" ]; then
-  # example: /api/v1/builds/PAPER/1.20.4/latest
-  candidate=$(curl -sS "https://mcjars.app/api/v1/builds/${typeKey}/$MC_VERSION/latest" | jq -r '.jarUrl // .builds[0].jarUrl // empty' 2>/dev/null || true)
+  # example: /api/v1/builds/FORGE/1.20.4/latest
+candidate=$(curl -sS "https://mcjars.app/api/v1/builds/FORGE/$MC_VERSION/latest" | jq -r '.zipUrl // .build.zipUrl // .jarUrl // .build.jarUrl // (.installation[][]? | select(.type=="download" and (.file|endswith(".zip"))) | .url) // (.build.installation[][]? | select(.type=="download" and (.file|endswith(".zip"))) | .url) // empty' 2>/dev/null || true)
   if [ -n "$candidate" ]; then DOWNLOAD_URL="$candidate"; fi
 fi
 
 if [ -z "$DOWNLOAD_URL" ]; then
-  # fallback to /api/v2/builds/{type} and pick the latest jarUrl
-  candidate=$(curl -sS "https://mcjars.app/api/v2/builds/${typeKey}" | jq -r '.builds | map(.jarUrl) | .[0] // empty' 2>/dev/null || true)
+  # fallback to /api/v2/builds/{type} and pick a jarUrl or a download url from the latest entries
+candidate=$(curl -sS "https://mcjars.app/api/v2/builds/FORGE" | jq -r '(.builds | if type=="object" then (to_entries[] | .value.latest) else (.[] | .latest) end) | (.zipUrl // .jarUrl // (.installation[][]? | select(.type=="download" and (.file|endswith(".zip"))) | .url)) | select(.)' 2>/dev/null | head -n1 || true)
   if [ -n "$candidate" ]; then DOWNLOAD_URL="$candidate"; fi
 fi
 
@@ -249,18 +249,62 @@ if [ -z "$DOWNLOAD_URL" ]; then
   exit 1
 fi
 
-# Download jar
+# Download file (jar or zip)
+FNAME="server.download"
 if command -v wget >/dev/null 2>&1; then
-  wget -q -O server.jar "$DOWNLOAD_URL"
+  wget -q -O "$FNAME" "$DOWNLOAD_URL"
 elif command -v curl >/dev/null 2>&1; then
-  curl -sL -o server.jar "$DOWNLOAD_URL"
+  curl -sL -o "$FNAME" "$DOWNLOAD_URL"
 else
   echo '[Catalyst] ERROR: Neither wget nor curl found!'
   exit 1
 fi
 
+if [ ! -f "$FNAME" ]; then
+  echo "[Catalyst] ERROR: Failed to download from $DOWNLOAD_URL"
+  exit 1
+fi
+
+# Prefer jar URLs; only unzip if URL explicitly points to .zip or filename indicates zip
+if echo "$DOWNLOAD_URL" | grep -Ei '\\.jar($|\\?|#|$)' >/dev/null || echo "$DOWNLOAD_URL" | grep -Ei '/server\\.jar($|\\?|#|$)' >/dev/null ; then
+  mv "$FNAME" server.jar
+elif echo "$DOWNLOAD_URL" | grep -Ei '\\.zip($|\\?|#|$)' >/dev/null ; then
+  echo '[Catalyst] Detected zip archive via URL, extracting...'
+  unzip -o "$FNAME" || true
+  rm -f "$FNAME"
+  # search for best candidate jar (forge server/universal, then server.jar, then any forge jar)
+  JAR=$(find . -type f -iname '*forge*-server.jar' -print -quit || true)
+  if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*server.jar' -print -quit || true); fi
+  if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*-universal.jar' -print -quit || true); fi
+  if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*universal.jar' -print -quit || true); fi
+  if [ -z "$JAR" ]; then JAR=$(find . -type f -iname 'server.jar' -print -quit || true); fi
+  if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*.jar' -print -quit || true); fi
+  if [ -n "$JAR" ]; then
+    mv "$JAR" server.jar
+  fi
+else
+  # fallback: inspect file magic to decide
+  if file "$FNAME" | grep -qi 'Zip archive data'; then
+    echo '[Catalyst] Detected zip archive by content, extracting...'
+    unzip -o "$FNAME" || true
+    rm -f "$FNAME"
+    # search for best candidate jar (forge server/universal, then server.jar, then any forge jar)
+    JAR=$(find . -type f -iname '*forge*-server.jar' -print -quit || true)
+    if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*server.jar' -print -quit || true); fi
+    if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*-universal.jar' -print -quit || true); fi
+    if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*universal.jar' -print -quit || true); fi
+    if [ -z "$JAR" ]; then JAR=$(find . -type f -iname 'server.jar' -print -quit || true); fi
+    if [ -z "$JAR" ]; then JAR=$(find . -type f -iname '*forge*.jar' -print -quit || true); fi
+    if [ -n "$JAR" ]; then
+      mv "$JAR" server.jar
+    fi
+  else
+    mv "$FNAME" server.jar
+  fi
+fi
+
 if [ ! -f server.jar ]; then
-  echo "[Catalyst] ERROR: Failed to download server.jar from $DOWNLOAD_URL"
+  echo "[Catalyst] ERROR: Failed to obtain a server.jar after extraction from $DOWNLOAD_URL"
   exit 1
 fi
 
@@ -275,7 +319,7 @@ max-players=20
 PROPS
 
 echo '[Catalyst] Installation complete!'
-`,}
+`,
     supportedPorts: [25565],
     features: { restartOnExit: true }
   };

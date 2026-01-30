@@ -42,6 +42,7 @@ function TemplateCreateModal() {
   const [allocatedMemoryMb, setAllocatedMemoryMb] = useState('1024');
   const [allocatedCpuCores, setAllocatedCpuCores] = useState('2');
   const [iconUrl, setIconUrl] = useState('');
+  const [templateFeatures, setTemplateFeatures] = useState<Record<string, any>>({});
   const [variables, setVariables] = useState<VariableDraft[]>([createVariableDraft()]);
   const [importError, setImportError] = useState('');
   const queryClient = useQueryClient();
@@ -109,6 +110,7 @@ function TemplateCreateModal() {
       allocatedMemoryMb: toNumber(payload.allocatedMemoryMb, 1024),
       allocatedCpuCores: toNumber(payload.allocatedCpuCores, 2),
       features: {
+        ...templateFeatures,
         ...(payload.features ?? {}),
         iconUrl: payload.features?.iconUrl ? String(payload.features.iconUrl) : undefined,
         ...(payload.features?.configFile ? { configFile: String(payload.features.configFile) } : {}),
@@ -136,7 +138,12 @@ function TemplateCreateModal() {
         supportedPorts: parsedPorts,
         allocatedMemoryMb: Number(allocatedMemoryMb),
         allocatedCpuCores: Number(allocatedCpuCores),
-        features: { ...(iconUrl ? { iconUrl } : {}), ...(configFile ? { configFile } : {}), ...(configFiles.length ? { configFiles } : {}) },
+        features: {
+          ...templateFeatures,
+          ...(iconUrl ? { iconUrl } : {}),
+          ...(configFile ? { configFile } : {}),
+          ...(configFiles.length ? { configFiles } : {}),
+        },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['templates'] });
@@ -158,6 +165,7 @@ function TemplateCreateModal() {
       setAllocatedMemoryMb('1024');
       setAllocatedCpuCores('2');
       setIconUrl('');
+      setTemplateFeatures({});
       setVariables([createVariableDraft()]);
       setImportError('');
     },
@@ -199,6 +207,7 @@ function TemplateCreateModal() {
       payload.allocatedCpuCores ? String(payload.allocatedCpuCores) : '2',
     );
     setIconUrl(String(payload.features?.iconUrl ?? ''));
+    setTemplateFeatures(payload.features ?? {});
     const importedVariables = Array.isArray(payload.variables)
       ? payload.variables.map((variable: any) => ({
           name: String(variable?.name ?? ''),
