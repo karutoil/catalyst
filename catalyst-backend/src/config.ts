@@ -11,10 +11,6 @@ export const config = {
   database: {
     url: process.env.DATABASE_URL || "postgresql://user:password@localhost:5432/aero",
   },
-  jwt: {
-    secret: process.env.JWT_SECRET || "dev-secret-key-change-in-production",
-    expiresIn: "24h",
-  },
   backend: {
     externalAddress: process.env.BACKEND_EXTERNAL_ADDRESS || "http://localhost:3000",
   },

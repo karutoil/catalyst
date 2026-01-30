@@ -2,7 +2,7 @@
 // Initializes database with example data
 
 import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import { auth } from "../src/auth";
 
 const prisma = new PrismaClient();
 
@@ -40,19 +40,34 @@ async function main() {
   console.log("✓ Node created");
 
   // Create admin user
-  const passwordHash = await bcrypt.hash("admin123", 10);
-  const user = await prisma.user.upsert({
+  let user = await prisma.user.findUnique({
     where: { email: "admin@example.com" },
-    update: {
-      password: passwordHash,
-      username: "admin",
-    },
-    create: {
-      email: "admin@example.com",
-      username: "admin",
-      password: passwordHash,
-    },
   });
+
+  if (!user) {
+    const signUpResponse = await auth.api.signUpEmail({
+      headers: new Headers({
+        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+      }),
+      body: {
+        email: "admin@example.com",
+        password: "admin123",
+        name: "admin",
+        username: "admin",
+      } as any,
+      returnHeaders: true,
+    });
+
+    const data =
+      "headers" in signUpResponse && signUpResponse.response
+        ? signUpResponse.response
+        : (signUpResponse as any);
+    user = data?.user;
+  }
+
+  if (!user) {
+    throw new Error("Failed to create admin user via better-auth");
+  }
 
   console.log("✓ Admin user created (admin@example.com / admin123)");
 
@@ -100,6 +115,7 @@ async function main() {
   await prisma.user.update({
     where: { id: user.id },
     data: {
+      role: "administrator",
       roles: {
         connect: { id: adminRole.id },
       },

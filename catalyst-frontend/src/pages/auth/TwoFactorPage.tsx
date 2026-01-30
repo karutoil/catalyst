@@ -1,0 +1,89 @@
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { z } from 'zod';
+import { useAuthStore } from '../../stores/authStore';
+
+const twoFactorSchema = z.object({
+  code: z.string().min(6),
+  trustDevice: z.boolean().optional(),
+});
+
+type TwoFactorSchema = z.infer<typeof twoFactorSchema>;
+
+function TwoFactorPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { verifyTwoFactor, isLoading, error } = useAuthStore();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<TwoFactorSchema>({ resolver: zodResolver(twoFactorSchema) });
+
+  const from = (location.state as { from?: { pathname?: string } } | undefined)?.from?.pathname;
+
+  const rememberMe = (location.state as { rememberMe?: boolean } | undefined)?.rememberMe;
+  const onSubmit = async (values: TwoFactorSchema) => {
+    try {
+      await verifyTwoFactor({
+        code: values.code,
+        trustDevice: values.trustDevice,
+        rememberMe,
+      });
+      setTimeout(() => {
+        navigate(from || '/servers');
+      }, 100);
+    } catch {
+      // Error handled by store
+    }
+  };
+
+  return (
+    <div className="app-shell flex min-h-screen items-center justify-center px-4 font-sans">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-6 py-8 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 dark:border-slate-800 dark:bg-slate-900">
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Two-factor verification</h1>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+          Enter the code from your authenticator app or backup code.
+        </p>
+
+        {error ? (
+          <div className="mt-4 rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+            {error}
+          </div>
+        ) : null}
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)}>
+          <div className="space-y-2">
+            <label className="block text-sm text-slate-600 dark:text-slate-300" htmlFor="code">
+              Verification code
+            </label>
+            <input
+              id="code"
+              type="text"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+              placeholder="123456"
+              {...register('code')}
+            />
+            {errors.code ? <p className="text-xs text-red-400">{errors.code.message}</p> : null}
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <input type="checkbox" className="rounded border-slate-300" {...register('trustDevice')} />
+            Trust this device for 30 days
+          </label>
+
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-70"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Verifying…' : 'Verify'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default TwoFactorPage;

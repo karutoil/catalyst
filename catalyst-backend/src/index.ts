@@ -1,7 +1,6 @@
 import Fastify from "fastify";
 import fs from "fs";
 import path from "path";
-import fastifyJwt from "@fastify/jwt";
 import fastifyWebsocket from "@fastify/websocket";
 import fastifyCors from "@fastify/cors";
 import fastifyRateLimit from "@fastify/rate-limit";
@@ -10,7 +9,7 @@ import fastifyMultipart from "@fastify/multipart";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
 import pino from "pino";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "./db";
 import "./types"; // Load type augmentations
 import { WebSocketGateway } from "./websocket/gateway";
 import { authRoutes } from "./routes/auth";
@@ -28,6 +27,8 @@ import { alertRoutes } from "./routes/alerts";
 import { AlertService } from "./services/alert-service";
 import { getSecuritySettings } from "./services/mailer";
 import { startAuditRetention } from "./services/audit-retention";
+import { auth } from "./auth";
+import { fromNodeHeaders } from "better-auth/node";
 
 const logger = pino({
   transport: {
@@ -36,10 +37,6 @@ const logger = pino({
       colorize: true,
     },
   },
-});
-
-export const prisma = new PrismaClient({
-  log: ["info", "warn", "error"],
 });
 
 const app = Fastify({
@@ -164,8 +161,19 @@ taskScheduler.setTaskExecutor({
 
 const authenticate = async (request: any, reply: any) => {
   try {
-    await request.jwtVerify();
-  } catch (error) {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(request.headers as Record<string, string | string[] | undefined>),
+    });
+    if (!session) {
+      reply.status(401).send({ error: "Unauthorized" });
+      return;
+    }
+    request.user = {
+      userId: session.user.id,
+      email: session.user.email,
+      username: (session.user as any).username,
+    };
+  } catch {
     reply.status(401).send({ error: "Unauthorized" });
   }
 };
@@ -174,6 +182,7 @@ const authenticate = async (request: any, reply: any) => {
 (app as any).wsGateway = wsGateway;
 (app as any).taskScheduler = taskScheduler;
 (app as any).alertService = alertService;
+(app as any).auth = auth;
 (app as any).prisma = prisma;
 
 // ============================================================================
@@ -235,30 +244,24 @@ async function bootstrap() {
     });
 
     // Register plugins
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173', // Vite dev server
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173',
+      process.env.CORS_ORIGIN,
+    ].filter(Boolean) as string[];
+    const isAllowedOrigin = (origin?: string) =>
+      !origin || allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development';
+
     await app.register(fastifyCors, {
-      origin: async (origin) => {
-        const allowedOrigins = [
-          'http://localhost:3000',
-          'http://localhost:5173', // Vite dev server
-          'http://127.0.0.1:3000',
-          'http://127.0.0.1:5173',
-          process.env.CORS_ORIGIN,
-        ].filter(Boolean) as string[];
-
-        if (!origin || allowedOrigins.includes(origin)) {
-          return true;
-        }
-        if (process.env.NODE_ENV === 'development') {
-          return true;
-        }
-        return false;
+      origin: (origin, callback) => {
+        callback(null, isAllowedOrigin(origin));
       },
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
       credentials: true,
-    });
-
-    await app.register(fastifyJwt, {
-      secret: process.env.JWT_SECRET || "dev-secret-key-change-in-production",
-      sign: { expiresIn: "24h" },
+      maxAge: 86400,
     });
 
     await app.register(fastifySwagger, {
@@ -300,8 +303,7 @@ async function bootstrap() {
     });
 
     // API Routes
-    await app.register(authRoutes, {
-      prefix: "/api/auth",
+    const authRateLimit = {
       config: {
         rateLimit: {
           max: async () => {
@@ -309,7 +311,55 @@ async function bootstrap() {
             return settings.authRateLimitMax;
           },
           timeWindow: '1 minute',
+          allowList: (request) => request.url.startsWith("/api/auth/passkey/"),
         },
+      },
+    };
+    await app.register(authRoutes, { prefix: "/api/auth", ...authRateLimit });
+    app.route({
+      method: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      url: "/api/auth/*",
+      config: authRateLimit.config,
+      handler: async (request, reply) => {
+        if (request.method === "OPTIONS") {
+          return reply.status(204).send();
+        }
+        if (
+          request.url === "/api/auth/login" ||
+          request.url === "/api/auth/register" ||
+          request.url === "/api/auth/me"
+        ) {
+          return;
+        }
+        const url = new URL(request.url, `http://${request.headers.host ?? "localhost:3000"}`);
+        const headers = new Headers();
+        Object.entries(request.headers).forEach(([key, value]) => {
+          if (typeof value === "string") {
+            headers.append(key, value);
+          } else if (Array.isArray(value)) {
+            value.forEach((item) => headers.append(key, item));
+          }
+        });
+        const body =
+          request.method === "GET" || request.method === "HEAD" || request.body == null
+            ? undefined
+            : typeof request.body === "string"
+              ? request.body
+              : Buffer.isBuffer(request.body)
+                ? request.body
+                : JSON.stringify(request.body);
+        const req = new Request(url.toString(), {
+          method: request.method,
+          headers,
+          ...(body ? { body } : {}),
+        });
+        const response = await auth.handler(req);
+        reply.status(response.status);
+        response.headers.forEach((value, key) => {
+          reply.header(key, value);
+        });
+        const text = await response.text();
+        reply.send(text || null);
       },
     });
     await app.register(nodeRoutes, { prefix: "/api/nodes" });

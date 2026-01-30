@@ -10,7 +10,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { pipeline } from "stream/promises";
 import { nanoid } from "nanoid";
-import bcrypt from "bcryptjs";
+import { auth } from "../auth";
 import {
   allocateIpForServer,
   releaseIpForServer,
@@ -2202,44 +2202,53 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(409).send({ error: "Email or username already in use" });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
-      const user = await prisma.user.create({
-        data: {
+      const signUpResponse = await auth.api.signUpEmail({
+        headers: new Headers({
+          origin: request.headers.origin || request.headers.host || "http://localhost:3000",
+        }),
+        body: {
           email: invite.email,
+          password,
+          name: username,
           username,
-          password: passwordHash,
-        },
+        } as any,
+        returnHeaders: true,
       });
 
-      const accepted = await acceptInviteForUser({ userId: user.id, token, reply, invite });
+      const signUpUser =
+        "headers" in signUpResponse && signUpResponse.response
+          ? signUpResponse.response.user
+          : (signUpResponse as any)?.user;
+      if (!signUpUser) {
+        return reply.status(400).send({ error: "Registration failed" });
+      }
+
+      const accepted = await acceptInviteForUser({ userId: signUpUser.id, token, reply, invite });
       if (!accepted) {
         return;
       }
 
       const roles = await prisma.role.findMany({
-        where: { users: { some: { id: user.id } } },
+        where: { users: { some: { id: signUpUser.id } } },
         select: { permissions: true },
       });
       const permissions = roles.flatMap((role) => role.permissions);
 
-      const tokenValue = app.jwt.sign(
-        {
-          userId: user.id,
-          email: user.email,
-          username: user.username,
-          permissions,
-        },
-        { expiresIn: "24h" }
-      );
+      const tokenValue =
+        "headers" in signUpResponse ? signUpResponse.headers.get("set-auth-token") : null;
+      if (tokenValue) {
+        reply.header("set-auth-token", tokenValue);
+        reply.header("Access-Control-Expose-Headers", "set-auth-token");
+      }
 
       reply.send({
         success: true,
         data: {
-          userId: user.id,
-          email: user.email,
-          username: user.username,
+          userId: signUpUser.id,
+          email: signUpUser.email,
+          username: signUpUser.username ?? username,
           permissions,
-          token: tokenValue,
+          token: tokenValue ?? null,
         },
       });
     }

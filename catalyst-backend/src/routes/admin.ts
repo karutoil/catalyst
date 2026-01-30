@@ -1,6 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
 import { createAuditLog } from '../middleware/audit';
 import {
   DEFAULT_SECURITY_SETTINGS,
@@ -14,6 +13,7 @@ import { summarizePool } from '../utils/ipam';
 export async function adminRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
   const authenticate = (app as any).authenticate;
+  const auth = (app as any).auth;
   const isAdminUser = async (userId: string) => {
     const userRoles = await prisma.role.findMany({
       where: {
@@ -182,7 +182,6 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.status(409).send({ error: 'Email or username already in use' });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
       const rolesToAssign = roleIds?.length
         ? await prisma.role.findMany({ where: { id: { in: roleIds } } })
         : [];
@@ -228,7 +227,30 @@ export async function adminRoutes(app: FastifyInstance) {
         data: {
           email,
           username,
-          password: passwordHash,
+          name: username,
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      await auth.api.requestPasswordReset({
+        headers: new Headers({
+          origin: request.headers.origin || request.headers.host || "http://localhost:3000",
+        }),
+        body: {
+          email,
+          redirectTo: `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password`,
+        },
+      });
+
+      const createdUser = await prisma.user.update({
+        where: { id: created.id },
+        data: {
           roles: rolesToAssign.length
             ? { connect: rolesToAssign.map((role) => ({ id: role.id })) }
             : undefined,
@@ -261,14 +283,14 @@ export async function adminRoutes(app: FastifyInstance) {
         resource: 'user',
         resourceId: created.id,
         details: {
-          email: created.email,
-          username: created.username,
-          roleIds: created.roles.map((role) => role.id),
+          email: createdUser.email,
+          username: createdUser.username,
+          roleIds: createdUser.roles.map((role) => role.id),
           serverIds: serverIds ?? undefined,
         },
       });
 
-      return reply.status(201).send(created);
+      return reply.status(201).send(createdUser);
     }
   );
 
@@ -335,14 +357,20 @@ export async function adminRoutes(app: FastifyInstance) {
         }
       }
 
-      const passwordHash = password ? await bcrypt.hash(password, 10) : undefined;
+      if (password) {
+        await auth.api.setUserPassword({
+          headers: new Headers({
+            authorization: request.headers.authorization || "",
+          }),
+          body: { newPassword: password, userId },
+        });
+      }
 
       const updatedUser = await prisma.user.update({
         where: { id: userId },
         data: {
           email: email ?? undefined,
           username: username ?? undefined,
-          password: passwordHash ?? undefined,
           roles: roleIds
             ? {
                 set: rolesToAssign.map((role) => ({ id: role.id })),
