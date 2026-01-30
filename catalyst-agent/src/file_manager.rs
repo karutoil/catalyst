@@ -20,29 +20,34 @@ impl FileManager {
         let server_base = self.data_dir.join(server_id);
         let requested = PathBuf::from(requested_path);
 
-        // Prevent directory traversal
+        // Prevent directory traversal before resolving.
+        if requested
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(AgentError::PermissionDenied(format!(
+                "Path traversal attempt detected: {}",
+                requested_path
+            )));
+        }
+
         let normalized = if requested.is_absolute() {
-            self.data_dir.join(requested_path.trim_start_matches('/'))
+            server_base.join(requested_path.trim_start_matches('/'))
         } else {
             server_base.join(requested_path)
         };
 
         // Ensure the path is within the server's data directory
-        let canonical = normalized
-            .canonicalize()
-            .or_else(|_| {
-                // If canonicalize fails, try to create parent and check
-                let parent = normalized.parent().unwrap_or(&self.data_dir);
-                parent.canonicalize().map(|_| normalized.clone())
-            })
-            .map_err(|_| {
-                AgentError::PermissionDenied(format!(
-                    "Path traversal attempt detected: {}",
-                    requested_path
-                ))
-            })?;
+        let canonical = normalized.canonicalize().map_err(|_| {
+            AgentError::PermissionDenied(format!(
+                "Path traversal attempt detected: {}",
+                requested_path
+            ))
+        })?;
 
-        let canonical_base = server_base.canonicalize().unwrap_or(server_base.clone());
+        let canonical_base = server_base
+            .canonicalize()
+            .map_err(|_| AgentError::PermissionDenied("Server directory missing".to_string()))?;
 
         if !canonical.starts_with(&canonical_base) {
             return Err(AgentError::PermissionDenied(

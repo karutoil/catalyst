@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::sync::RwLock;
 use sysinfo::{Disks, System};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
@@ -9,7 +10,6 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::connect_async;
 use futures::{SinkExt, StreamExt};
 use futures::stream::SplitSink;
-use uuid::Uuid;
 use sha2::{Digest, Sha256};
 use tracing::{info, error, warn, debug};
 use regex::Regex;
@@ -125,7 +125,10 @@ impl WebSocketHandler {
             self.config.server.backend_url, self.config.server.node_id, self.config.server.secret
         );
 
-        info!("Connecting to backend: {}", ws_url);
+        info!(
+            "Connecting to backend: {}?nodeId={}&token=***",
+            self.config.server.backend_url, self.config.server.node_id
+        );
 
         let (ws_stream, _) = connect_async(&ws_url)
             .await
@@ -1121,14 +1124,17 @@ impl WebSocketHandler {
             .as_str()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(self.config.server.data_dir.as_path()).join(server_uuid));
-        let default_backup_dir = PathBuf::from("/var/lib/catalyst/backups").join(server_uuid);
-        let backup_path = backup_path_override
-            .map(PathBuf::from)
-            .unwrap_or_else(|| default_backup_dir.join(format!("{}.tar.gz", backup_name)));
+        let backup_path = match backup_path_override {
+            Some(path) => self.resolve_backup_path(server_uuid, path, true).await?,
+            None => {
+                let filename = format!("{}.tar.gz", backup_name);
+                self.resolve_backup_path(server_uuid, &filename, true).await?
+            }
+        };
         let backup_dir = backup_path
             .parent()
             .map(PathBuf::from)
-            .unwrap_or(default_backup_dir);
+            .unwrap_or_else(|| self.backup_base_dir(server_uuid));
 
         if !server_dir.exists() {
             return Err(AgentError::NotFound(format!(
@@ -1167,9 +1173,16 @@ impl WebSocketHandler {
         let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
 
         let mut file = tokio::fs::File::open(&backup_path).await?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).await?;
-        let checksum = format!("{:x}", Sha256::digest(&buffer));
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 8192];
+        loop {
+            let read = file.read(&mut buffer).await?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        let checksum = format!("{:x}", hasher.finalize());
 
         let event = json!({
             "type": "backup_complete",
@@ -1198,18 +1211,21 @@ impl WebSocketHandler {
         let server_id = msg["serverId"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing serverId".to_string())
         })?;
-        let server_uuid = msg["serverUuid"].as_str().ok_or_else(|| {
-            AgentError::InvalidRequest("Missing serverUuid".to_string())
-        })?;
         let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing backupPath".to_string())
         })?;
+        let server_uuid = msg
+            .get("serverUuid")
+            .and_then(|value| value.as_str())
+            .unwrap_or(server_id);
 
         let server_dir = msg["serverDir"]
             .as_str()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(self.config.server.data_dir.as_path()).join(server_uuid));
-        let backup_file = PathBuf::from(backup_path);
+        let backup_file = self
+            .resolve_backup_path(server_uuid, backup_path, false)
+            .await?;
 
         if !backup_file.exists() {
             return Err(AgentError::NotFound(format!(
@@ -1266,8 +1282,14 @@ impl WebSocketHandler {
         let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing backupPath".to_string())
         })?;
+        let server_uuid = msg
+            .get("serverUuid")
+            .and_then(|value| value.as_str())
+            .unwrap_or(server_id);
 
-        let backup_file = PathBuf::from(backup_path);
+        let backup_file = self
+            .resolve_backup_path(server_uuid, backup_path, false)
+            .await?;
         if backup_file.exists() {
             tokio::fs::remove_file(&backup_file).await?;
         }
@@ -1300,8 +1322,14 @@ impl WebSocketHandler {
         let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing backupPath".to_string())
         })?;
+        let server_uuid = msg
+            .get("serverUuid")
+            .and_then(|value| value.as_str())
+            .unwrap_or(server_id);
 
-        let backup_file = PathBuf::from(backup_path);
+        let backup_file = self
+            .resolve_backup_path(server_uuid, backup_path, false)
+            .await?;
         if !backup_file.exists() {
             let event = json!({
                 "type": "backup_download_response",
@@ -1344,8 +1372,14 @@ impl WebSocketHandler {
         let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing backupPath".to_string())
         })?;
+        let server_uuid = msg
+            .get("serverUuid")
+            .and_then(|value| value.as_str())
+            .unwrap_or(server_id);
 
-        let backup_file = PathBuf::from(backup_path);
+        let backup_file = self
+            .resolve_backup_path(server_uuid, backup_path, false)
+            .await?;
         if !backup_file.exists() {
             let event = json!({
                 "type": "backup_download_chunk",
@@ -1379,8 +1413,6 @@ impl WebSocketHandler {
             }
         };
         let mut buffer = vec![0u8; 256 * 1024];
-        let mut w = write.lock().await;
-
         loop {
             let read = match file.read(&mut buffer).await {
                 Ok(read) => read,
@@ -1392,6 +1424,7 @@ impl WebSocketHandler {
                         "error": format!("Failed to read backup file: {}", err),
                         "done": true,
                     });
+                    let mut w = write.lock().await;
                     w.send(Message::Text(event.to_string()))
                         .await
                         .map_err(|e| AgentError::NetworkError(e.to_string()))?;
@@ -1405,6 +1438,7 @@ impl WebSocketHandler {
                     "serverId": server_id,
                     "done": true,
                 });
+                let mut w = write.lock().await;
                 w.send(Message::Text(done_event.to_string()))
                     .await
                     .map_err(|e| AgentError::NetworkError(e.to_string()))?;
@@ -1419,6 +1453,7 @@ impl WebSocketHandler {
                 "data": chunk,
                 "done": false,
             });
+            let mut w = write.lock().await;
             w.send(Message::Text(event.to_string()))
                 .await
                 .map_err(|e| AgentError::NetworkError(e.to_string()))?;
@@ -1438,10 +1473,13 @@ impl WebSocketHandler {
         let backup_path = msg["backupPath"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing backupPath".to_string())
         })?;
-        let backup_file = PathBuf::from(backup_path);
-        if let Some(parent) = backup_file.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
+        let server_uuid = msg
+            .get("serverUuid")
+            .and_then(|value| value.as_str())
+            .unwrap_or_else(|| msg["serverId"].as_str().unwrap_or("unknown"));
+        let backup_file = self
+            .resolve_backup_path(server_uuid, backup_path, true)
+            .await?;
         let file = tokio::fs::File::create(&backup_file).await?;
         self.active_uploads
             .write()
@@ -1516,6 +1554,77 @@ impl WebSocketHandler {
             .await
             .map_err(|e| AgentError::NetworkError(e.to_string()))?;
         Ok(())
+    }
+
+    fn backup_base_dir(&self, server_uuid: &str) -> PathBuf {
+        PathBuf::from("/var/lib/catalyst/backups").join(server_uuid)
+    }
+
+    async fn resolve_backup_path(
+        &self,
+        server_uuid: &str,
+        requested_path: &str,
+        allow_create: bool,
+    ) -> AgentResult<PathBuf> {
+        let base_dir = self.backup_base_dir(server_uuid);
+        if allow_create {
+            tokio::fs::create_dir_all(&base_dir).await.map_err(|e| {
+                AgentError::FileSystemError(format!("Failed to create backup directory: {}", e))
+            })?;
+        }
+
+        let requested = PathBuf::from(requested_path);
+        if requested
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(AgentError::InvalidRequest("Invalid backup path".to_string()));
+        }
+
+        let normalized = if requested.is_absolute() {
+            base_dir.join(requested_path.trim_start_matches('/'))
+        } else {
+            base_dir.join(&requested)
+        };
+
+        let parent = normalized
+            .parent()
+            .ok_or_else(|| AgentError::InvalidRequest("Invalid backup path".to_string()))?;
+        if allow_create {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                AgentError::FileSystemError(format!("Failed to create backup directory: {}", e))
+            })?;
+        }
+
+        let base_canon = base_dir
+            .canonicalize()
+            .map_err(|_| AgentError::FileSystemError("Backup directory missing".to_string()))?;
+        let parent_canon = parent
+            .canonicalize()
+            .map_err(|_| AgentError::InvalidRequest("Invalid backup path".to_string()))?;
+        if !parent_canon.starts_with(&base_canon) {
+            return Err(AgentError::PermissionDenied(
+                "Access denied: path outside backup directory".to_string(),
+            ));
+        }
+
+        let file_name = normalized
+            .file_name()
+            .ok_or_else(|| AgentError::InvalidRequest("Invalid backup path".to_string()))?;
+        let candidate = parent_canon.join(file_name);
+        if candidate.exists() {
+            let canonical = candidate
+                .canonicalize()
+                .map_err(|_| AgentError::InvalidRequest("Invalid backup path".to_string()))?;
+            if !canonical.starts_with(&base_canon) {
+                return Err(AgentError::PermissionDenied(
+                    "Access denied: path outside backup directory".to_string(),
+                ));
+            }
+            return Ok(canonical);
+        }
+
+        Ok(candidate)
     }
 
     async fn handle_resize_storage(
@@ -2011,25 +2120,7 @@ impl WebSocketHandler {
         Ok(())
     }
 
-    async fn heartbeat_loop(&self) {
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
-
-        loop {
-            interval.tick().await;
-            debug!("Sending heartbeat");
-            // Send heartbeat message
-        }
-    }
 }
-       async fn heartbeat_loop_static() {
-           let mut interval = tokio::time::interval(Duration::from_secs(30));
-
-           loop {
-               interval.tick().await;
-               debug!("Sending heartbeat");
-               // Send heartbeat message
-           }
-       }
 
 fn get_uptime() -> u64 {
     // Simplified uptime calculation
@@ -2074,7 +2165,11 @@ fn parse_size_to_bytes(value: &str) -> Option<u64> {
     if trimmed.is_empty() {
         return None;
     }
-    let re = Regex::new(r"(?i)^\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgtp]?i?b?)?\s*$").ok()?;
+    static SIZE_RE: OnceLock<Regex> = OnceLock::new();
+    let re = SIZE_RE.get_or_init(|| {
+        Regex::new(r"(?i)^\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgtp]?i?b?)?\s*$")
+            .expect("valid size regex")
+    });
     let caps = re.captures(trimmed)?;
     let number = caps.get(1)?.as_str().parse::<f64>().ok()?;
     let unit = caps.get(2).map(|m| m.as_str().to_lowercase()).unwrap_or_default();

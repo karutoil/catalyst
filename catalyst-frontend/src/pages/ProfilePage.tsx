@@ -17,6 +17,20 @@ function ProfilePage() {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [editingPasskeyId, setEditingPasskeyId] = useState<string | null>(null);
   const [editingPasskeyName, setEditingPasskeyName] = useState('');
+  const [twoFactorModalOpen, setTwoFactorModalOpen] = useState(false);
+  const [twoFactorSetup, setTwoFactorSetup] = useState<{
+    qrCode?: string;
+    secret?: string;
+    otpAuthUrl?: string;
+    backupCodes?: string[];
+  } | null>(null);
+  const qrValue =
+    twoFactorSetup?.qrCode ||
+    (twoFactorSetup?.otpAuthUrl
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+          twoFactorSetup.otpAuthUrl,
+        )}`
+      : undefined);
 
   const refreshPasskeys = useCallback(async () => {
     try {
@@ -64,8 +78,16 @@ function ProfilePage() {
   const enableTwoFactorMutation = useMutation({
     mutationFn: () => profileApi.enableTwoFactor({ password: twoFactorPassword }),
     onSuccess: (data: any) => {
-      const codes = data?.data?.backupCodes || data?.backupCodes || [];
+      const payload = data?.data ?? data;
+      const codes = payload?.backupCodes || [];
       setBackupCodes(codes);
+      setTwoFactorSetup({
+        qrCode: payload?.qrCode || payload?.qr || payload?.qrImage,
+        secret: payload?.secret,
+        otpAuthUrl: payload?.totpURI || payload?.otpAuthUrl || payload?.otpauthUrl,
+        backupCodes: codes,
+      });
+      setTwoFactorModalOpen(true);
       notifySuccess('Two-factor enabled');
       setTwoFactorPassword('');
       queryClient.invalidateQueries({ queryKey: ['profile'] });
@@ -268,6 +290,58 @@ function ProfilePage() {
                   {code}
                 </span>
               ))}
+            </div>
+          </div>
+        ) : null}
+        {twoFactorModalOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Set up authenticator</h2>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Scan the QR code in your authenticator app to finish enabling TOTP.
+              </p>
+              {qrValue ? (
+                <img
+                  src={qrValue}
+                  alt="TOTP QR code"
+                  className="mt-4 w-full rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
+                />
+              ) : null}
+              {twoFactorSetup?.otpAuthUrl ? (
+                <a
+                  href={twoFactorSetup.otpAuthUrl}
+                  className="mt-3 block text-xs font-medium text-primary-600 hover:text-primary-500"
+                >
+                  Open in authenticator app
+                </a>
+              ) : null}
+              {twoFactorSetup?.secret ? (
+                <div className="mt-3 text-xs text-slate-600 dark:text-slate-300">
+                  Manual code: <span className="font-semibold">{twoFactorSetup.secret}</span>
+                </div>
+              ) : null}
+              {twoFactorSetup?.backupCodes?.length ? (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                  <div className="font-semibold text-slate-700 dark:text-slate-200">Backup codes</div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    {twoFactorSetup.backupCodes.map((code) => (
+                      <span key={code} className="rounded bg-white px-2 py-1 dark:bg-slate-800">
+                        {code}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="mt-4 w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500"
+                onClick={() => {
+                  setTwoFactorModalOpen(false);
+                  setTwoFactorSetup(null);
+                }}
+              >
+                Done
+              </button>
             </div>
           </div>
         ) : null}

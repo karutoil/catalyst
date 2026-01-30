@@ -21,9 +21,13 @@ function TwoFactorPage() {
     formState: { errors },
   } = useForm<TwoFactorSchema>({ resolver: zodResolver(twoFactorSchema) });
 
-  const from = (location.state as { from?: { pathname?: string } } | undefined)?.from?.pathname;
+  const state = location.state as
+    | { from?: { pathname?: string }; rememberMe?: boolean; returnTo?: string }
+    | undefined;
+  const from = state?.from?.pathname;
+  const returnTo = state?.returnTo;
 
-  const rememberMe = (location.state as { rememberMe?: boolean } | undefined)?.rememberMe;
+  const rememberMe = state?.rememberMe;
   const onSubmit = async (values: TwoFactorSchema) => {
     try {
       await verifyTwoFactor({
@@ -80,6 +84,15 @@ function TwoFactorPage() {
           >
             {isLoading ? 'Verifying…' : 'Verify'}
           </button>
+          {returnTo ? (
+            <button
+              type="button"
+              className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
+              onClick={() => navigate(returnTo, { replace: true, state: { from: location.state?.from } })}
+            >
+              Use passkey instead
+            </button>
+          ) : null}
         </form>
       </div>
     </div>

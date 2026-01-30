@@ -969,8 +969,10 @@ impl ContainerdRuntime {
             .await?;
 
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(AgentError::ContainerError(format!(
-                "Failed to get container IP"
+                "Failed to get container IP: {}",
+                stderr
             )));
         }
 
