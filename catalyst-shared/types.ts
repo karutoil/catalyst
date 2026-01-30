@@ -74,6 +74,14 @@ export interface ServerTemplate {
     iconUrl?: string;
     configFile?: string;
     configFiles?: string[];
+    modManager?: {
+      providers: string[];
+      paths?: {
+        mods?: string;
+        datapacks?: string;
+        modpacks?: string;
+      };
+    };
   };
 }
 

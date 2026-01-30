@@ -19,6 +19,7 @@ import CreateTaskModal from '../../components/tasks/CreateTaskModal';
 import EditTaskModal from '../../components/tasks/EditTaskModal';
 import XtermConsole from '../../components/console/XtermConsole';
 import AlertsPage from '../alerts/AlertsPage';
+import EmptyState from '../../components/shared/EmptyState';
 import { useConsole } from '../../hooks/useConsole';
 import { useTasks } from '../../hooks/useTasks';
 import { useServerDatabases } from '../../hooks/useServerDatabases';
@@ -27,6 +28,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { serversApi } from '../../services/api/servers';
 import { filesApi } from '../../services/api/files';
 import { databasesApi } from '../../services/api/databases';
+import { modManagerApi } from '../../services/api/modManager';
 import { notifyError, notifySuccess } from '../../utils/notify';
 import {
   detectConfigFormat,
@@ -68,6 +70,7 @@ const tabLabels = {
   databases: 'Databases',
   metrics: 'Metrics',
   alerts: 'Alerts',
+  modManager: 'Mod Manager',
   configuration: 'Configuration',
   users: 'Users',
   settings: 'Settings',
@@ -103,6 +106,34 @@ function ServerDetailsPage() {
     queryKey: ['server-invites', serverId],
     queryFn: () => serversApi.listInvites(serverId ?? ''),
     enabled: Boolean(serverId),
+  });
+  const {
+    data: modSearchResults,
+    isLoading: modSearchLoading,
+    isError: modSearchError,
+    refetch: refetchModSearch,
+  } = useQuery({
+    queryKey: ['mod-manager-search', serverId, modProvider, modQuery],
+    queryFn: () =>
+      modManagerApi.search(serverId ?? '', {
+        provider: modProvider,
+        query: modQuery.trim(),
+      }),
+    enabled: Boolean(serverId && modProvider && modQuery.trim()),
+  });
+
+  const {
+    data: modVersions,
+    isLoading: modVersionsLoading,
+    isError: modVersionsError,
+  } = useQuery({
+    queryKey: ['mod-manager-versions', serverId, modProvider, selectedProject],
+    queryFn: () =>
+      modManagerApi.versions(serverId ?? '', {
+        provider: modProvider,
+        projectId: selectedProject ?? '',
+      }),
+    enabled: Boolean(serverId && modProvider && selectedProject),
   });
 
   const {
@@ -147,6 +178,13 @@ function ServerDetailsPage() {
   const [invitePreset, setInvitePreset] = useState<'readOnly' | 'power' | 'full' | 'custom'>('readOnly');
   const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
   const [accessPermissions, setAccessPermissions] = useState<Record<string, string[]>>({});
+  const modManagerConfig = server?.template?.features?.modManager;
+  const modManagerProviders = modManagerConfig?.providers ?? [];
+  const [modProvider, setModProvider] = useState(modManagerProviders[0] ?? 'modrinth');
+  const [modQuery, setModQuery] = useState('');
+  const [modTarget, setModTarget] = useState<'mods' | 'datapacks' | 'modpacks'>('mods');
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<string>('');
 
   const createDatabaseMutation = useMutation({
     mutationFn: () => {
@@ -251,6 +289,27 @@ function ServerDetailsPage() {
     },
     onError: (error: any) => {
       const message = error?.response?.data?.error || 'Failed to unsuspend server';
+      notifyError(message);
+    },
+  });
+
+  const installModMutation = useMutation({
+    mutationFn: () => {
+      if (!server?.id || !selectedProject || !selectedVersion) {
+        throw new Error('Missing mod selection');
+      }
+      return modManagerApi.install(server.id, {
+        provider: modProvider,
+        projectId: selectedProject,
+        versionId: selectedVersion,
+        target: modTarget,
+      });
+    },
+    onSuccess: () => {
+      notifySuccess('Mod install queued');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to install mod';
       notifyError(message);
     },
   });
@@ -552,6 +611,44 @@ function ServerDetailsPage() {
       Object.values(permissionsData.presets).forEach((list) => list.forEach((perm) => all.add(perm)));
     return Array.from(all).sort();
   }, [permissionsData?.data, permissionsData?.presets]);
+
+  useEffect(() => {
+    if (!modManagerProviders.length) return;
+    if (!modManagerProviders.includes(modProvider)) {
+      setModProvider(modManagerProviders[0]);
+    }
+  }, [modManagerProviders, modProvider]);
+
+  useEffect(() => {
+    setSelectedProject(null);
+    setSelectedVersion('');
+  }, [modProvider, modQuery]);
+
+  useEffect(() => {
+    setSelectedVersion('');
+  }, [selectedProject]);
+
+  const modResults = useMemo(() => {
+    if (!modSearchResults) return [];
+    if (Array.isArray(modSearchResults.hits)) {
+      return modSearchResults.hits;
+    }
+    if (Array.isArray(modSearchResults.data)) {
+      return modSearchResults.data;
+    }
+    return [];
+  }, [modSearchResults]);
+
+  const modVersionOptions = useMemo(() => {
+    if (!modVersions) return [];
+    if (Array.isArray(modVersions.data)) {
+      return modVersions.data;
+    }
+    if (Array.isArray(modVersions)) {
+      return modVersions;
+    }
+    return [];
+  }, [modVersions]);
 
   const normalizeEntry = (key: string, value: ConfigNode): ConfigEntry => {
     if (isConfigMap(value)) {
@@ -965,7 +1062,11 @@ function ServerDetailsPage() {
 
       <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         {Object.entries(tabLabels)
-          .filter(([key]) => key !== 'admin' || isAdmin)
+          .filter(([key]) => {
+            if (key === 'admin') return isAdmin;
+            if (key === 'modManager') return Boolean(modManagerConfig);
+            return true;
+          })
           .map(([key, label]) => {
           const isActive = activeTab === key;
           return (

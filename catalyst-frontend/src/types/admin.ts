@@ -158,6 +158,11 @@ export interface SecuritySettings {
   auditRetentionDays: number;
 }
 
+export interface ModManagerSettings {
+  curseforgeApiKey: string | null;
+  modrinthApiKey: string | null;
+}
+
 export interface AuthLockout {
   id: string;
   email: string;

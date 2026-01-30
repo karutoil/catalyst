@@ -5,7 +5,7 @@ import EmptyState from '../../components/shared/EmptyState';
 import { adminApi } from '../../services/api/admin';
 import { useNodes } from '../../hooks/useNodes';
 import { notifyError, notifySuccess } from '../../utils/notify';
-import { useSmtpSettings } from '../../hooks/useAdmin';
+import { useModManagerSettings, useSmtpSettings } from '../../hooks/useAdmin';
 
 const parseReserved = (value: string) =>
   value
@@ -33,6 +33,8 @@ function NetworkPage() {
   const [smtpPool, setSmtpPool] = useState(false);
   const [smtpMaxConnections, setSmtpMaxConnections] = useState('');
   const [smtpMaxMessages, setSmtpMaxMessages] = useState('');
+  const [curseforgeApiKey, setCurseforgeApiKey] = useState('');
+  const [modrinthApiKey, setModrinthApiKey] = useState('');
   const queryClient = useQueryClient();
   const { data: nodes = [] } = useNodes();
   const { data: pools = [], isLoading } = useQuery({
@@ -40,6 +42,7 @@ function NetworkPage() {
     queryFn: adminApi.listIpPools,
   });
   const { data: smtpSettings } = useSmtpSettings();
+  const { data: modManagerSettings } = useModManagerSettings();
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === nodeId),
     [nodes, nodeId],
@@ -124,6 +127,22 @@ function NetworkPage() {
     },
   });
 
+  const updateModManagerMutation = useMutation({
+    mutationFn: () =>
+      adminApi.updateModManagerSettings({
+        curseforgeApiKey: curseforgeApiKey.trim() || null,
+        modrinthApiKey: modrinthApiKey.trim() || null,
+      }),
+    onSuccess: () => {
+      notifySuccess('Mod manager settings updated');
+      queryClient.invalidateQueries({ queryKey: ['admin-mod-manager'] });
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to update mod manager settings';
+      notifyError(message);
+    },
+  });
+
   useEffect(() => {
     if (!smtpSettings) return;
     setSmtpHost(smtpSettings.host ?? '');
@@ -146,6 +165,12 @@ function NetworkPage() {
         : '',
     );
   }, [smtpSettings]);
+
+  useEffect(() => {
+    if (!modManagerSettings) return;
+    setCurseforgeApiKey(modManagerSettings.curseforgeApiKey ?? '');
+    setModrinthApiKey(modManagerSettings.modrinthApiKey ?? '');
+  }, [modManagerSettings]);
 
   return (
     <div className="space-y-4">
@@ -405,6 +430,50 @@ function NetworkPage() {
             disabled={updateSmtpMutation.isPending}
           >
             Save SMTP settings
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              Mod Manager API Keys
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Provide API keys for CurseForge and Modrinth to enable mod downloads.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
+            CurseForge API Key
+            <input
+              type="password"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+              value={curseforgeApiKey}
+              onChange={(event) => setCurseforgeApiKey(event.target.value)}
+              placeholder="••••••••"
+            />
+          </label>
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
+            Modrinth API Key
+            <input
+              type="password"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+              value={modrinthApiKey}
+              onChange={(event) => setModrinthApiKey(event.target.value)}
+              placeholder="••••••••"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+            onClick={() => updateModManagerMutation.mutate()}
+            disabled={updateModManagerMutation.isPending}
+          >
+            Save mod manager keys
           </button>
         </div>
       </div>

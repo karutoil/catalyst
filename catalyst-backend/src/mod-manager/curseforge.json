@@ -1,0 +1,14 @@
+{
+  "id": "curseforge",
+  "name": "CurseForge",
+  "baseUrl": "https://api.curseforge.com",
+  "headers": {
+    "x-api-key": "{{CURSEFORGE_API_KEY}}"
+  },
+  "endpoints": {
+    "search": "/v1/mods/search",
+    "mod": "/v1/mods/{projectId}",
+    "files": "/v1/mods/{projectId}/files",
+    "file": "/v1/mods/{projectId}/files/{fileId}"
+  }
+}

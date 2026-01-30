@@ -197,6 +197,8 @@ model SystemSetting {
   smtpPool           Boolean  @default(false)
   smtpMaxConnections Int?
   smtpMaxMessages    Int?
+  curseforgeApiKey   String?
+  modrinthApiKey     String?
   authRateLimitMax         Int?
   fileRateLimitMax         Int?
   consoleRateLimitMax      Int?

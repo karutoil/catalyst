@@ -77,6 +77,14 @@ export interface ServerTemplate {
     restartOnExit?: boolean;
     maxInstances?: number;
     iconUrl?: string;
+    modManager?: {
+      providers: string[];
+      paths?: {
+        mods?: string;
+        datapacks?: string;
+        modpacks?: string;
+      };
+    };
   };
 }
 

@@ -9,6 +9,7 @@ import type {
   AdminNodesResponse,
   AuditLogsResponse,
   DatabaseHost,
+  ModManagerSettings,
   SmtpSettings,
   SecuritySettings,
   AuthLockout,
@@ -176,6 +177,14 @@ export const adminApi = {
   },
   updateSecuritySettings: async (payload: SecuritySettings) => {
     const { data } = await apiClient.put<ApiResponse<void>>('/api/admin/security-settings', payload);
+    return data;
+  },
+  getModManagerSettings: async () => {
+    const { data } = await apiClient.get<ApiResponse<ModManagerSettings>>('/api/admin/mod-manager');
+    return data.data;
+  },
+  updateModManagerSettings: async (payload: ModManagerSettings) => {
+    const { data } = await apiClient.put<ApiResponse<void>>('/api/admin/mod-manager', payload);
     return data;
   },
   listAuthLockouts: async (params?: { page?: number; limit?: number; search?: string }) => {

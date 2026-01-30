@@ -3,8 +3,10 @@ import { PrismaClient } from '@prisma/client';
 import { createAuditLog } from '../middleware/audit';
 import {
   DEFAULT_SECURITY_SETTINGS,
+  getModManagerSettings,
   getSecuritySettings,
   getSmtpSettings,
+  upsertModManagerSettings,
   upsertSecuritySettings,
   upsertSmtpSettings,
 } from '../services/mailer';
@@ -1559,6 +1561,54 @@ export async function adminRoutes(app: FastifyInstance) {
           pool: pool ?? false,
           maxConnections: maxConnections ?? null,
           maxMessages: maxMessages ?? null,
+        },
+      });
+
+      reply.send({ success: true });
+    }
+  );
+
+  app.get(
+    '/mod-manager',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+      const settings = await getModManagerSettings();
+      reply.send({ success: true, data: settings });
+    }
+  );
+
+  app.put(
+    '/mod-manager',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+      const { curseforgeApiKey, modrinthApiKey } = request.body as {
+        curseforgeApiKey?: string | null;
+        modrinthApiKey?: string | null;
+      };
+
+      if (curseforgeApiKey === '' || modrinthApiKey === '') {
+        return reply.status(400).send({ error: 'Mod manager keys cannot be empty strings' });
+      }
+
+      await upsertModManagerSettings({
+        curseforgeApiKey: curseforgeApiKey ?? null,
+        modrinthApiKey: modrinthApiKey ?? null,
+      });
+
+      await createAuditLog(user.userId, {
+        action: 'mod_manager.settings.update',
+        resource: 'system',
+        details: {
+          curseforgeConfigured: Boolean(curseforgeApiKey),
+          modrinthConfigured: Boolean(modrinthApiKey),
         },
       });
 

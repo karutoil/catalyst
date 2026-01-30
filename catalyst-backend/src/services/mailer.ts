@@ -19,6 +19,7 @@ export type SmtpSettings = {
 
 export const SMTP_SETTING_ID = 'smtp';
 export const SECURITY_SETTING_ID = 'security';
+export const MOD_MANAGER_SETTING_ID = 'mod_manager';
 
 export type SecuritySettings = {
   authRateLimitMax: number;
@@ -28,6 +29,11 @@ export type SecuritySettings = {
   lockoutWindowMinutes: number;
   lockoutDurationMinutes: number;
   auditRetentionDays: number;
+};
+
+export type ModManagerSettings = {
+  curseforgeApiKey: string | null;
+  modrinthApiKey: string | null;
 };
 
 export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
@@ -120,6 +126,32 @@ export const getSecuritySettings = async (): Promise<SecuritySettings> => {
       settings.lockoutDurationMinutes ?? DEFAULT_SECURITY_SETTINGS.lockoutDurationMinutes,
     auditRetentionDays: settings.auditRetentionDays ?? DEFAULT_SECURITY_SETTINGS.auditRetentionDays,
   };
+};
+
+export const getModManagerSettings = async (): Promise<ModManagerSettings> => {
+  const settings = await prisma.systemSetting.findUnique({ where: { id: MOD_MANAGER_SETTING_ID } });
+  if (!settings) {
+    return { curseforgeApiKey: null, modrinthApiKey: null };
+  }
+  return {
+    curseforgeApiKey: settings.curseforgeApiKey ?? null,
+    modrinthApiKey: settings.modrinthApiKey ?? null,
+  };
+};
+
+export const upsertModManagerSettings = async (payload: ModManagerSettings) => {
+  return prisma.systemSetting.upsert({
+    where: { id: MOD_MANAGER_SETTING_ID },
+    create: {
+      id: MOD_MANAGER_SETTING_ID,
+      curseforgeApiKey: payload.curseforgeApiKey ?? null,
+      modrinthApiKey: payload.modrinthApiKey ?? null,
+    },
+    update: {
+      curseforgeApiKey: payload.curseforgeApiKey ?? null,
+      modrinthApiKey: payload.modrinthApiKey ?? null,
+    },
+  });
 };
 
 export const upsertSecuritySettings = async (payload: SecuritySettings) => {

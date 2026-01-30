@@ -32,7 +32,6 @@ pub struct ContainerdRuntime {
 }
 
 struct ConsoleWriter {
-    fifo_path: String,
     file: File,
 }
 
@@ -143,18 +142,21 @@ impl ContainerdRuntime {
         
         cmd.arg("-v")
             .arg(format!("{}:{}", console_fifo.dir, console_fifo.dir));
+
+        cmd.arg("--label")
+            .arg(format!("catalyst.agent.socket_path={}", self.socket_path));
         cmd.arg(image);
 
         // Startup command (if provided)
         if !startup_command.is_empty() {
-            // Pipe FIFO directly into the server process stdin.
-            let fifo_path = shell_quote(&console_fifo.path);
-            // Keep a read/write handle open to avoid EOF when the agent restarts.
-            let pipeline = format!(
-                "exec 3<> {} ; exec < {} ; exec {}",
-                fifo_path, fifo_path, startup_command
+            let exec_path = format!("{}/catalyst-entrypoint", console_fifo.dir);
+            let entrypoint = format!(
+                "#!/bin/sh\nset -e\nFIFO=\"{}\"\nexec 3<> \"$FIFO\"\nexec < \"$FIFO\"\nexec {}\n",
+                console_fifo.path, startup_command
             );
-            cmd.arg("sh").arg("-c").arg(pipeline);
+            self.create_entrypoint_script(&console_fifo.dir, &entrypoint)
+                .await?;
+            cmd.arg("--entrypoint").arg(exec_path);
         }
 
         let output = cmd.output().await.map_err(|e| {
@@ -200,7 +202,7 @@ impl ContainerdRuntime {
         // Configure firewall to allow the ports, if we have a concrete container IP
         if let Some(container_ip) = container_ip_opt {
             let ports_to_open: Vec<u16> = if port_bindings.is_empty() {
-                vec![port]
+                self.resolve_host_ports(container_id, port).await.unwrap_or_default()
             } else {
                 port_bindings.values().copied().collect()
             };
@@ -321,6 +323,7 @@ impl ContainerdRuntime {
 
             // We remove O_NONBLOCK now that we have the handle.
             // We keep the handle open as O_RDWR.
+            // SAFETY: fd is valid and owned by this thread; we only adjust flags.
             if let Ok(flags) = fcntl(file.as_raw_fd(), FcntlArg::F_GETFL) {
                 let mut oflags = OFlag::from_bits_truncate(flags);
                 oflags.remove(OFlag::O_NONBLOCK);
@@ -332,10 +335,7 @@ impl ContainerdRuntime {
         .map_err(|e| AgentError::ContainerError(format!("Console writer task failed: {}", e)))??;
 
         let mut writers = self.console_writers.lock().await;
-        writers.insert(
-            container_id.to_string(),
-            ConsoleWriter { fifo_path, file },
-        );
+        writers.insert(container_id.to_string(), ConsoleWriter { file });
 
         Ok(())
     }
@@ -725,18 +725,24 @@ impl ContainerdRuntime {
             "Console input falling back to exec for {} -> {}",
             container_id, target_path
         );
-        let escaped = input.replace('\'', "'\\''");
-        let command = format!("printf '%s' '{}' > {}", escaped, target_path);
-        let output = Command::new("nerdctl")
+        let mut child = Command::new("nerdctl")
             .arg("--namespace")
             .arg(&self.namespace)
             .arg("exec")
+            .arg("-i")
             .arg(container_id)
             .arg("sh")
             .arg("-c")
-            .arg(command)
-            .output()
-            .await?;
+            .arg(format!("cat > {}", shell_quote(&target_path)))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            stdin.write_all(input.as_bytes()).await?;
+        }
+        let output = child.wait_with_output().await?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -850,10 +856,10 @@ impl ContainerdRuntime {
             }
         };
 
-        let data = input.as_bytes().to_vec();
+        let input = input.to_string();
         spawn_blocking(move || {
             let mut writer = file_handle;
-            match writer.write_all(&data) {
+            match writer.write_all(input.as_bytes()) {
                 Ok(_) => {
                     let _ = writer.flush();
                     Ok(())
@@ -1114,7 +1120,7 @@ impl ContainerdRuntime {
 }
 
 fn create_fifo(path: &Path) -> std::io::Result<()> {
-    match mkfifo(path, Mode::from_bits_truncate(0o666)) {
+    match mkfifo(path, Mode::from_bits_truncate(0o600)) {
         Ok(()) => Ok(()),
         Err(Errno::EEXIST) => Ok(()),
         Err(err) => Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
@@ -1135,6 +1141,42 @@ fn shell_quote(input: &str) -> String {
         format!("'{}'", input.replace('\'', "'\\''"))
     } else {
         format!("'{}'", input)
+    }
+}
+
+impl ContainerdRuntime {
+    async fn create_entrypoint_script(&self, dir: &str, contents: &str) -> AgentResult<()> {
+        let path = PathBuf::from(dir).join("catalyst-entrypoint");
+        let mut file = tokio::fs::File::create(&path).await?;
+        use tokio::io::AsyncWriteExt;
+        file.write_all(contents.as_bytes()).await?;
+        let mut perms = tokio::fs::metadata(&path).await?.permissions();
+        perms.set_mode(0o755);
+        tokio::fs::set_permissions(&path, perms).await?;
+        Ok(())
+    }
+
+    async fn resolve_host_ports(&self, container_id: &str, container_port: u16) -> AgentResult<Vec<u16>> {
+        let output = Command::new("nerdctl")
+            .arg("--namespace")
+            .arg(&self.namespace)
+            .arg("port")
+            .arg(container_id)
+            .arg(container_port.to_string())
+            .output()
+            .await?;
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+        let mut ports = Vec::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            if let Some((_host, port)) = line.rsplit_once(':') {
+                if let Ok(port) = port.trim().parse::<u16>() {
+                    ports.push(port);
+                }
+            }
+        }
+        Ok(ports)
     }
 }
 

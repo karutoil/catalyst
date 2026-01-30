@@ -69,8 +69,8 @@ export class WebSocketGateway {
         ? query.nodeId
         : null;
 
-    if (nodeId && token) {
-      // Agent connection
+    if (nodeId) {
+      // Agent connection (token is expected in handshake if not provided here)
       await this.handleAgentConnection(socket, nodeId, token);
     } else if (token) {
       // Client connection
@@ -84,59 +84,59 @@ export class WebSocketGateway {
   private async handleAgentConnection(
     socket: any,
     nodeId: string,
-    token: string
+    token: string | null
   ) {
     try {
-      // Verify node exists and secret matches
-      const node = await this.prisma.node.findUnique({
-        where: { id: nodeId },
-      });
-
-      if (!node || node.secret !== token) {
-        socket.end();
-        this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
-        return;
-      }
       const agent: ConnectedAgent = {
-        nodeId: node.id,
+        nodeId,
         socket,
-        authenticated: true,
+        authenticated: false,
         lastHeartbeat: Date.now(),
       };
-
-      this.agents.set(node.id, agent);
-
-      await this.prisma.node.update({
-        where: { id: node.id },
-        data: { isOnline: true, lastSeenAt: new Date() },
-      });
-
-      this.logger.info(`Agent connected: ${node.id} (${node.hostname})`);
-
-      // Send handshake response
-      socket.socket.send(
-        JSON.stringify({
-          type: "node_handshake_response",
-          success: true,
-          backendAddress: process.env.BACKEND_EXTERNAL_ADDRESS || "http://localhost:3000",
-        })
-      );
-
-      await this.resumeConsoleStreams(node.id);
-
-      socket.socket.on("message", (data: any) => this.handleAgentMessage(node.id, data));
+      this.agents.set(nodeId, agent);
+      socket.socket.on("message", (data: any) => this.handleAgentMessage(nodeId, data));
       socket.socket.on("close", () => {
-        this.agents.delete(node.id);
+        this.agents.delete(nodeId);
         this.prisma.node.update({
-          where: { id: node.id },
+          where: { id: nodeId },
           data: { isOnline: false },
         });
-        this.logger.info(`Agent disconnected: ${node.id}`);
+        this.logger.info(`Agent disconnected: ${nodeId}`);
       });
+
+      if (token) {
+        const node = await this.prisma.node.findUnique({
+          where: { id: nodeId },
+        });
+        if (node && node.secret === token) {
+          await this.finalizeAgentConnection(node, agent);
+        } else {
+          this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
+          agent.socket.end();
+          this.agents.delete(nodeId);
+        }
+      }
     } catch (err) {
       this.logger.error(err, "Error in agent connection");
       socket.end();
     }
+  }
+
+  private async finalizeAgentConnection(node: any, agent: ConnectedAgent) {
+    agent.authenticated = true;
+    await this.prisma.node.update({
+      where: { id: node.id },
+      data: { isOnline: true, lastSeenAt: new Date() },
+    });
+    this.logger.info(`Agent connected: ${node.id} (${node.hostname})`);
+    agent.socket.socket.send(
+      JSON.stringify({
+        type: "node_handshake_response",
+        success: true,
+        backendAddress: process.env.BACKEND_EXTERNAL_ADDRESS || "http://localhost:3000",
+      })
+    );
+    await this.resumeConsoleStreams(node.id);
   }
 
   private async resumeConsoleStreams(nodeId: string) {
@@ -211,6 +211,20 @@ export class WebSocketGateway {
   private async handleAgentMessage(nodeId: string, data: any) {
     try {
       const message = JSON.parse(data.toString());
+      if (message.type === "node_handshake") {
+        const node = await this.prisma.node.findUnique({
+          where: { id: nodeId },
+        });
+        const agent = this.agents.get(nodeId);
+        if (!agent || !node || node.secret !== message.token) {
+          this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
+          agent?.socket.end();
+          this.agents.delete(nodeId);
+          return;
+        }
+        await this.finalizeAgentConnection(node, agent);
+        return;
+      }
 
       if (message.type === "backup_download_response") {
         const pending = message.requestId

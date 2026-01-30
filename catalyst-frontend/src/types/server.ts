@@ -35,6 +35,14 @@ export interface Server {
     features?: {
       configFile?: string;
       configFiles?: string[];
+      modManager?: {
+        providers: string[];
+        paths?: {
+          mods?: string;
+          datapacks?: string;
+          modpacks?: string;
+        };
+      };
     };
   };
   cpuPercent?: number;

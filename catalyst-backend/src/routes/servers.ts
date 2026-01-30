@@ -6,6 +6,7 @@ import { ServerState } from "../shared-types";
 import { createWriteStream } from "fs";
 import { promises as fs } from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { pipeline } from "stream/promises";
@@ -22,7 +23,12 @@ import {
   provisionDatabase,
   rotateDatabasePassword,
 } from "../services/mysql";
-import { getSecuritySettings, renderInviteEmail, sendEmail } from "../services/mailer";
+import {
+  getModManagerSettings,
+  getSecuritySettings,
+  renderInviteEmail,
+  sendEmail,
+} from "../services/mailer";
 
 const MAX_PORT = 65535;
 const INVITE_EXPIRY_DAYS = 7;
@@ -221,10 +227,18 @@ const buildConnectionInfo = (
   });
 
 export async function serverRoutes(app: FastifyInstance) {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
   const prisma = (app as any).prisma || new PrismaClient();
   const execFileAsync = promisify(execFile);
   const serverDataRoot = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
   let fileRateLimitMax = 30;
+  const modManagerProviders = new Map(
+    [
+      ["curseforge", path.resolve(__dirname, "../mod-manager/curseforge.json")],
+      ["modrinth", path.resolve(__dirname, "../mod-manager/modrinth.json")],
+    ] as const
+  );
 
   try {
     const settings = await getSecuritySettings();
@@ -239,6 +253,96 @@ export async function serverRoutes(app: FastifyInstance) {
     if (!cleaned || cleaned === ".") return "/";
     const parts = cleaned.split("/").filter(Boolean);
     return `/${parts.join("/")}`;
+  };
+
+  const ensureServerAccess = async (
+    serverId: string,
+    userId: string,
+    permission: string,
+    reply: FastifyReply
+  ) => {
+    const server = await prisma.server.findUnique({
+      where: { id: serverId },
+      include: { template: true },
+    });
+    if (!server) {
+      reply.status(404).send({ error: "Server not found" });
+      return null;
+    }
+    if (!ensureNotSuspended(server, reply)) {
+      return null;
+    }
+    if (server.ownerId !== userId) {
+      const access = await prisma.serverAccess.findFirst({
+        where: {
+          serverId,
+          userId,
+          permissions: { has: permission },
+        },
+      });
+      if (!access) {
+        reply.status(403).send({ error: "Forbidden" });
+        return null;
+      }
+    }
+    return server;
+  };
+
+  const loadProviderConfig = async (provider: string) => {
+    const configPath = modManagerProviders.get(provider);
+    if (!configPath) {
+      return null;
+    }
+    const raw = await fs.readFile(configPath, "utf8");
+    return JSON.parse(raw) as {
+      id: string;
+      name: string;
+      baseUrl: string;
+      headers: Record<string, string>;
+      endpoints: Record<string, string>;
+    };
+  };
+
+  const buildProviderHeaders = (providerConfig: {
+    headers: Record<string, string>;
+  }, settings: { curseforgeApiKey: string | null; modrinthApiKey: string | null }) => {
+    const headers: Record<string, string> = {};
+    Object.entries(providerConfig.headers || {}).forEach(([key, value]) => {
+      if (value.includes("{{CURSEFORGE_API_KEY}}")) {
+        if (!settings.curseforgeApiKey) {
+          throw new Error("CurseForge API key not configured");
+        }
+        headers[key] = value.replace("{{CURSEFORGE_API_KEY}}", settings.curseforgeApiKey);
+      } else if (value.includes("{{MODRINTH_API_KEY}}")) {
+        if (!settings.modrinthApiKey) {
+          throw new Error("Modrinth API key not configured");
+        }
+        headers[key] = value.replace("{{MODRINTH_API_KEY}}", settings.modrinthApiKey);
+      } else {
+        headers[key] = value;
+      }
+    });
+    return headers;
+  };
+
+  const ensureModManagerEnabled = (server: any, reply: FastifyReply) => {
+    const modManager = server.template?.features?.modManager;
+    if (!modManager || !Array.isArray(modManager.providers) || modManager.providers.length === 0) {
+      reply.status(409).send({ error: "Mod manager not enabled for this template" });
+      return null;
+    }
+    return modManager as {
+      providers: string[];
+      paths?: { mods?: string; datapacks?: string; modpacks?: string };
+    };
+  };
+
+  const resolveTemplatePath = (pathValue?: string, target?: string) => {
+    if (pathValue) {
+      return normalizeRequestPath(pathValue);
+    }
+    const safeTarget = target ? target.replace(/[^a-z0-9_-]/gi, "") : "mods";
+    return normalizeRequestPath(`/${safeTarget}`);
   };
 
   const resolveServerPath = async (serverUuid: string, requestedPath: string) => {
@@ -1224,6 +1328,236 @@ export async function serverRoutes(app: FastifyInstance) {
         });
       } catch (error) {
         reply.status(400).send({ error: "Invalid path" });
+      }
+    }
+  );
+
+  app.get(
+    "/:serverId/mod-manager/search",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: "1 minute" } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { provider, query, page } = request.query as {
+        provider?: string;
+        query?: string;
+        page?: string | number;
+      };
+      const userId = request.user.userId;
+
+      if (!provider || !query) {
+        return reply.status(400).send({ error: "provider and query are required" });
+      }
+
+      const server = await ensureServerAccess(serverId, userId, "server.read", reply);
+      if (!server) return;
+      const modManager = ensureModManagerEnabled(server, reply);
+      if (!modManager) return;
+      if (!modManager.providers.includes(provider)) {
+        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      }
+
+      const providerConfig = await loadProviderConfig(provider);
+      if (!providerConfig) {
+        return reply.status(404).send({ error: "Provider not found" });
+      }
+      let headers: Record<string, string>;
+      try {
+        const settings = await getModManagerSettings();
+        headers = buildProviderHeaders(providerConfig, settings);
+      } catch (error: any) {
+        return reply.status(409).send({ error: error?.message || "Missing provider API key" });
+      }
+
+      const pageValue = typeof page === "string" ? Number(page) : page ?? 1;
+      const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+      let url = "";
+      if (provider === "modrinth") {
+        const params = new URLSearchParams({
+          query,
+          limit: "20",
+          offset: String(Math.max(0, (Number(pageValue) - 1) * 20)),
+        });
+        url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
+      } else {
+        const params = new URLSearchParams({
+          gameId: "432",
+          searchFilter: query,
+          pageSize: "20",
+          index: String(Math.max(0, (Number(pageValue) - 1) * 20)),
+        });
+        url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
+      }
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = await response.text();
+        return reply
+          .status(response.status)
+          .send({ error: `Provider error: ${body}` });
+      }
+      const payload = await response.json();
+      return reply.send({ success: true, data: payload });
+    }
+  );
+
+  app.get(
+    "/:serverId/mod-manager/versions",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: "1 minute" } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { provider, projectId } = request.query as {
+        provider?: string;
+        projectId?: string;
+      };
+      const userId = request.user.userId;
+
+      if (!provider || !projectId) {
+        return reply.status(400).send({ error: "provider and projectId are required" });
+      }
+
+      const server = await ensureServerAccess(serverId, userId, "server.read", reply);
+      if (!server) return;
+      const modManager = ensureModManagerEnabled(server, reply);
+      if (!modManager) return;
+      if (!modManager.providers.includes(provider)) {
+        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      }
+
+      const providerConfig = await loadProviderConfig(provider);
+      if (!providerConfig) {
+        return reply.status(404).send({ error: "Provider not found" });
+      }
+      let headers: Record<string, string>;
+      try {
+        const settings = await getModManagerSettings();
+        headers = buildProviderHeaders(providerConfig, settings);
+      } catch (error: any) {
+        return reply.status(409).send({ error: error?.message || "Missing provider API key" });
+      }
+
+      const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+      const endpoint = providerConfig.endpoints.versions || providerConfig.endpoints.files;
+      const url = `${baseUrl}${endpoint.replace("{projectId}", encodeURIComponent(projectId))}`;
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = await response.text();
+        return reply
+          .status(response.status)
+          .send({ error: `Provider error: ${body}` });
+      }
+      const payload = await response.json();
+      return reply.send({ success: true, data: payload });
+    }
+  );
+
+  app.post(
+    "/:serverId/mod-manager/install",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: "1 minute" } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { provider, projectId, versionId, target } = request.body as {
+        provider?: string;
+        projectId?: string;
+        versionId?: string | number;
+        target?: "mods" | "datapacks" | "modpacks";
+      };
+      const userId = request.user.userId;
+
+      if (!provider || !projectId || !versionId || !target) {
+        return reply.status(400).send({ error: "provider, projectId, versionId, and target are required" });
+      }
+
+      const server = await ensureServerAccess(serverId, userId, "file.write", reply);
+      if (!server) return;
+      const modManager = ensureModManagerEnabled(server, reply);
+      if (!modManager) return;
+      if (!modManager.providers.includes(provider)) {
+        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      }
+
+      const providerConfig = await loadProviderConfig(provider);
+      if (!providerConfig) {
+        return reply.status(404).send({ error: "Provider not found" });
+      }
+      let headers: Record<string, string>;
+      try {
+        const settings = await getModManagerSettings();
+        headers = buildProviderHeaders(providerConfig, settings);
+      } catch (error: any) {
+        return reply.status(409).send({ error: error?.message || "Missing provider API key" });
+      }
+
+      const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+      let metadataUrl = "";
+      if (provider === "modrinth") {
+        metadataUrl = `${baseUrl}${providerConfig.endpoints.version.replace("{versionId}", encodeURIComponent(String(versionId)))}`;
+      } else {
+        metadataUrl = `${baseUrl}${providerConfig.endpoints.file
+          .replace("{projectId}", encodeURIComponent(projectId))
+          .replace("{fileId}", encodeURIComponent(String(versionId)))}`;
+      }
+
+      const metadataResponse = await fetch(metadataUrl, { headers });
+      if (!metadataResponse.ok) {
+        const body = await metadataResponse.text();
+        return reply
+          .status(metadataResponse.status)
+          .send({ error: `Provider error: ${body}` });
+      }
+      const metadata = await metadataResponse.json();
+
+      let downloadUrl = "";
+      let filename = "";
+      if (provider === "modrinth") {
+        const files = metadata?.files ?? [];
+        const file = files.find((entry: any) => entry.primary) ?? files[0];
+        downloadUrl = file?.url ?? "";
+        filename = file?.filename ?? "";
+      } else {
+        downloadUrl = metadata?.data?.downloadUrl ?? "";
+        filename = metadata?.data?.fileName ?? "";
+      }
+
+      if (!downloadUrl || !filename) {
+        return reply.status(409).send({ error: "Unable to resolve download asset" });
+      }
+
+      const normalizedBase = resolveTemplatePath(modManager.paths?.[target], target);
+      const normalizedFile = normalizeRequestPath(path.posix.join(normalizedBase, filename));
+
+      try {
+        const { targetPath: resolvedPath } = await resolveServerPath(server.uuid, normalizedFile);
+        await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+        const downloadResponse = await fetch(downloadUrl);
+        if (!downloadResponse.ok || !downloadResponse.body) {
+          const body = await downloadResponse.text();
+          return reply
+            .status(downloadResponse.status)
+            .send({ error: `Download failed: ${body}` });
+        }
+        await pipeline(downloadResponse.body, createWriteStream(resolvedPath));
+        await prisma.auditLog.create({
+          data: {
+            userId,
+            action: "mod_manager.install",
+            resource: "server",
+            resourceId: serverId,
+            details: { provider, projectId, versionId, target: normalizedFile },
+          },
+        });
+        reply.send({ success: true, data: { path: normalizedFile } });
+      } catch (error: any) {
+        reply.status(400).send({ error: error?.message || "Failed to install asset" });
       }
     }
   );

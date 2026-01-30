@@ -1,0 +1,14 @@
+{
+  "id": "modrinth",
+  "name": "Modrinth",
+  "baseUrl": "https://api.modrinth.com",
+  "headers": {
+    "Authorization": "{{MODRINTH_API_KEY}}"
+  },
+  "endpoints": {
+    "search": "/v2/search",
+    "project": "/v2/project/{projectId}",
+    "versions": "/v2/project/{projectId}/version",
+    "version": "/v2/version/{versionId}"
+  }
+}

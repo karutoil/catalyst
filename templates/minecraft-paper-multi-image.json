@@ -5,6 +5,14 @@
   "author": "Catalyst Maintainers",
   "version": "1.20.4",
   "image": "eclipse-temurin:21-jre",
+  "images": [
+    { "name": "temurin-25", "label": "Eclipse Temurin 25 JRE", "image": "eclipse-temurin:25-jre" },
+    { "name": "temurin-21", "label": "Eclipse Temurin 21 JRE", "image": "eclipse-temurin:21-jre" },
+    { "name": "temurin-17", "label": "Eclipse Temurin 17 JRE", "image": "eclipse-temurin:17-jre" },
+    { "name": "temurin-11", "label": "Eclipse Temurin 11 JRE", "image": "eclipse-temurin:11-jre" },
+    { "name": "temurin-8", "label": "Eclipse Temurin 8 JRE", "image": "eclipse-temurin:8-jre" }
+  ],
+  "defaultImage": "eclipse-temurin:21-jre",
   "installImage": "alpine:3.19",
   "startup": "java -Xms{{MEMORY_XMS}}M -Xmx{{MEMORY}}M -XX:MaxMetaspaceSize=512M -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -XX:ShenandoahGCHeuristics=compact -XX:ShenandoahUncommitDelay=30000 -XX:ShenandoahAllocationThreshold=15 -XX:ShenandoahGuaranteedGCInterval=30000 -XX:+PerfDisableSharedMem -XX:+DisableExplicitGC -XX:+ParallelRefProcEnabled -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -jar paper.jar nogui",
   "stopCommand": "stop",
@@ -17,6 +25,13 @@
       "required": true,
       "input": "number",
       "rules": ["between:512,16384"]
+    },
+    {
+      "name": "PAPER_VERSION",
+      "description": "Minecraft version to install (will fetch latest Paper build for this version)",
+      "default": "1.20.4",
+      "required": true,
+      "input": "text"
     },
     {
       "name": "MEMORY_PERCENT",
@@ -131,7 +146,7 @@
       "input": "checkbox"
     }
   ],
-  "installScript": "#!/bin/sh\nset -e\n\necho '[Catalyst] Starting Minecraft Paper server installation...'\n\n# Create server directory\nmkdir -p {{SERVER_DIR}}\ncd {{SERVER_DIR}}\n\n# Download Paper server jar (1.20.4 build 499)\necho '[Catalyst] Downloading Paper 1.20.4...'\nif command -v wget >/dev/null 2>&1; then\n  wget -q -O paper.jar https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/499/downloads/paper-1.20.4-499.jar\nelif command -v curl >/dev/null 2>&1; then\n  curl -sL -o paper.jar https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/499/downloads/paper-1.20.4-499.jar\nelse\n  echo '[Catalyst] ERROR: Neither wget nor curl found!'\n  exit 1\nfi\n\n# Verify download\nif [ ! -f paper.jar ]; then\n  echo '[Catalyst] ERROR: Failed to download paper.jar'\n  exit 1\nfi\n\necho '[Catalyst] Downloaded paper.jar successfully'\n\n# Accept EULA\necho '[Catalyst] Accepting Minecraft EULA...'\necho 'eula=true' > eula.txt\n\n# Create server.properties with basic settings\ncat > server.properties << 'PROPS'\nserver-port={{PORT}}\ndifficulty={{DIFFICULTY}}\ngamemode={{GAMEMODE}}\npvp={{PVP}}\nlevel-name={{LEVEL_NAME}}\nlevel-seed={{LEVEL_SEED}}\nlevel-type={{LEVEL_TYPE}}\nonline-mode={{ONLINE_MODE}}\nwhite-list={{WHITE_LIST}}\nmax-players={{MAX_PLAYERS}}\nmotd={{MOTD}}\nenable-rcon={{ENABLE_RCON}}\nPROPS\n\necho '[Catalyst] Server configuration created'\necho '[Catalyst] Installation complete!'\n",
+  "installScript": "#!/bin/sh\nset -e\n\necho '[Catalyst] Starting Minecraft Paper server installation...'\n\n# Create server directory\nmkdir -p {{SERVER_DIR}}\ncd {{SERVER_DIR}}\n\n# Determine Paper version to install\nPAPER_VERSION=\"{{PAPER_VERSION}}\"\nif [ -z \"$PAPER_VERSION\" ]; then\n  PAPER_VERSION=\"1.20.4\"\nfi\n\necho \"[Catalyst] Resolving latest Paper build for version $PAPER_VERSION...\"\n# Try to use jq if available, fallback to text parsing\nBUILD=\"\"\nif command -v jq >/dev/null 2>&1; then\n  BUILD=$(curl -sL \"https://api.papermc.io/v2/projects/paper/versions/$PAPER_VERSION/builds\" | jq -r '.builds | last | .build')\nelse\n  BUILD=$(curl -sL \"https://api.papermc.io/v2/projects/paper/versions/$PAPER_VERSION/builds\" | grep -o '\"build\":[0-9]*' | tail -n1 | sed 's/[^0-9]*//g')\nfi\n\nif [ -z \"$BUILD\" ]; then\n  echo \"[Catalyst] ERROR: Could not determine latest build for Paper $PAPER_VERSION\"\n  exit 1\nfi\n\nFILEURL=\"https://api.papermc.io/v2/projects/paper/versions/$PAPER_VERSION/builds/$BUILD/downloads/paper-$PAPER_VERSION-$BUILD.jar\"\n\necho \"[Catalyst] Downloading Paper $PAPER_VERSION build $BUILD...\"\nif command -v wget >/dev/null 2>&1; then\n  wget -q -O paper.jar \"$FILEURL\"\nelif command -v curl >/dev/null 2>&1; then\n  curl -sL -o paper.jar \"$FILEURL\"\nelse\n  echo '[Catalyst] ERROR: Neither wget nor curl found!'\n  exit 1\nfi\n\n# Verify download\nif [ ! -f paper.jar ]; then\n  echo \"[Catalyst] ERROR: Failed to download paper.jar from $FILEURL\"\n  exit 1\nfi\n\necho '[Catalyst] Downloaded paper.jar successfully'\n\n# Accept EULA\necho '[Catalyst] Accepting Minecraft EULA...'\necho 'eula=true' > eula.txt\n\n# Create server.properties with basic settings\ncat > server.properties << 'PROPS'\nserver-port={{PORT}}\ndifficulty={{DIFFICULTY}}\ngamemode={{GAMEMODE}}\npvp={{PVP}}\nlevel-name={{LEVEL_NAME}}\nlevel-seed={{LEVEL_SEED}}\nlevel-type={{LEVEL_TYPE}}\nonline-mode={{ONLINE_MODE}}\nwhite-list={{WHITE_LIST}}\nmax-players={{MAX_PLAYERS}}\nmotd={{MOTD}}\nenable-rcon={{ENABLE_RCON}}\nPROPS\n\necho '[Catalyst] Server configuration created'\necho '[Catalyst] Installation complete!'\n",
   "supportedPorts": [25565],
   "allocatedMemoryMb": 1024,
   "allocatedCpuCores": 2,

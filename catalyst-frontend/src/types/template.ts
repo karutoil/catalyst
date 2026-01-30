@@ -27,6 +27,14 @@ export interface Template {
     iconUrl?: string;
     configFile?: string;
     configFiles?: string[];
+    modManager?: {
+      providers: string[];
+      paths?: {
+        mods?: string;
+        datapacks?: string;
+        modpacks?: string;
+      };
+    };
     [key: string]: any;
   };
 }

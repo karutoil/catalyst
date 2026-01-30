@@ -86,6 +86,13 @@ export function useSecuritySettings() {
   });
 }
 
+export function useModManagerSettings() {
+  return useQuery({
+    queryKey: ['admin-mod-manager'],
+    queryFn: adminApi.getModManagerSettings,
+  });
+}
+
 export function useAuthLockouts(params?: { page?: number; limit?: number; search?: string }) {
   return useQuery({
     queryKey: ['admin-auth-lockouts', params],

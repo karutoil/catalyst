@@ -121,12 +121,12 @@ impl WebSocketHandler {
 
     async fn establish_connection(&self) -> AgentResult<()> {
         let ws_url = format!(
-            "{}?nodeId={}&token={}",
-            self.config.server.backend_url, self.config.server.node_id, self.config.server.secret
+            "{}?nodeId={}",
+            self.config.server.backend_url, self.config.server.node_id
         );
 
         info!(
-            "Connecting to backend: {}?nodeId={}&token=***",
+            "Connecting to backend: {}?nodeId={}",
             self.config.server.backend_url, self.config.server.node_id
         );
 
@@ -185,9 +185,8 @@ impl WebSocketHandler {
                 let heartbeat = json!({
                     "type": "heartbeat"
                 });
-                if let Ok(mut w) = write_clone.try_lock() {
-                    let _ = w.send(Message::Text(heartbeat.to_string())).await;
-                }
+                let mut w = write_clone.lock().await;
+                let _ = w.send(Message::Text(heartbeat.to_string())).await;
             }
         });
 
@@ -773,11 +772,17 @@ impl WebSocketHandler {
                 AgentError::InvalidRequest("Missing allocatedCpuCores".to_string())
             })?;
 
-            let disk_mb = msg["allocatedDiskMb"].as_u64().unwrap_or(10240);
+        let disk_mb = msg["allocatedDiskMb"].as_u64().unwrap_or(10240);
 
             let primary_port = msg["primaryPort"].as_u64().ok_or_else(|| {
                 AgentError::InvalidRequest("Missing primaryPort".to_string())
             })? as u16;
+            if primary_port == 0 {
+                return Err(AgentError::InvalidRequest("Invalid primaryPort".to_string()));
+            }
+        if primary_port == 0 {
+            return Err(AgentError::InvalidRequest("Invalid primaryPort".to_string()));
+        }
 
             let network_mode = msg.get("networkMode")
                 .and_then(|v| v.as_str());
@@ -1070,9 +1075,11 @@ impl WebSocketHandler {
     }
 
     async fn handle_file_operation(&self, msg: &Value) -> AgentResult<()> {
-        let op_type = msg["type"].as_str().ok_or_else(|| {
-            AgentError::InvalidRequest("Missing type".to_string())
-        })?;
+        let op_type = msg
+            .get("operation")
+            .and_then(|value| value.as_str())
+            .or_else(|| msg["type"].as_str())
+            .ok_or_else(|| AgentError::InvalidRequest("Missing operation".to_string()))?;
 
         let server_id = msg["serverId"].as_str().ok_or_else(|| {
             AgentError::InvalidRequest("Missing serverId".to_string())
@@ -1082,25 +1089,71 @@ impl WebSocketHandler {
             AgentError::InvalidRequest("Missing path".to_string())
         })?;
 
-        match op_type {
-               "read" => { self.file_manager.read_file(server_id, path).await?; }
+        let request_id = msg["requestId"].as_str().map(|value| value.to_string());
+        let result = match op_type {
+            "read" => self
+                .file_manager
+                .read_file(server_id, path)
+                .await
+                .map(|data| {
+                    Some(json!({ "data": base64::engine::general_purpose::STANDARD.encode(data) }))
+                }),
             "write" => {
                 let data = msg["data"].as_str().ok_or_else(|| {
                     AgentError::InvalidRequest("Missing data".to_string())
                 })?;
-                self.file_manager.write_file(server_id, path, data).await?;
+                self.file_manager
+                    .write_file(server_id, path, data)
+                    .await
+                    .map(|_| None)
             }
-               "delete" => { self.file_manager.delete_file(server_id, path).await?; }
-               "list" => { self.file_manager.list_dir(server_id, path).await?; }
+            "delete" => self
+                .file_manager
+                .delete_file(server_id, path)
+                .await
+                .map(|_| None),
+            "list" => self
+                .file_manager
+                .list_dir(server_id, path)
+                .await
+                .map(|entries| Some(json!({ "entries": entries }))),
             _ => {
                 return Err(AgentError::InvalidRequest(format!(
                     "Unknown file operation: {}",
                     op_type
                 )))
             }
+        };
+
+        if let Some(request_id) = request_id.as_deref() {
+            let payload = match &result {
+                Ok(data) => json!({
+                    "type": "file_operation_response",
+                    "requestId": request_id,
+                    "serverId": server_id,
+                    "operation": op_type,
+                    "path": path,
+                    "success": true,
+                    "data": data,
+                }),
+                Err(err) => json!({
+                    "type": "file_operation_response",
+                    "requestId": request_id,
+                    "serverId": server_id,
+                    "operation": op_type,
+                    "path": path,
+                    "success": false,
+                    "error": err.to_string(),
+                }),
+            };
+            let writer = { self.write.read().await.clone() };
+            if let Some(ws) = writer {
+                let mut w = ws.lock().await;
+                let _ = w.send(Message::Text(payload.to_string())).await;
+            }
         }
 
-        Ok(())
+        result.map(|_| ())
     }
 
     async fn handle_create_backup(

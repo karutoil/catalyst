@@ -17,6 +17,9 @@ impl FileManager {
 
     /// Validate and resolve a path within the container's data directory
     fn resolve_path(&self, server_id: &str, requested_path: &str) -> AgentResult<PathBuf> {
+        if server_id.contains('/') || server_id.contains('\\') {
+            return Err(AgentError::InvalidRequest("Invalid server id".to_string()));
+        }
         let server_base = self.data_dir.join(server_id);
         let requested = PathBuf::from(requested_path);
 
@@ -31,31 +34,53 @@ impl FileManager {
             )));
         }
 
-        let normalized = if requested.is_absolute() {
-            server_base.join(requested_path.trim_start_matches('/'))
-        } else {
-            server_base.join(requested_path)
-        };
-
-        // Ensure the path is within the server's data directory
-        let canonical = normalized.canonicalize().map_err(|_| {
-            AgentError::PermissionDenied(format!(
-                "Path traversal attempt detected: {}",
-                requested_path
-            ))
-        })?;
-
         let canonical_base = server_base
             .canonicalize()
             .map_err(|_| AgentError::PermissionDenied("Server directory missing".to_string()))?;
 
-        if !canonical.starts_with(&canonical_base) {
-            return Err(AgentError::PermissionDenied(
-                "Access denied: path outside data directory".to_string(),
-            ));
+        let normalized = if requested.is_absolute() {
+            canonical_base.join(requested_path.trim_start_matches('/'))
+        } else {
+            canonical_base.join(requested_path)
+        };
+
+        if normalized.exists() {
+            let canonical = normalized.canonicalize().map_err(|_| {
+                AgentError::PermissionDenied(format!(
+                    "Path traversal attempt detected: {}",
+                    requested_path
+                ))
+            })?;
+            if !canonical.starts_with(&canonical_base) {
+                return Err(AgentError::PermissionDenied(
+                    "Access denied: path outside data directory".to_string(),
+                ));
+            }
+            return Ok(canonical);
         }
 
-        Ok(canonical)
+        let parent = normalized
+            .parent()
+            .ok_or_else(|| AgentError::InvalidRequest("Invalid path".to_string()))?;
+        if parent.exists() {
+            let parent_canon = parent.canonicalize().map_err(|_| {
+                AgentError::PermissionDenied("Path traversal attempt detected".to_string())
+            })?;
+            if !parent_canon.starts_with(&canonical_base) {
+                return Err(AgentError::PermissionDenied(
+                    "Access denied: path outside data directory".to_string(),
+                ));
+            }
+            let file_name = normalized
+                .file_name()
+                .ok_or_else(|| AgentError::InvalidRequest("Invalid path".to_string()))?;
+            return Ok(parent_canon.join(file_name));
+        }
+
+        let relative = normalized.strip_prefix(&canonical_base).map_err(|_| {
+            AgentError::PermissionDenied("Access denied: path outside data directory".to_string())
+        })?;
+        Ok(canonical_base.join(relative))
     }
 
     pub async fn read_file(&self, server_id: &str, path: &str) -> AgentResult<Vec<u8>> {

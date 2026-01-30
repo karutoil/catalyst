@@ -17,24 +17,20 @@ impl FirewallManager {
     /// Detect which firewall is active on the system
     pub fn detect_firewall() -> FirewallType {
         // Check for UFW first (most common on Ubuntu/Debian)
-        if Command::new("ufw").arg("status").output().is_ok() {
-            if let Ok(output) = Command::new("ufw").arg("status").output() {
-                let status = String::from_utf8_lossy(&output.stdout);
-                if status.contains("Status: active") {
-                    info!("Detected active UFW firewall");
-                    return FirewallType::Ufw;
-                }
+        if let Ok(output) = Command::new("ufw").arg("status").output() {
+            let status = String::from_utf8_lossy(&output.stdout);
+            if output.status.success() && status.contains("Status: active") {
+                info!("Detected active UFW firewall");
+                return FirewallType::Ufw;
             }
         }
 
         // Check for firewalld (common on RHEL/CentOS/Fedora)
-        if Command::new("firewall-cmd").arg("--state").output().is_ok() {
-            if let Ok(output) = Command::new("firewall-cmd").arg("--state").output() {
-                let status = String::from_utf8_lossy(&output.stdout);
-                if status.contains("running") {
-                    info!("Detected active firewalld");
-                    return FirewallType::Firewalld;
-                }
+        if let Ok(output) = Command::new("firewall-cmd").arg("--state").output() {
+            let status = String::from_utf8_lossy(&output.stdout);
+            if output.status.success() && status.contains("running") {
+                info!("Detected active firewalld");
+                return FirewallType::Firewalld;
             }
         }
 
@@ -55,6 +51,7 @@ impl FirewallManager {
 
     /// Allow a port through the detected firewall
     pub async fn allow_port(port: u16, container_ip: &str) -> AgentResult<()> {
+        Self::validate_container_ip(container_ip)?;
         let firewall_type = Self::detect_firewall();
 
         match firewall_type {
@@ -70,6 +67,7 @@ impl FirewallManager {
 
     /// Remove port rules from the detected firewall
     pub async fn remove_port(port: u16, container_ip: &str) -> AgentResult<()> {
+        Self::validate_container_ip(container_ip)?;
         let firewall_type = Self::detect_firewall();
 
         match firewall_type {
@@ -97,7 +95,14 @@ impl FirewallManager {
         }
 
         // Reload UFW to apply changes
-        let _ = Command::new("ufw").arg("reload").output();
+        let reload = Command::new("ufw")
+            .arg("reload")
+            .output()
+            .map_err(|e| AgentError::FirewallError(format!("Failed to reload ufw: {}", e)))?;
+        if !reload.status.success() {
+            let stderr = String::from_utf8_lossy(&reload.stderr);
+            return Err(AgentError::FirewallError(format!("UFW reload failed: {}", stderr)));
+        }
 
         info!("✓ UFW configured to allow port {}", port);
         Ok(())
@@ -145,7 +150,14 @@ impl FirewallManager {
         }
 
         // Reload firewalld
-        let _ = Command::new("firewall-cmd").arg("--reload").output();
+        let reload = Command::new("firewall-cmd")
+            .arg("--reload")
+            .output()
+            .map_err(|e| AgentError::FirewallError(format!("Failed to reload firewalld: {}", e)))?;
+        if !reload.status.success() {
+            let stderr = String::from_utf8_lossy(&reload.stderr);
+            return Err(AgentError::FirewallError(format!("firewalld reload failed: {}", stderr)));
+        }
 
         info!("✓ firewalld configured to allow port {}", port);
         Ok(())
@@ -169,7 +181,14 @@ impl FirewallManager {
             );
         }
 
-        let _ = Command::new("firewall-cmd").arg("--reload").output();
+        let reload = Command::new("firewall-cmd")
+            .arg("--reload")
+            .output()
+            .map_err(|e| AgentError::FirewallError(format!("Failed to reload firewalld: {}", e)))?;
+        if !reload.status.success() {
+            let stderr = String::from_utf8_lossy(&reload.stderr);
+            return Err(AgentError::FirewallError(format!("firewalld reload failed: {}", stderr)));
+        }
 
         Ok(())
     }
@@ -254,7 +273,7 @@ impl FirewallManager {
         );
 
         // Remove INPUT rule
-        let _ = Command::new("iptables")
+        let output = Command::new("iptables")
             .arg("-D")
             .arg("INPUT")
             .arg("-p")
@@ -263,10 +282,15 @@ impl FirewallManager {
             .arg(port.to_string())
             .arg("-j")
             .arg("ACCEPT")
-            .output();
+            .output()
+            .map_err(|e| AgentError::FirewallError(format!("Failed to run iptables: {}", e)))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("iptables INPUT rule removal failed: {}", stderr);
+        }
 
         // Remove FORWARD rules
-        let _ = Command::new("iptables")
+        let output = Command::new("iptables")
             .arg("-D")
             .arg("FORWARD")
             .arg("-p")
@@ -277,9 +301,14 @@ impl FirewallManager {
             .arg(container_ip)
             .arg("-j")
             .arg("ACCEPT")
-            .output();
+            .output()
+            .map_err(|e| AgentError::FirewallError(format!("Failed to run iptables: {}", e)))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("iptables FORWARD rule removal failed: {}", stderr);
+        }
 
-        let _ = Command::new("iptables")
+        let output = Command::new("iptables")
             .arg("-D")
             .arg("FORWARD")
             .arg("-p")
@@ -290,8 +319,20 @@ impl FirewallManager {
             .arg(container_ip)
             .arg("-j")
             .arg("ACCEPT")
-            .output();
+            .output()
+            .map_err(|e| AgentError::FirewallError(format!("Failed to run iptables: {}", e)))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("iptables FORWARD rule removal failed: {}", stderr);
+        }
 
+        Ok(())
+    }
+
+    fn validate_container_ip(container_ip: &str) -> AgentResult<()> {
+        container_ip
+            .parse::<std::net::Ipv4Addr>()
+            .map_err(|_| AgentError::InvalidRequest("Invalid container IP".to_string()))?;
         Ok(())
     }
 }
