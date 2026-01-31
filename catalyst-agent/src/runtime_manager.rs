@@ -145,10 +145,8 @@ impl ContainerdRuntime {
 
         cmd.arg("--label")
             .arg(format!("catalyst.agent.socket_path={}", self.socket_path));
-        cmd.arg(image);
 
-        // Startup command (if provided)
-        if !startup_command.is_empty() {
+        let entrypoint_arg = if !startup_command.is_empty() {
             let exec_path = format!("{}/catalyst-entrypoint", console_fifo.dir);
             let entrypoint = format!(
                 "#!/bin/sh\nset -e\nFIFO=\"{}\"\nexec 3<> \"$FIFO\"\nexec < \"$FIFO\"\nexec {}\n",
@@ -156,8 +154,15 @@ impl ContainerdRuntime {
             );
             self.create_entrypoint_script(&console_fifo.dir, &entrypoint)
                 .await?;
+            Some(exec_path)
+        } else {
+            None
+        };
+
+        if let Some(exec_path) = entrypoint_arg {
             cmd.arg("--entrypoint").arg(exec_path);
         }
+        cmd.arg(image);
 
         let output = cmd.output().await.map_err(|e| {
             AgentError::ContainerError(format!("Failed to create container: {}", e))
