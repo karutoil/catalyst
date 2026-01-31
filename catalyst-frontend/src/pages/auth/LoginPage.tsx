@@ -10,10 +10,15 @@ import { notifyError } from '../../utils/notify';
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { login, isLoading, error, setSession } = useAuthStore();
-  const [passkeyRequired, setPasskeyRequired] = useState(false);
+  const { login, verifyTwoFactor, isLoading, error, setSession } = useAuthStore();
+  const [authStep, setAuthStep] = useState<'passkey' | 'totp' | null>(null);
   const [passkeySubmitting, setPasskeySubmitting] = useState(false);
   const [allowPasskeyFallback, setAllowPasskeyFallback] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
+  const [totpTrustDevice, setTotpTrustDevice] = useState(false);
+  const [totpSubmitting, setTotpSubmitting] = useState(false);
+  const [totpError, setTotpError] = useState<string | null>(null);
+  const [lastRememberMe, setLastRememberMe] = useState<boolean | undefined>(undefined);
   const passkeyAutoFillAttempted = useRef(false);
   const {
     register,
@@ -60,7 +65,7 @@ function LoginPage() {
       typeof fallbackOverride === 'boolean' ? fallbackOverride : allowPasskeyFallback;
     try {
       if (!values.email || !values.password) {
-        setPasskeyRequired(true);
+        setAuthStep('passkey');
         return;
       }
       localStorage.setItem('catalyst-remember-me', values.rememberMe ? 'true' : 'false');
@@ -76,9 +81,10 @@ function LoginPage() {
       setTimeout(() => {
         navigate(from || '/servers');
       }, 100);
+      setLastRememberMe(values.rememberMe);
     } catch (err) {
       if ((err as any).code === 'PASSKEY_REQUIRED') {
-        setPasskeyRequired(true);
+        setAuthStep('passkey');
         return;
       }
       if ((err as any).code === 'TWO_FACTOR_REQUIRED') {
@@ -86,13 +92,8 @@ function LoginPage() {
           sessionStorage.setItem('catalyst-session-token', (err as any).token);
           localStorage.removeItem('catalyst-auth-token');
         }
-        navigate('/two-factor', {
-          state: {
-            from: location.state?.from,
-            rememberMe: values.rememberMe,
-            returnTo: location.pathname,
-          },
-        });
+        setTotpError(null);
+        setAuthStep('totp');
       }
     }
   };
@@ -111,7 +112,7 @@ function LoginPage() {
           },
           onSuccess(context) {
             void applyPasskeySession(context.data).then(() => {
-              setPasskeyRequired(false);
+              setAuthStep(null);
               setTimeout(() => {
                 navigate(from || '/servers');
               }, 100);
@@ -121,14 +122,14 @@ function LoginPage() {
       });
       const data = (response as any)?.data;
       if (await applyPasskeySession(data)) {
-        setPasskeyRequired(false);
+        setAuthStep(null);
         setTimeout(() => {
           navigate(from || '/servers');
         }, 100);
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        setPasskeyRequired(true);
+        setAuthStep('passkey');
         return;
       }
       notifyError('Passkey sign-in failed');
@@ -160,7 +161,7 @@ function LoginPage() {
           },
           onSuccess(context) {
             void applyPasskeySession(context.data).then(() => {
-              setPasskeyRequired(false);
+              setAuthStep(null);
               setAllowPasskeyFallback(false);
               setTimeout(() => {
                 navigate(from || '/servers');
@@ -188,6 +189,32 @@ function LoginPage() {
     }
   };
 
+  const handleTotpSubmit = async () => {
+    if (!totpCode) {
+      setTotpError('Enter a verification code');
+      return;
+    }
+    setTotpSubmitting(true);
+    setTotpError(null);
+    try {
+      await verifyTwoFactor({
+        code: totpCode,
+        trustDevice: totpTrustDevice,
+        rememberMe: lastRememberMe,
+      });
+      setAuthStep(null);
+      setTotpCode('');
+      setTotpTrustDevice(false);
+      setTimeout(() => {
+        navigate(from || '/servers');
+      }, 100);
+    } catch (err: any) {
+      setTotpError(err?.response?.data?.message || err?.message || 'Two-factor verification failed');
+    } finally {
+      setTotpSubmitting(false);
+    }
+  };
+
   return (
     <div className="app-shell flex min-h-screen items-center justify-center px-4 font-sans">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white px-6 py-8 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 dark:border-slate-800 dark:bg-slate-900">
@@ -202,12 +229,12 @@ function LoginPage() {
           Sign in to manage your servers.
         </p>
 
-        {error && !passkeyRequired ? (
+        {error && !authStep ? (
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
             {error}
           </div>
         ) : null}
-        {passkeyRequired ? (
+        {authStep === 'passkey' ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
             <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-xl dark:border-slate-800 dark:bg-slate-900">
               <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Passkey required</h2>
@@ -227,14 +254,56 @@ function LoginPage() {
                 className="mt-3 w-full text-sm font-medium text-slate-600 transition-all duration-300 hover:text-primary-600 dark:text-slate-300 dark:hover:text-primary-400"
                 onClick={() => {
                   setAllowPasskeyFallback(true);
-                  setPasskeyRequired(false);
                   void handleSubmit((values) =>
                     onSubmit({ ...values, allowPasskeyFallback: true }, true),
                   )();
                 }}
                 disabled={passkeySubmitting}
               >
-                Sign in another way
+                Use another way
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {authStep === 'totp' ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Two-factor verification
+              </h2>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Enter the code from your authenticator app or backup code.
+              </p>
+              {totpError ? (
+                <div className="mt-3 rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+                  {totpError}
+                </div>
+              ) : null}
+              <div className="mt-4 space-y-3">
+                <input
+                  type="text"
+                  value={totpCode}
+                  onChange={(event) => setTotpCode(event.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                  placeholder="123456"
+                />
+                <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300"
+                    checked={totpTrustDevice}
+                    onChange={(event) => setTotpTrustDevice(event.target.checked)}
+                  />
+                  Trust this device for 30 days
+                </label>
+              </div>
+              <button
+                type="button"
+                className="mt-4 w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-70"
+                onClick={handleTotpSubmit}
+                disabled={totpSubmitting}
+              >
+                {totpSubmitting ? 'Verifying…' : 'Verify'}
               </button>
             </div>
           </div>
@@ -276,7 +345,7 @@ function LoginPage() {
           <button
             type="submit"
             className="w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-70"
-            disabled={isLoading || passkeyRequired}
+            disabled={isLoading || authStep === 'passkey'}
           >
             {isLoading ? 'Signing in…' : 'Sign in'}
           </button>
