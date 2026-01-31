@@ -37,9 +37,22 @@ function BackupSection({
   const [storageMode, setStorageMode] = useState<BackupStorageMode>('local');
   const [retentionCount, setRetentionCount] = useState('');
   const [retentionDays, setRetentionDays] = useState('');
+  const [s3Bucket, setS3Bucket] = useState('');
+  const [s3Region, setS3Region] = useState('');
+  const [s3Endpoint, setS3Endpoint] = useState('');
+  const [s3AccessKeyId, setS3AccessKeyId] = useState('');
+  const [s3SecretAccessKey, setS3SecretAccessKey] = useState('');
+  const [s3PathStyle, setS3PathStyle] = useState(false);
+  const [sftpHost, setSftpHost] = useState('');
+  const [sftpPort, setSftpPort] = useState('22');
+  const [sftpUsername, setSftpUsername] = useState('');
+  const [sftpPassword, setSftpPassword] = useState('');
+  const [sftpBasePath, setSftpBasePath] = useState('');
   const { progressByBackup, setProgress, clearProgress } = useBackupDownloadStore();
   const { data, isLoading, isError } = useBackups(serverId, { page, limit: 10 });
   const progressKeyPrefix = useMemo(() => `server:${serverId}:backup:`, [serverId]);
+  const backupAllocationMb = server?.backupAllocationMb ?? 0;
+  const backupBlocked = backupAllocationMb <= 0 && storageMode === 'local';
 
   useEffect(() => {
     if (!server) return;
@@ -54,6 +67,19 @@ function BackupSection({
         ? String(server.backupRetentionDays)
         : '',
     );
+    setS3Bucket(server.backupS3Config?.bucket ?? '');
+    setS3Region(server.backupS3Config?.region ?? '');
+    setS3Endpoint(server.backupS3Config?.endpoint ?? '');
+    setS3AccessKeyId(server.backupS3Config?.accessKeyId ?? '');
+    setS3SecretAccessKey(server.backupS3Config?.secretAccessKey ?? '');
+    setS3PathStyle(Boolean(server.backupS3Config?.pathStyle));
+    setSftpHost(server.backupSftpConfig?.host ?? '');
+    setSftpPort(
+      server.backupSftpConfig?.port ? String(server.backupSftpConfig.port) : '22',
+    );
+    setSftpUsername(server.backupSftpConfig?.username ?? '');
+    setSftpPassword(server.backupSftpConfig?.password ?? '');
+    setSftpBasePath(server.backupSftpConfig?.basePath ?? '');
   }, [server?.id, server?.backupStorageMode, server?.backupRetentionCount, server?.backupRetentionDays]);
 
   const handleDownload = async (backupId: string, name: string) => {
@@ -90,8 +116,11 @@ function BackupSection({
           <p className="text-xs text-slate-600 dark:text-slate-400">
             Create, restore, and manage server backups.
           </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Allocation: {backupAllocationMb > 0 ? `${backupAllocationMb} MB` : 'Disabled'}
+          </p>
         </div>
-        <CreateBackupModal serverId={serverId} disabled={isSuspended} />
+        <CreateBackupModal serverId={serverId} disabled={isSuspended || backupBlocked} />
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
@@ -101,6 +130,11 @@ function BackupSection({
             <div className="text-xs text-slate-600 dark:text-slate-400">
               Storage mode and retention rules.
             </div>
+            {backupBlocked ? (
+              <div className="text-xs text-amber-600 dark:text-amber-300">
+                Local backups disabled. Configure S3 or SFTP to enable backups.
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
@@ -116,6 +150,7 @@ function BackupSection({
             >
               <option value="local">Local</option>
               <option value="s3">S3</option>
+              <option value="sftp">SFTP</option>
               <option value="stream">Stream</option>
             </select>
           </div>
@@ -148,6 +183,148 @@ function BackupSection({
             />
           </div>
         </div>
+        {storageMode === 's3' ? (
+          <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Bucket
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={s3Bucket}
+                onChange={(event) => setS3Bucket(event.target.value)}
+                placeholder="catalyst-backups"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Region
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={s3Region}
+                onChange={(event) => setS3Region(event.target.value)}
+                placeholder="us-east-1"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Endpoint (optional)
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={s3Endpoint}
+                onChange={(event) => setS3Endpoint(event.target.value)}
+                placeholder="https://s3.amazonaws.com"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Access key ID
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={s3AccessKeyId}
+                onChange={(event) => setS3AccessKeyId(event.target.value)}
+                placeholder="AKIA..."
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Secret access key
+              </span>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={s3SecretAccessKey}
+                onChange={(event) => setS3SecretAccessKey(event.target.value)}
+                placeholder="••••••••"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                checked={s3PathStyle}
+                onChange={(event) => setS3PathStyle(event.target.checked)}
+                disabled={isSuspended}
+              />
+              Force path-style addressing
+            </label>
+          </div>
+        ) : null}
+        {storageMode === 'sftp' ? (
+          <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Host
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={sftpHost}
+                onChange={(event) => setSftpHost(event.target.value)}
+                placeholder="sftp.example.com"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Port
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={sftpPort}
+                onChange={(event) => setSftpPort(event.target.value)}
+                type="number"
+                min={1}
+                max={65535}
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Username
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={sftpUsername}
+                onChange={(event) => setSftpUsername(event.target.value)}
+                placeholder="backup-user"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Password
+              </span>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={sftpPassword}
+                onChange={(event) => setSftpPassword(event.target.value)}
+                placeholder="••••••••"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Base path
+              </span>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={sftpBasePath}
+                onChange={(event) => setSftpBasePath(event.target.value)}
+                placeholder="/backups"
+                disabled={isSuspended}
+              />
+            </label>
+          </div>
+        ) : null}
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <button
             type="button"
@@ -162,10 +339,67 @@ function BackupSection({
                 if (parsedDays !== undefined && (!Number.isFinite(parsedDays) || parsedDays < 0)) {
                   throw new Error('Retention days must be 0 or more');
                 }
+                if (storageMode === 's3') {
+                  if (!s3Bucket.trim()) {
+                    throw new Error('S3 bucket is required');
+                  }
+                  if (!s3Region.trim()) {
+                    throw new Error('S3 region is required');
+                  }
+                  if (!s3AccessKeyId.trim()) {
+                    throw new Error('S3 access key ID is required');
+                  }
+                  if (!s3SecretAccessKey.trim()) {
+                    throw new Error('S3 secret access key is required');
+                  }
+                }
+                const s3Config =
+                  storageMode === 's3'
+                    ? {
+                        bucket: s3Bucket.trim() || null,
+                        region: s3Region.trim() || null,
+                        endpoint: s3Endpoint.trim() || null,
+                        accessKeyId: s3AccessKeyId.trim() || null,
+                        secretAccessKey: s3SecretAccessKey || null,
+                        pathStyle: s3PathStyle,
+                      }
+                    : undefined;
+                const sftpPortValue =
+                  sftpPort.trim() === '' ? undefined : Number(sftpPort);
+                if (
+                  storageMode === 'sftp' &&
+                  sftpPortValue !== undefined &&
+                  (!Number.isFinite(sftpPortValue) || sftpPortValue <= 0 || sftpPortValue > 65535)
+                ) {
+                  throw new Error('SFTP port must be between 1 and 65535');
+                }
+                const sftpConfig =
+                  storageMode === 'sftp'
+                    ? {
+                        host: sftpHost.trim() || null,
+                        port: sftpPortValue ?? null,
+                        username: sftpUsername.trim() || null,
+                        password: sftpPassword || null,
+                        basePath: sftpBasePath.trim() || null,
+                      }
+                    : undefined;
+                if (storageMode === 'sftp') {
+                  if (!sftpHost.trim()) {
+                    throw new Error('SFTP host is required');
+                  }
+                  if (!sftpUsername.trim()) {
+                    throw new Error('SFTP username is required');
+                  }
+                  if (!sftpPassword.trim()) {
+                    throw new Error('SFTP password is required');
+                  }
+                }
                 await serversApi.updateBackupSettings(serverId, {
                   storageMode,
                   retentionCount: parsedCount,
                   retentionDays: parsedDays,
+                  s3Config,
+                  sftpConfig,
                 });
                 notifySuccess('Backup settings updated');
               } catch (error: any) {

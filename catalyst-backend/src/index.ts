@@ -406,11 +406,12 @@ async function bootstrap() {
         return reply.status(401).send({ error: "Invalid or expired token" });
       }
 
-      const baseUrl = `${request.protocol}://${request.headers.host}`;
+      const baseUrl =
+        process.env.BACKEND_URL || `${request.protocol}://${request.headers.host}`;
       const script = generateDeploymentScript(
         baseUrl,
         deployToken.node.id,
-        deployToken.secret,
+        deployToken.node.secret,
         deployToken.node.hostname
       );
 
@@ -492,22 +493,22 @@ install_packages() {
   case "$pm" in
     apt)
       apt-get update
-      apt-get install -y curl wget unzip pkg-config build-essential libssl-dev
+      apt-get install -y curl wget unzip pkg-config build-essential libssl-dev containerd.io nerdctl
       ;;
     apk)
-      apk add --no-cache curl wget unzip pkgconfig build-base openssl-dev
+      apk add --no-cache curl wget unzip pkgconfig build-base openssl-dev containerd nerdctl
       ;;
     yum)
-      yum install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel
+      yum install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel containerd nerdctl
       ;;
     dnf)
-      dnf install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel
+      dnf install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel containerd nerdctl
       ;;
     pacman)
-      pacman -Sy --noconfirm curl wget unzip pkgconf base-devel openssl
+      pacman -Sy --noconfirm curl wget unzip pkgconf base-devel openssl containerd nerdctl
       ;;
     zypper)
-      zypper --non-interactive install curl wget unzip pkg-config gcc gcc-c++ make libopenssl-devel
+      zypper --non-interactive install curl wget unzip pkg-config gcc gcc-c++ make libopenssl-devel containerd nerdctl
       ;;
     *)
       echo "Unsupported package manager. Please install curl, wget, unzip, pkg-config, build tools, and OpenSSL dev headers."
@@ -523,14 +524,24 @@ if [ -z "$PKG_MANAGER" ]; then
 fi
 install_packages "$PKG_MANAGER"
 
-# Create agent directory
-mkdir -p /opt/catalyst-agent
-cd /opt/catalyst-agent
+# Ensure containerd is available
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable --now containerd
+fi
+
+# Create agent directories
+  mkdir -p /opt/catalyst-agent
+  mkdir -p /var/lib/catalyst
+  cd /opt/catalyst-agent
 
 # Download agent binary
 echo "Downloading Catalyst Agent binary..."
-curl -fsSL "$BACKEND_HTTP_URL/api/agent/download" -o /opt/catalyst-agent/catalyst-agent
-chmod +x /opt/catalyst-agent/catalyst-agent
+  curl -fsSL "$BACKEND_HTTP_URL/api/agent/download" -o /opt/catalyst-agent/catalyst-agent
+  if [ ! -s /opt/catalyst-agent/catalyst-agent ]; then
+    echo "Agent download failed or empty response from $BACKEND_HTTP_URL/api/agent/download"
+    exit 1
+  fi
+  chmod +x /opt/catalyst-agent/catalyst-agent
 
 # Create config file (overwrite on install/reinstall)
 cat > /opt/catalyst-agent/config.toml << EOF
@@ -565,14 +576,15 @@ WorkingDirectory=/opt/catalyst-agent
 ExecStart=/opt/catalyst-agent/catalyst-agent
 Restart=on-failure
 RestartSec=10
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable catalyst-agent
-systemctl start catalyst-agent
+  systemctl daemon-reload
+  systemctl enable catalyst-agent
+  systemctl start catalyst-agent
 
 echo "Catalyst Agent installed successfully!"
 systemctl status catalyst-agent

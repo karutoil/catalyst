@@ -69,6 +69,7 @@ export interface Server {
   backupRetentionCount?: number;
   backupRetentionDays?: number;
   backupAllocationMb?: number;
+  databaseAllocation?: number;
   backupS3Config?: {
     bucket?: string | null;
     region?: string | null;
@@ -113,6 +114,7 @@ export interface CreateServerPayload {
   allocatedMemoryMb: number;
   allocatedCpuCores: number;
   allocatedDiskMb: number;
+  databaseAllocation?: number;
   primaryPort: number;
   primaryIp?: string | null;
   allocationId?: string;
@@ -130,6 +132,7 @@ export interface UpdateServerPayload {
   primaryIp?: string | null;
   portBindings?: Record<number, number>;
   backupAllocationMb?: number;
+  databaseAllocation?: number;
 }
 
 export interface TransferServerPayload {

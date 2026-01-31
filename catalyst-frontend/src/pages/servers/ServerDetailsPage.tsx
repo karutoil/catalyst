@@ -133,6 +133,9 @@ function ServerDetailsPage() {
     user?.permissions?.includes('database.rotate') ||
     user?.permissions?.includes('database.delete') ||
     Boolean(server && user?.id && server.ownerId === user.id);
+  const databaseAllocation = server?.databaseAllocation ?? 0;
+  const databaseLimitReached =
+    databaseAllocation > 0 && databases.length >= databaseAllocation;
   const [configFiles, setConfigFiles] = useState<ConfigFileState[]>([]);
   const [openConfigIndex, setOpenConfigIndex] = useState(-1);
   const [command, setCommand] = useState('');
@@ -1386,6 +1389,9 @@ function ServerDetailsPage() {
               <div className="text-xs text-slate-600 dark:text-slate-400">
                 Create and manage per-server database credentials.
               </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Allocation: {databaseAllocation === 0 ? 'Disabled' : `${databaseAllocation} databases`}
+              </div>
             </div>
             {canManageDatabases ? (
               <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -1393,7 +1399,7 @@ function ServerDetailsPage() {
                   className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                   value={databaseHostId}
                   onChange={(event) => setDatabaseHostId(event.target.value)}
-                  disabled={isSuspended}
+                  disabled={isSuspended || databaseAllocation === 0}
                 >
                   <option value="">Select host</option>
                   {databaseHosts.map((host) => (
@@ -1407,16 +1413,31 @@ function ServerDetailsPage() {
                   value={databaseName}
                   onChange={(event) => setDatabaseName(event.target.value)}
                   placeholder="database_name"
-                  disabled={isSuspended}
+                  disabled={isSuspended || databaseAllocation === 0}
                 />
                 <button
                   type="button"
                   className="rounded-md bg-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                   onClick={() => createDatabaseMutation.mutate()}
-                  disabled={!databaseHostId || createDatabaseMutation.isPending || isSuspended}
+                  disabled={
+                    !databaseHostId ||
+                    createDatabaseMutation.isPending ||
+                    isSuspended ||
+                    databaseAllocation === 0 ||
+                    databaseLimitReached
+                  }
                 >
                   Create
                 </button>
+                {databaseAllocation === 0 ? (
+                  <span className="text-xs text-amber-600 dark:text-amber-300">
+                    Database allocation disabled.
+                  </span>
+                ) : databaseLimitReached ? (
+                  <span className="text-xs text-amber-600 dark:text-amber-300">
+                    Allocation limit reached.
+                  </span>
+                ) : null}
               </div>
             ) : (
               <div className="text-xs text-slate-500 dark:text-slate-400">

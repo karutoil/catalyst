@@ -80,6 +80,7 @@ export interface AdminServer {
   status: string;
   suspendedAt?: string | null;
   suspensionReason?: string | null;
+  databaseAllocation?: number;
   node: AdminServerNode;
   template: AdminServerTemplate;
 }

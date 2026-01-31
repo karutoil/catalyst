@@ -379,6 +379,7 @@ model Server {
   backupRetentionCount Int     @default(0)
   backupRetentionDays  Int     @default(0)
   backupAllocationMb  Int     @default(0)
+  databaseAllocation  Int     @default(0)
   backupS3Config      Json    @default("{}")
   backupSftpConfig    Json    @default("{}")
   

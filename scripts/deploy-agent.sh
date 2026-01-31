@@ -125,6 +125,11 @@ install_packages "$PKG_MANAGER"
 # Install dependencies
 echo "Dependencies installed via $PKG_MANAGER."
 
+# Ensure containerd is available
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now containerd
+fi
+
 # Create agent directory
 echo "Creating agent directory..."
 mkdir -p /opt/catalyst-agent
@@ -133,6 +138,10 @@ mkdir -p /var/lib/catalyst
 # Download agent binary
 echo "Downloading Catalyst Agent..."
 if curl -fsSL "${BACKEND_URL}/api/agent/download" -o /opt/catalyst-agent/catalyst-agent; then
+    if [ ! -s /opt/catalyst-agent/catalyst-agent ]; then
+        echo "Agent download failed or empty response from ${BACKEND_URL}/api/agent/download"
+        exit 1
+    fi
     chmod +x /opt/catalyst-agent/catalyst-agent
 elif [ -f "$(pwd)/target/release/catalyst-agent" ]; then
     cp "$(pwd)/target/release/catalyst-agent" /opt/catalyst-agent/
@@ -180,6 +189,7 @@ WorkingDirectory=/opt/catalyst-agent
 ExecStart=/opt/catalyst-agent/catalyst-agent
 Restart=on-failure
 RestartSec=10
+LimitNOFILE=65536
 StandardOutput=journal
 StandardError=journal
 

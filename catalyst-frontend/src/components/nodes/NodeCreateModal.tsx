@@ -192,7 +192,7 @@ function NodeCreateModal({ locationId }: Props) {
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-900 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-100">
                 <code className="whitespace-pre-wrap">
-                  {`bash <(curl -s ${deployInfo.deployUrl})`}
+                  {`curl -s ${deployInfo.deployUrl} | sudo bash -x`}
                 </code>
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">

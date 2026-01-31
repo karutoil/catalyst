@@ -17,6 +17,7 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
   const [memory, setMemory] = useState('1024');
   const [cpu, setCpu] = useState('1');
   const [disk, setDisk] = useState('10240');
+  const [databaseAllocation, setDatabaseAllocation] = useState('0');
   const [name, setName] = useState('');
   const [primaryIp, setPrimaryIp] = useState('');
   const [allocationId, setAllocationId] = useState('');
@@ -51,6 +52,16 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
       if (Number.isFinite(cpuValue) && cpuValue > 0 && cpuValue !== existingCpuCores) {
         updates.allocatedCpuCores = cpuValue;
       }
+      const databaseAllocationValue =
+        databaseAllocation.trim() === '' ? undefined : Number(databaseAllocation);
+      if (
+        databaseAllocationValue !== undefined &&
+        Number.isFinite(databaseAllocationValue) &&
+        databaseAllocationValue >= 0 &&
+        databaseAllocationValue !== (server?.databaseAllocation ?? 0)
+      ) {
+        updates.databaseAllocation = databaseAllocationValue;
+      }
       if (isIpamNetwork && primaryIp !== (server?.primaryIp ?? '')) {
         updates.primaryIp = primaryIp.trim() || null;
       }
@@ -82,6 +93,7 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
     if (server.allocatedMemoryMb) setMemory(String(server.allocatedMemoryMb));
     if (server.allocatedCpuCores) setCpu(String(server.allocatedCpuCores));
     if (server.allocatedDiskMb) setDisk(String(server.allocatedDiskMb));
+    setDatabaseAllocation(String(server.databaseAllocation ?? 0));
     setPrimaryIp(server.primaryIp ?? '');
     setAllocationId('');
   }, [server]);
@@ -237,6 +249,20 @@ function UpdateServerModal({ serverId, disabled = false }: Props) {
                     Shrinking requires the server to be stopped.
                   </span>
                 ) : null}
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-600 dark:text-slate-300">Database allocation</span>
+                <input
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                  value={databaseAllocation}
+                  onChange={(e) => setDatabaseAllocation(e.target.value)}
+                  type="number"
+                  min={0}
+                  step={1}
+                />
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Set to 0 to disable database provisioning.
+                </span>
               </label>
               {isIpamNetwork ? (
                 <div className="space-y-2">

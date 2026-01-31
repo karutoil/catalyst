@@ -111,6 +111,7 @@ export interface ServerInstance {
   allocatedMemoryMb: number;
   allocatedCpuCores: number;
   allocatedDiskMb: number;
+  databaseAllocation?: number;
   container: {
     id: string;
     name: string;

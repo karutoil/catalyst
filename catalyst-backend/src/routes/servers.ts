@@ -578,6 +578,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores,
         allocatedDiskMb,
         backupAllocationMb,
+        databaseAllocation,
         primaryPort,
         primaryIp,
         allocationId,
@@ -594,6 +595,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores: number;
         allocatedDiskMb: number;
         backupAllocationMb?: number;
+        databaseAllocation?: number;
         primaryPort: number;
         primaryIp?: string | null;
         allocationId?: string;
@@ -743,6 +745,13 @@ export async function serverRoutes(app: FastifyInstance) {
         });
       }
 
+      if (
+        databaseAllocation !== undefined &&
+        (!Number.isFinite(databaseAllocation) || databaseAllocation < 0)
+      ) {
+        return reply.status(400).send({ error: "databaseAllocation must be 0 or more" });
+      }
+
       const desiredNetworkMode = networkMode || "mc-lan-static";
       const hasPrimaryIp = primaryIp !== undefined;
       const normalizedPrimaryIp = typeof primaryIp === "string" ? primaryIp.trim() : null;
@@ -830,6 +839,7 @@ export async function serverRoutes(app: FastifyInstance) {
               allocatedCpuCores,
               allocatedDiskMb,
               backupAllocationMb: backupAllocationMb ?? 0,
+              databaseAllocation: databaseAllocation ?? 0,
               primaryPort: allocationPort ?? validatedPrimaryPort,
               portBindings: resolvedPortBindings,
               networkMode: desiredNetworkMode,
@@ -1052,6 +1062,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores,
         allocatedDiskMb,
         backupAllocationMb,
+        databaseAllocation,
         primaryPort,
         primaryIp,
         portBindings,
@@ -1063,6 +1074,7 @@ export async function serverRoutes(app: FastifyInstance) {
         allocatedCpuCores?: number;
         allocatedDiskMb?: number;
         backupAllocationMb?: number;
+        databaseAllocation?: number;
         primaryPort?: number;
         primaryIp?: string | null;
         portBindings?: Record<number, number>;
@@ -1153,6 +1165,12 @@ export async function serverRoutes(app: FastifyInstance) {
         (!Number.isFinite(backupAllocationMb) || backupAllocationMb < 0)
       ) {
         return reply.status(400).send({ error: "backupAllocationMb must be 0 or more" });
+      }
+      if (
+        databaseAllocation !== undefined &&
+        (!Number.isFinite(databaseAllocation) || databaseAllocation < 0)
+      ) {
+        return reply.status(400).send({ error: "databaseAllocation must be 0 or more" });
       }
 
       const nextPrimaryPort = primaryPort ?? server.primaryPort;
@@ -1256,10 +1274,11 @@ export async function serverRoutes(app: FastifyInstance) {
             name: name || server.name,
             description: description !== undefined ? description : server.description,
             environment: nextEnvironment,
-            allocatedMemoryMb: allocatedMemoryMb ?? server.allocatedMemoryMb,
-            allocatedCpuCores: allocatedCpuCores ?? server.allocatedCpuCores,
+          allocatedMemoryMb: allocatedMemoryMb ?? server.allocatedMemoryMb,
+          allocatedCpuCores: allocatedCpuCores ?? server.allocatedCpuCores,
           allocatedDiskMb: allocatedDiskMb ?? server.allocatedDiskMb,
           backupAllocationMb: backupAllocationMb ?? server.backupAllocationMb ?? 0,
+          databaseAllocation: databaseAllocation ?? server.databaseAllocation ?? 0,
           primaryPort: nextPrimaryPort,
             portBindings: effectiveBindings,
             primaryIp: nextPrimaryIp,
@@ -3272,13 +3291,32 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "hostId is required" });
       }
 
-      const host = await prisma.databaseHost.findUnique({
-        where: { id: hostId },
-      });
+       const server = await prisma.server.findUnique({
+         where: { id: serverId },
+         select: { databaseAllocation: true },
+       });
 
-      if (!host) {
-        return reply.status(404).send({ error: "Database host not found" });
-      }
+       if (!server) {
+         return reply.status(404).send({ error: "Server not found" });
+       }
+
+       const allocationLimit = server.databaseAllocation ?? 0;
+       if (!Number.isFinite(allocationLimit) || allocationLimit <= 0) {
+         return reply.status(403).send({ error: "Database allocation disabled for this server" });
+       }
+
+       const existingCount = await prisma.serverDatabase.count({ where: { serverId } });
+       if (existingCount >= allocationLimit) {
+         return reply.status(409).send({ error: "Database allocation limit reached" });
+       }
+
+       const host = await prisma.databaseHost.findUnique({
+         where: { id: hostId },
+       });
+
+       if (!host) {
+         return reply.status(404).send({ error: "Database host not found" });
+       }
 
       const normalizedName = name ? toDatabaseIdentifier(name.trim()) : "";
       const databaseName =

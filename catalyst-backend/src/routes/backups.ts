@@ -49,12 +49,25 @@ export async function backupRoutes(app: FastifyInstance) {
         return reply.status(503).send({ error: "Node is offline" });
       }
 
-      // Generate backup name
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const backupName = name || `backup-${timestamp}`;
        const mode = resolveBackupStorageMode(server);
-       const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode, server);
-      const serverDir = buildServerDir(server.uuid);
+       const allocationMb = server.backupAllocationMb ?? 0;
+       const hasExternalStorage = mode === "s3" || mode === "sftp";
+       if (allocationMb <= 0 && !hasExternalStorage) {
+         return reply.status(403).send({
+           error: "Backup allocation disabled. Configure S3 or SFTP to enable backups.",
+         });
+       }
+
+       // Generate backup name
+       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+       const backupName = name || `backup-${timestamp}`;
+       const { agentPath, storagePath, storageKey } = buildBackupPaths(
+         server.uuid,
+         backupName,
+         mode,
+         server,
+       );
+       const serverDir = buildServerDir(server.uuid);
 
        if (mode === "s3" && !storageKey) {
          return reply.status(500).send({ error: "Missing S3 storage key" });
