@@ -43,6 +43,12 @@ export interface Template {
         modpacks?: string;
       };
     };
+    pluginManager?: {
+      providers: string[];
+      paths?: {
+        plugins?: string;
+      };
+    };
     [key: string]: any;
   };
 }

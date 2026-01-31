@@ -84,6 +84,15 @@
   "allocatedMemoryMb": 1024,
   "allocatedCpuCores": 2,
   "features": {
-    "restartOnExit": true
+    "restartOnExit": true,
+        "modManager": {
+      "providers": ["curseforge", "modrinth"],
+      "paths": {
+        "mods": "/mods",
+        "datapacks": "/world/datapacks",
+        "modpacks": "/modpacks"
+      }
+    }
   }
+
 }

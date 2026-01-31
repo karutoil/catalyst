@@ -49,6 +49,12 @@ export interface Server {
           modpacks?: string;
         };
       };
+      pluginManager?: {
+        providers: string[];
+        paths?: {
+          plugins?: string;
+        };
+      };
     };
   };
   cpuPercent?: number;

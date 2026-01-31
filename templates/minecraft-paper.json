@@ -153,6 +153,12 @@
         "datapacks": "/world/datapacks",
         "modpacks": "/modpacks"
       }
+    },
+    "pluginManager": {
+      "providers": ["modrinth", "spigot", "paper"],
+      "paths": {
+        "plugins": "/plugins"
+      }
     }
   }
 }

@@ -13,7 +13,7 @@ interface AuthState {
   isReady: boolean;
   isRefreshing: boolean;
   error: string | null;
-  login: (values: LoginSchema) => Promise<void>;
+  login: (values: LoginSchema, options?: { forcePasskeyFallback?: boolean }) => Promise<void>;
   register: (values: RegisterSchema) => Promise<void>;
   refresh: () => Promise<void>;
   init: () => Promise<void>;
@@ -39,10 +39,10 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       isRefreshing: false,
       error: null,
-      login: async (values) => {
+      login: async (values, options) => {
         set({ isLoading: true, error: null });
         try {
-          const { token, user, rememberMe } = await authApi.login(values);
+          const { token, user, rememberMe } = await authApi.login(values, options);
           if (token && rememberMe) {
             localStorage.setItem('catalyst-auth-token', token);
             sessionStorage.removeItem('catalyst-session-token');

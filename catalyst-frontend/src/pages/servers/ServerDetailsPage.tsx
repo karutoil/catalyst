@@ -29,6 +29,7 @@ import { serversApi } from '../../services/api/servers';
 import { filesApi } from '../../services/api/files';
 import { databasesApi } from '../../services/api/databases';
 import { modManagerApi } from '../../services/api/modManager';
+import { pluginManagerApi } from '../../services/api/pluginManager';
 import { notifyError, notifySuccess } from '../../utils/notify';
 import {
   detectConfigFormat,
@@ -71,6 +72,7 @@ const tabLabels = {
   metrics: 'Metrics',
   alerts: 'Alerts',
   modManager: 'Mod Manager',
+  pluginManager: 'Plugin Manager',
   configuration: 'Configuration',
   users: 'Users',
   settings: 'Settings',
@@ -151,11 +153,18 @@ function ServerDetailsPage() {
   const [accessPermissions, setAccessPermissions] = useState<Record<string, string[]>>({});
   const modManagerConfig = server?.template?.features?.modManager;
   const modManagerProviders = modManagerConfig?.providers ?? [];
+  const pluginManagerConfig = server?.template?.features?.pluginManager;
+  const pluginManagerProviders = pluginManagerConfig?.providers ?? [];
   const [modProvider, setModProvider] = useState('modrinth');
   const [modQuery, setModQuery] = useState('');
   const [modTarget, setModTarget] = useState<'mods' | 'datapacks' | 'modpacks'>('mods');
+  const [modLoader, setModLoader] = useState('forge');
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<string>('');
+  const [pluginProvider, setPluginProvider] = useState('modrinth');
+  const [pluginQuery, setPluginQuery] = useState('');
+  const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
+  const [selectedPluginVersion, setSelectedPluginVersion] = useState<string>('');
 
   const serverGameVersion =
     server?.environment?.MC_VERSION ||
@@ -169,12 +178,21 @@ function ServerDetailsPage() {
     isError: modSearchError,
     refetch: refetchModSearch,
   } = useQuery({
-    queryKey: ['mod-manager-search', serverId, modProvider, modQuery, modTarget, serverGameVersion],
+    queryKey: [
+      'mod-manager-search',
+      serverId,
+      modProvider,
+      modQuery,
+      modTarget,
+      modLoader,
+      serverGameVersion,
+    ],
     queryFn: () =>
       modManagerApi.search(serverId ?? '', {
         provider: modProvider,
         target: modTarget,
         query: modQuery.trim() || undefined,
+        loader: modLoader,
         gameVersion: serverGameVersion,
       }),
     enabled: Boolean(serverId && modProvider),
@@ -192,6 +210,36 @@ function ServerDetailsPage() {
         projectId: selectedProject ?? '',
       }),
     enabled: Boolean(serverId && modProvider && selectedProject),
+  });
+
+  const {
+    data: pluginSearchResults,
+    isLoading: pluginSearchLoading,
+    isError: pluginSearchError,
+    refetch: refetchPluginSearch,
+  } = useQuery({
+    queryKey: ['plugin-manager-search', serverId, pluginProvider, pluginQuery, serverGameVersion],
+    queryFn: () =>
+      pluginManagerApi.search(serverId ?? '', {
+        provider: pluginProvider,
+        query: pluginQuery.trim() || undefined,
+        gameVersion: serverGameVersion,
+      }),
+    enabled: Boolean(serverId && pluginProvider),
+  });
+
+  const {
+    data: pluginVersions,
+    isLoading: pluginVersionsLoading,
+    isError: pluginVersionsError,
+  } = useQuery({
+    queryKey: ['plugin-manager-versions', serverId, pluginProvider, selectedPlugin],
+    queryFn: () =>
+      pluginManagerApi.versions(serverId ?? '', {
+        provider: pluginProvider,
+        projectId: selectedPlugin ?? '',
+      }),
+    enabled: Boolean(serverId && pluginProvider && selectedPlugin),
   });
 
 
@@ -319,6 +367,26 @@ function ServerDetailsPage() {
     },
     onError: (error: any) => {
       const message = error?.response?.data?.error || 'Failed to install mod';
+      notifyError(message);
+    },
+  });
+
+  const installPluginMutation = useMutation({
+    mutationFn: () => {
+      if (!server?.id || !selectedPlugin || !selectedPluginVersion) {
+        throw new Error('Missing plugin selection');
+      }
+      return pluginManagerApi.install(server.id, {
+        provider: pluginProvider,
+        projectId: selectedPlugin,
+        versionId: selectedPluginVersion,
+      });
+    },
+    onSuccess: () => {
+      notifySuccess('Plugin install queued');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || 'Failed to install plugin';
       notifyError(message);
     },
   });
@@ -629,13 +697,29 @@ function ServerDetailsPage() {
   }, [modManagerProviders, modProvider]);
 
   useEffect(() => {
+    if (!pluginManagerProviders.length) return;
+    if (!pluginManagerProviders.includes(pluginProvider)) {
+      setPluginProvider(pluginManagerProviders[0]);
+    }
+  }, [pluginManagerProviders, pluginProvider]);
+
+  useEffect(() => {
     setSelectedProject(null);
     setSelectedVersion('');
-  }, [modProvider, modQuery]);
+  }, [modProvider, modQuery, modTarget, modLoader]);
+
+  useEffect(() => {
+    setSelectedPlugin(null);
+    setSelectedPluginVersion('');
+  }, [pluginProvider, pluginQuery]);
 
   useEffect(() => {
     setSelectedVersion('');
   }, [selectedProject]);
+
+  useEffect(() => {
+    setSelectedPluginVersion('');
+  }, [selectedPlugin]);
 
   const modResults = useMemo(() => {
     if (!modSearchResults) return [];
@@ -658,6 +742,34 @@ function ServerDetailsPage() {
     }
     return [];
   }, [modVersions]);
+
+  const pluginResults = useMemo(() => {
+    if (!pluginSearchResults) return [];
+    if (Array.isArray(pluginSearchResults.hits)) {
+      return pluginSearchResults.hits;
+    }
+    if (Array.isArray(pluginSearchResults.data)) {
+      return pluginSearchResults.data;
+    }
+    if (Array.isArray(pluginSearchResults)) {
+      return pluginSearchResults;
+    }
+    return [];
+  }, [pluginSearchResults]);
+
+  const pluginVersionOptions = useMemo(() => {
+    if (!pluginVersions) return [];
+    if (Array.isArray(pluginVersions.data)) {
+      return pluginVersions.data;
+    }
+    if (Array.isArray((pluginVersions as any).result)) {
+      return (pluginVersions as any).result;
+    }
+    if (Array.isArray(pluginVersions)) {
+      return pluginVersions;
+    }
+    return [];
+  }, [pluginVersions]);
 
   const normalizeEntry = (key: string, value: ConfigNode): ConfigEntry => {
     if (isConfigMap(value)) {
@@ -1074,6 +1186,7 @@ function ServerDetailsPage() {
           .filter(([key]) => {
             if (key === 'admin') return isAdmin;
             if (key === 'modManager') return Boolean(modManagerConfig);
+            if (key === 'pluginManager') return Boolean(pluginManagerConfig);
             return true;
           })
           .map(([key, label]) => {
@@ -1523,6 +1636,19 @@ function ServerDetailsPage() {
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <label className="block text-xs text-slate-500 dark:text-slate-300">
+                  Loader
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={modLoader}
+                    onChange={(event) => setModLoader(event.target.value)}
+                  >
+                    <option value="forge">Forge</option>
+                    <option value="neoforge">NeoForge</option>
+                    <option value="fabric">Fabric</option>
+                    <option value="quilt">Quilt</option>
+                  </select>
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-300">
                   Target
                   <select
                     className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
@@ -1662,6 +1788,216 @@ function ServerDetailsPage() {
               {modVersionsError ? (
                 <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                   Unable to load versions for the selected project.
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {activeTab === 'pluginManager' ? (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Plugin manager
+              </div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">
+                Search and install server plugins.
+              </div>
+            </div>
+          </div>
+          {!pluginManagerConfig ? (
+            <div className="mt-4">
+              <EmptyState title="Plugin manager not enabled" description="This template does not define a plugin manager." />
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <label className="block text-xs text-slate-500 dark:text-slate-300">
+                  Provider
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={pluginProvider}
+                    onChange={(event) => setPluginProvider(event.target.value)}
+                  >
+                    {pluginManagerProviders.map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider === 'spiget' ? 'spigot' : provider}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-300 md:col-span-2">
+                  Search
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                      value={pluginQuery}
+                      onChange={(event) => setPluginQuery(event.target.value)}
+                      placeholder="Search plugins"
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
+                      onClick={() => refetchPluginSearch()}
+                      disabled={!pluginQuery.trim() || pluginSearchLoading}
+                    >
+                      Search
+                    </button>
+                  </div>
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <label className="block text-xs text-slate-500 dark:text-slate-300 md:col-span-3">
+                  Version
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={selectedPluginVersion}
+                    onChange={(event) => setSelectedPluginVersion(event.target.value)}
+                    disabled={!selectedPlugin || pluginVersionsLoading}
+                  >
+                    <option value="">Select a version</option>
+                    {pluginVersionOptions.map((version: any) => {
+                      const id = version.id ?? version.versionId ?? version.fileId ?? version.file?.id;
+                      const label =
+                        version.name ||
+                        version.version ||
+                        version.version_number ||
+                        version.displayName ||
+                        version.fileName ||
+                        String(id);
+                      return (
+                        <option key={id} value={String(id)}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                  onClick={() => installPluginMutation.mutate()}
+                  disabled={!selectedPlugin || !selectedPluginVersion || installPluginMutation.isPending}
+                >
+                  Install
+                </button>
+              </div>
+              {pluginSearchLoading ? (
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  Searching plugins...
+                </div>
+              ) : pluginSearchError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  Unable to load search results.
+                </div>
+              ) : pluginResults.length === 0 ? (
+                <EmptyState title="No results yet" description="Search for a plugin to begin." />
+              ) : (
+                <div className="space-y-3">
+                  {pluginResults.map((entry: any) => {
+                    const hangarOwner =
+                      entry.owner?.name || entry.owner?.username || entry.namespace?.owner;
+                    const hangarSlug = entry.slug || entry.namespace?.slug;
+                    const hangarProjectId =
+                      hangarOwner && hangarSlug
+                        ? `${hangarOwner}/${hangarSlug}`
+                        : entry.slug || entry.id;
+                    const id =
+                      pluginProvider === 'paper'
+                        ? encodeURIComponent(hangarProjectId ?? '')
+                        : entry.project_id ||
+                          entry.id ||
+                          entry.resourceId ||
+                          entry.slug ||
+                          entry.name;
+                    const title = entry.name || entry.title || entry.tag || entry.slug || 'Untitled';
+                    const summary = entry.description || entry.summary || entry.tag || '';
+                    const isActive = selectedPlugin === String(id);
+                    const imageUrl =
+                      pluginProvider === 'modrinth'
+                        ? entry.icon_url
+                        : pluginProvider === 'paper'
+                          ? entry.avatarUrl
+                          : entry.icon?.url || entry.icon?.data;
+                    const fallbackLabel = title
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((segment) => segment[0]?.toUpperCase() ?? '')
+                      .join('');
+                    const providerLabel =
+                      pluginProvider === 'modrinth'
+                        ? 'Modrinth'
+                        : pluginProvider === 'paper'
+                          ? 'Paper'
+                          : 'Spigot';
+                    let externalUrl = '';
+                    if (pluginProvider === 'modrinth') {
+                      const slug = entry.slug || entry.project_id || entry.id;
+                      externalUrl = slug ? `https://modrinth.com/plugin/${slug}` : '';
+                    } else if (pluginProvider === 'paper') {
+                      externalUrl = hangarProjectId
+                        ? `https://hangar.papermc.io/${hangarProjectId}`
+                        : '';
+                    } else {
+                      externalUrl = id ? `https://www.spigotmc.org/resources/${id}/` : '';
+                    }
+                    return (
+                      <div key={String(id)} className="flex flex-wrap items-stretch gap-2">
+                        <button
+                          type="button"
+                          className={`flex-1 rounded-lg border px-4 py-3 text-left transition-all duration-300 ${
+                            isActive
+                              ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-400/70 dark:bg-primary-500/10 dark:text-primary-200'
+                              : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-primary-500/30'
+                          }`}
+                          onClick={() => setSelectedPlugin(String(id))}
+                        >
+                          <div className="flex items-start gap-3">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt=""
+                                loading="lazy"
+                                className="h-10 w-10 rounded-md object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                {fallbackLabel || 'PL'}
+                              </div>
+                            )}
+                            <div>
+                              <div className="text-sm font-semibold">{title}</div>
+                              {summary ? (
+                                <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                                  {summary}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                        {externalUrl ? (
+                          <a
+                            className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
+                            href={externalUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View on {providerLabel}
+                          </a>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {pluginVersionsError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  Unable to load plugin versions.
                 </div>
               ) : null}
             </div>

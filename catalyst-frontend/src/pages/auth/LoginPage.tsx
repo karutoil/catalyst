@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type BaseSyntheticEvent, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -52,14 +52,26 @@ function LoginPage() {
     return syncPasskeySession();
   };
 
-  const onSubmit = async (values: LoginSchema, fallbackOverride = allowPasskeyFallback) => {
+  const onSubmit = async (
+    values: LoginSchema,
+    fallbackOverride?: boolean | BaseSyntheticEvent,
+  ) => {
+    const allowFallback =
+      typeof fallbackOverride === 'boolean' ? fallbackOverride : allowPasskeyFallback;
     try {
+      if (!values.email || !values.password) {
+        setPasskeyRequired(true);
+        return;
+      }
       localStorage.setItem('catalyst-remember-me', values.rememberMe ? 'true' : 'false');
       if (!values.rememberMe) {
         localStorage.removeItem('catalyst-auth-token');
         sessionStorage.removeItem('catalyst-session-token');
       }
-      await login({ ...values, allowPasskeyFallback: fallbackOverride });
+      await login(
+        { ...values, allowPasskeyFallback: Boolean(allowFallback) },
+        allowFallback ? { forcePasskeyFallback: true } : undefined,
+      );
       // Redirect on successful login
       setTimeout(() => {
         navigate(from || '/servers');
@@ -70,6 +82,10 @@ function LoginPage() {
         return;
       }
       if ((err as any).code === 'TWO_FACTOR_REQUIRED') {
+        if ((err as any).token) {
+          sessionStorage.setItem('catalyst-session-token', (err as any).token);
+          localStorage.removeItem('catalyst-auth-token');
+        }
         navigate('/two-factor', {
           state: {
             from: location.state?.from,
@@ -212,7 +228,9 @@ function LoginPage() {
                 onClick={() => {
                   setAllowPasskeyFallback(true);
                   setPasskeyRequired(false);
-                  void handleSubmit((values) => onSubmit(values, true))();
+                  void handleSubmit((values) =>
+                    onSubmit({ ...values, allowPasskeyFallback: true }, true),
+                  )();
                 }}
                 disabled={passkeySubmitting}
               >

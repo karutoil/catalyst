@@ -1,0 +1,14 @@
+{
+  "id": "spigot",
+  "name": "Spigot",
+  "baseUrl": "https://api.spiget.org",
+  "headers": {
+    "User-Agent": "CatalystPluginManager/1.0"
+  },
+  "endpoints": {
+    "search": "/v2/search/resources/{query}",
+    "resources": "/v2/resources",
+    "versions": "/v2/resources/{projectId}/versions",
+    "versionDownload": "/v2/resources/{projectId}/versions/{versionId}/download"
+  }
+}

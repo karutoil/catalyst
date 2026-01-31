@@ -1,0 +1,13 @@
+{
+  "id": "paper",
+  "name": "Paper",
+  "baseUrl": "https://hangar.papermc.io",
+  "headers": {
+    "User-Agent": "CatalystPluginManager/1.0"
+  },
+  "endpoints": {
+    "projects": "/api/v1/projects",
+    "versions": "/api/v1/projects/{projectId}/versions",
+    "version": "/api/v1/projects/{projectId}/versions/{versionId}"
+  }
+}

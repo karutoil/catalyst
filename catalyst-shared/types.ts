@@ -90,6 +90,12 @@ export interface ServerTemplate {
         modpacks?: string;
       };
     };
+    pluginManager?: {
+      providers: string[];
+      paths?: {
+        plugins?: string;
+      };
+    };
   };
 }
 

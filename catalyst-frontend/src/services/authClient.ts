@@ -7,11 +7,13 @@ import {
 } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
 
-const baseURL = import.meta.env.VITE_BETTER_AUTH_URL || import.meta.env.VITE_API_URL || '';
+const envBaseURL = import.meta.env.VITE_BETTER_AUTH_URL || import.meta.env.VITE_API_URL || '';
+const baseURL = envBaseURL || (typeof window !== 'undefined' ? window.location.origin : '');
 
 export const authClient = createAuthClient({
   baseURL,
   basePath: '/api/auth',
+  credentials: 'include',
   plugins: [
     twoFactorClient(),
     passkeyClient(),

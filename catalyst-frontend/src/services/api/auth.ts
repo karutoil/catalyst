@@ -10,15 +10,40 @@ const createPasskeyRequiredError = () => {
 };
 
 export const authApi = {
-  async login(values: LoginSchema): Promise<{ token: string; user: User; rememberMe?: boolean }> {
+  async login(
+    values: LoginSchema,
+    options?: { forcePasskeyFallback?: boolean },
+  ): Promise<{ token: string; user: User; rememberMe?: boolean }> {
     try {
-      const { data, headers } = await apiClient.post<any>('/api/auth/login', values);
+      if (values.rememberMe) {
+        localStorage.setItem('catalyst-remember-me', 'true');
+      } else {
+        localStorage.removeItem('catalyst-remember-me');
+      }
+      const forceFallback = Boolean(options?.forcePasskeyFallback);
+      const { data, headers } = await apiClient.post<any>(
+        '/api/auth/login',
+        {
+          ...values,
+          allowPasskeyFallback: forceFallback || Boolean(values.allowPasskeyFallback),
+        },
+        {
+          headers: forceFallback || values.allowPasskeyFallback
+            ? { 'X-Allow-Passkey-Fallback': 'true' }
+            : undefined,
+        },
+      );
       if (data?.code === 'PASSKEY_REQUIRED') {
         throw createPasskeyRequiredError();
       }
       if (data?.data?.twoFactorRequired) {
         const error: any = new Error('Two-factor authentication required');
         error.code = 'TWO_FACTOR_REQUIRED';
+        if (data?.data?.token) {
+          error.token = data.data.token;
+        } else if (headers?.['set-auth-token']) {
+          error.token = headers['set-auth-token'];
+        }
         throw error;
       }
       if (!data.success || !data.data) {

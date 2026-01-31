@@ -144,8 +144,8 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const userRecord = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
+      const userRecord = await prisma.user.findFirst({
+        where: { email: { equals: normalizedEmail, mode: "insensitive" } },
         include: {
           passkeys: {
             select: { id: true },
@@ -183,33 +183,47 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.status(401).send({ error: "Invalid credentials" });
       }
 
-       const allowPasskeyFallback = Boolean((request.body as any)?.allowPasskeyFallback);
-       if (userRecord.passkeys.length > 0 && !allowPasskeyFallback) {
-         return reply.status(403).send({
-           error: "Passkey required",
-           code: "PASSKEY_REQUIRED",
-         });
-      }
+      const resolvedEmail = userRecord.email;
+      const allowPasskeyFallback = Boolean(
+        (request.body as any)?.allowPasskeyFallback ??
+          request.headers["x-allow-passkey-fallback"] === "true"
+      );
 
       try {
-        const response = await auth.api.signInEmail({
-          headers: new Headers({
-            origin: request.headers.origin || request.headers.host || "http://localhost:3000",
-          }),
-          body: {
-            email,
-            password,
-          },
-          returnHeaders: true,
+        const origin = request.headers.origin || request.headers.host || "http://localhost:3000";
+        const url = new URL("/api/auth/sign-in/email", origin);
+        const headers = new Headers();
+        Object.entries(request.headers).forEach(([key, value]) => {
+          if (typeof value === "string") {
+            headers.append(key, value);
+          } else if (Array.isArray(value)) {
+            value.forEach((item) => headers.append(key, item));
+          }
         });
+        headers.delete("authorization");
+        headers.delete("cookie");
+        headers.set("content-type", "application/json");
+        const payload = {
+          email: resolvedEmail,
+          password,
+          rememberMe: (request.body as any)?.rememberMe,
+        };
+        const authResponse = await auth.handler(
+          new Request(url.toString(), {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload),
+          })
+        );
 
-        const tokenHeader =
-          "headers" in response ? response.headers.get("set-auth-token") : null;
-        const data =
-          "headers" in response && response.response
-            ? response.response
-            : (response as any);
-        if ("twoFactorRedirect" in (response as any) || data?.twoFactorRedirect) {
+        const tokenHeader = authResponse.headers.get("set-auth-token");
+        const cookieHeader =
+          typeof (authResponse.headers as any).getSetCookie === "function"
+            ? (authResponse.headers as any).getSetCookie()
+            : authResponse.headers.get("set-cookie");
+        const authText = await authResponse.text();
+        const data = authText ? JSON.parse(authText) : null;
+        if (authResponse.status === 202 || data?.twoFactorRedirect) {
           await logAuthAttempt(normalizedEmail, true, request.ip, request.headers["user-agent"]);
           await prisma.authLockout.deleteMany({
             where: { email: normalizedEmail, ipAddress: request.ip },
@@ -219,7 +233,11 @@ export async function authRoutes(app: FastifyInstance) {
             reply.header("Access-Control-Expose-Headers", "set-auth-token");
           }
           if (cookieHeader) {
-            reply.header("set-cookie", cookieHeader);
+            if (Array.isArray(cookieHeader)) {
+              cookieHeader.forEach((cookie) => reply.header("set-cookie", cookie));
+            } else {
+              reply.header("set-cookie", cookieHeader);
+            }
           }
           return reply.status(202).send({
             success: false,
@@ -231,7 +249,12 @@ export async function authRoutes(app: FastifyInstance) {
         }
         const user = data?.user;
         if (!user) {
-          return reply.status(401).send({ error: "Invalid credentials" });
+          const errorCode = data?.code || data?.error?.code;
+          const message = data?.error?.message || data?.error || "Invalid credentials";
+          if (errorCode === "PASSKEY_REQUIRED") {
+            return reply.status(403).send({ error: "Passkey required", code: "PASSKEY_REQUIRED" });
+          }
+          return reply.status(401).send({ error: message });
         }
         await logAuthAttempt(normalizedEmail, true, request.ip, request.headers["user-agent"]);
         await prisma.authLockout.deleteMany({

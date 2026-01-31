@@ -239,6 +239,14 @@ export async function serverRoutes(app: FastifyInstance) {
       ["modrinth", path.resolve(__dirname, "../mod-manager/modrinth.json")],
     ] as const
   );
+  const pluginManagerProviders = new Map(
+    [
+      ["modrinth", path.resolve(__dirname, "../mod-manager/modrinth.json")],
+      ["spigot", path.resolve(__dirname, "../mod-manager/spigot.json")],
+      ["spiget", path.resolve(__dirname, "../mod-manager/spigot.json")],
+      ["paper", path.resolve(__dirname, "../mod-manager/paper.json")],
+    ] as const
+  );
 
   try {
     const settings = await getSecuritySettings();
@@ -325,6 +333,20 @@ export async function serverRoutes(app: FastifyInstance) {
       endpoints: Record<string, string>;
     };
   };
+  const loadPluginProviderConfig = async (provider: string) => {
+    const configPath = pluginManagerProviders.get(provider);
+    if (!configPath) {
+      return null;
+    }
+    const raw = await fs.readFile(configPath, "utf8");
+    return JSON.parse(raw) as {
+      id: string;
+      name: string;
+      baseUrl: string;
+      headers: Record<string, string>;
+      endpoints: Record<string, string>;
+    };
+  };
 
   const buildProviderHeaders = (providerConfig: {
     headers: Record<string, string>;
@@ -359,6 +381,21 @@ export async function serverRoutes(app: FastifyInstance) {
       paths?: { mods?: string; datapacks?: string; modpacks?: string };
     };
   };
+  const ensurePluginManagerEnabled = (server: any, reply: FastifyReply) => {
+    const pluginManager = server.template?.features?.pluginManager;
+    if (
+      !pluginManager ||
+      !Array.isArray(pluginManager.providers) ||
+      pluginManager.providers.length === 0
+    ) {
+      reply.status(409).send({ error: "Plugin manager not enabled for this template" });
+      return null;
+    }
+    return pluginManager as {
+      providers: string[];
+      paths?: { plugins?: string };
+    };
+  };
 
   const extractGameVersion = (environment: any) => {
     if (!environment || typeof environment !== "object") return null;
@@ -385,6 +422,7 @@ export async function serverRoutes(app: FastifyInstance) {
     const safeTarget = target ? target.replace(/[^a-z0-9_-]/gi, "") : "mods";
     return normalizeRequestPath(`/${safeTarget}`);
   };
+  const sanitizeFilename = (value: string) => value.replace(/[^a-z0-9._-]/gi, "_");
 
   const resolveServerPath = async (serverUuid: string, requestedPath: string) => {
     const baseDir = path.resolve(serverDataRoot, serverUuid);
@@ -1397,12 +1435,13 @@ export async function serverRoutes(app: FastifyInstance) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { serverId } = request.params as { serverId: string };
-      const { provider, query, page, gameVersion } = request.query as {
+      const { provider, query, page, gameVersion, loader } = request.query as {
         provider?: string;
         query?: string;
         target?: "mods" | "datapacks" | "modpacks";
         gameVersion?: string;
         page?: string | number;
+        loader?: string;
       };
       const userId = request.user.userId;
 
@@ -1453,6 +1492,10 @@ export async function serverRoutes(app: FastifyInstance) {
         if (resolvedGameVersion) {
           facets.push([`versions:${resolvedGameVersion}`]);
         }
+        const loaderValue = typeof loader === "string" ? loader.trim().toLowerCase() : "";
+        if (loaderValue) {
+          facets.push([`categories:${loaderValue}`]);
+        }
         const params = new URLSearchParams({
           query: searchQuery,
           limit: "20",
@@ -1465,6 +1508,18 @@ export async function serverRoutes(app: FastifyInstance) {
         const targetValue = (request.query as any).target;
         const classId =
           targetValue === "datapacks" ? "512" : targetValue === "modpacks" ? "4471" : "6";
+        const loaderValue = typeof loader === "string" ? loader.trim().toLowerCase() : "";
+        const modLoaderType = loaderValue
+          ? loaderValue === "forge"
+            ? "1"
+            : loaderValue === "neoforge"
+              ? "20"
+              : loaderValue === "fabric"
+                ? "4"
+                : loaderValue === "quilt"
+                  ? "5"
+                  : undefined
+          : undefined;
         const params = new URLSearchParams({
           gameId: "432",
           classId,
@@ -1473,6 +1528,7 @@ export async function serverRoutes(app: FastifyInstance) {
           ...(searchQuery ? { searchFilter: searchQuery } : {}),
           ...(resolvedGameVersion ? { gameVersion: resolvedGameVersion } : {}),
           ...(isTrending ? { sortField: "2", sortOrder: "desc" } : {}),
+          ...(modLoaderType ? { modLoaderType } : {}),
         });
         url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
       }
@@ -1485,6 +1541,9 @@ export async function serverRoutes(app: FastifyInstance) {
           .send({ error: `Provider error: ${body}` });
       }
       const payload = await response.json();
+      if (provider === "paper" && payload && Array.isArray(payload?.result)) {
+        return reply.send({ success: true, data: payload.result });
+      }
       return reply.send({ success: true, data: payload });
     }
   );
@@ -1529,7 +1588,11 @@ export async function serverRoutes(app: FastifyInstance) {
 
       const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
       const endpoint = providerConfig.endpoints.versions || providerConfig.endpoints.files;
-      const url = `${baseUrl}${endpoint.replace("{projectId}", encodeURIComponent(projectId))}`;
+      const encodedProjectId =
+        provider === "paper"
+          ? String(projectId).split("/").map(encodeURIComponent).join("/")
+          : encodeURIComponent(projectId);
+      const url = `${baseUrl}${endpoint.replace("{projectId}", encodedProjectId)}`;
 
       const response = await fetch(url, { headers });
       if (!response.ok) {
@@ -1539,6 +1602,9 @@ export async function serverRoutes(app: FastifyInstance) {
           .send({ error: `Provider error: ${body}` });
       }
       const payload = await response.json();
+      if (provider === "paper" && payload && Array.isArray(payload?.result)) {
+        return reply.send({ success: true, data: payload.result });
+      }
       return reply.send({ success: true, data: payload });
     }
   );
@@ -1636,6 +1702,314 @@ export async function serverRoutes(app: FastifyInstance) {
           data: {
             userId,
             action: "mod_manager.install",
+            resource: "server",
+            resourceId: serverId,
+            details: { provider, projectId, versionId, target: normalizedFile },
+          },
+        });
+        reply.send({ success: true, data: { path: normalizedFile } });
+      } catch (error: any) {
+        reply.status(400).send({ error: error?.message || "Failed to install asset" });
+      }
+    }
+  );
+
+  app.get(
+    "/:serverId/plugin-manager/search",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: "1 minute" } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { provider: rawProvider, query, page, gameVersion } = request.query as {
+        provider?: string;
+        query?: string;
+        gameVersion?: string;
+        page?: string | number;
+      };
+      const provider = rawProvider === "spiget" ? "spigot" : rawProvider;
+      const userId = request.user.userId;
+
+      if (!provider) {
+        return reply.status(400).send({ error: "provider is required" });
+      }
+
+      const server = await ensureServerAccess(serverId, userId, "server.read", reply);
+      if (!server) return;
+      const pluginManager = ensurePluginManagerEnabled(server, reply);
+      if (!pluginManager) return;
+      const allowedProviders = pluginManager.providers.map((entry) =>
+        entry === "spiget" ? "spigot" : entry
+      );
+      if (!allowedProviders.includes(provider)) {
+        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      }
+
+      const providerConfig = await loadPluginProviderConfig(provider);
+      if (!providerConfig) {
+        return reply.status(404).send({ error: "Provider not found" });
+      }
+      let headers: Record<string, string>;
+      try {
+        const settings = await getModManagerSettings();
+        headers = buildProviderHeaders(providerConfig, settings);
+      } catch (error: any) {
+        return reply.status(409).send({ error: error?.message || "Missing provider API key" });
+      }
+
+      const pageValue = typeof page === "string" ? Number(page) : page ?? 1;
+      const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+      const searchQuery = typeof query === "string" ? query.trim() : "";
+      const resolvedGameVersion = gameVersion?.trim() || extractGameVersion(server.environment);
+      const isTrending = !searchQuery;
+      let url = "";
+      if (provider === "modrinth") {
+        const facets: string[][] = [["project_type:plugin"]];
+        if (resolvedGameVersion) {
+          facets.push([`versions:${resolvedGameVersion}`]);
+        }
+        const params = new URLSearchParams({
+          query: searchQuery,
+          limit: "20",
+          facets: JSON.stringify(facets),
+          offset: String(Math.max(0, (Number(pageValue) - 1) * 20)),
+          ...(isTrending ? { index: "downloads" } : {}),
+        });
+        url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
+      } else if (provider === "spigot") {
+        const params = new URLSearchParams({
+          size: "20",
+          page: String(Math.max(0, Number(pageValue) - 1)),
+        });
+        if (searchQuery) {
+          url = `${baseUrl}${providerConfig.endpoints.search.replace(
+            "{query}",
+            encodeURIComponent(searchQuery)
+          )}?${params.toString()}`;
+        } else {
+          url = `${baseUrl}${providerConfig.endpoints.resources}?${params.toString()}`;
+        }
+      } else if (provider === "paper") {
+        const params = new URLSearchParams({
+          limit: "20",
+          offset: String(Math.max(0, (Number(pageValue) - 1) * 20)),
+          ...(searchQuery ? { q: searchQuery } : {}),
+        });
+        url = `${baseUrl}${providerConfig.endpoints.projects}?${params.toString()}`;
+      } else {
+        return reply.status(400).send({ error: "Unsupported provider" });
+      }
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = await response.text();
+        return reply
+          .status(response.status)
+          .send({ error: `Provider error: ${body}` });
+      }
+      const payload = await response.json();
+      if (provider === "spigot" && Array.isArray(payload)) {
+        const filtered = payload.filter((entry: any) => entry?.premium !== true);
+        return reply.send({ success: true, data: filtered });
+      }
+      if (provider === "spigot" && payload && Array.isArray(payload?.data)) {
+        const filtered = payload.data.filter((entry: any) => entry?.premium !== true);
+        return reply.send({ success: true, data: { ...payload, data: filtered } });
+      }
+      if (provider === "paper" && payload && Array.isArray(payload?.result)) {
+        return reply.send({ success: true, data: payload.result });
+      }
+      return reply.send({ success: true, data: payload });
+    }
+  );
+
+  app.get(
+    "/:serverId/plugin-manager/versions",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: "1 minute" } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { provider: rawProvider, projectId } = request.query as {
+        provider?: string;
+        projectId?: string;
+      };
+      const provider = rawProvider === "spiget" ? "spigot" : rawProvider;
+      const userId = request.user.userId;
+
+      if (!provider || !projectId) {
+        return reply.status(400).send({ error: "provider and projectId are required" });
+      }
+
+      const server = await ensureServerAccess(serverId, userId, "server.read", reply);
+      if (!server) return;
+      const pluginManager = ensurePluginManagerEnabled(server, reply);
+      if (!pluginManager) return;
+      const allowedProviders = pluginManager.providers.map((entry) =>
+        entry === "spiget" ? "spigot" : entry
+      );
+      if (!allowedProviders.includes(provider)) {
+        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      }
+
+      const providerConfig = await loadPluginProviderConfig(provider);
+      if (!providerConfig) {
+        return reply.status(404).send({ error: "Provider not found" });
+      }
+      let headers: Record<string, string>;
+      try {
+        const settings = await getModManagerSettings();
+        headers = buildProviderHeaders(providerConfig, settings);
+      } catch (error: any) {
+        return reply.status(409).send({ error: error?.message || "Missing provider API key" });
+      }
+
+      const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+      const endpoint = providerConfig.endpoints.versions || providerConfig.endpoints.files;
+      const rawProjectId =
+        provider === "paper" ? decodeURIComponent(String(projectId)) : String(projectId);
+      const encodedProjectId =
+        provider === "paper"
+          ? rawProjectId.split("/").map(encodeURIComponent).join("/")
+          : encodeURIComponent(rawProjectId);
+      const url = `${baseUrl}${endpoint.replace("{projectId}", encodedProjectId)}`;
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = await response.text();
+        return reply
+          .status(response.status)
+          .send({ error: `Provider error: ${body}` });
+      }
+      const payload = await response.json();
+      return reply.send({ success: true, data: payload });
+    }
+  );
+
+  app.post(
+    "/:serverId/plugin-manager/install",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: "1 minute" } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const { provider: rawProvider, projectId, versionId } = request.body as {
+        provider?: string;
+        projectId?: string;
+        versionId?: string | number;
+      };
+      const provider = rawProvider === "spiget" ? "spigot" : rawProvider;
+      const userId = request.user.userId;
+
+      if (!provider || !projectId || !versionId) {
+        return reply.status(400).send({ error: "provider, projectId, and versionId are required" });
+      }
+
+      const server = await ensureServerAccess(serverId, userId, "file.write", reply);
+      if (!server) return;
+      const pluginManager = ensurePluginManagerEnabled(server, reply);
+      if (!pluginManager) return;
+      const allowedProviders = pluginManager.providers.map((entry) =>
+        entry === "spiget" ? "spigot" : entry
+      );
+      if (!allowedProviders.includes(provider)) {
+        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      }
+
+      const providerConfig = await loadPluginProviderConfig(provider);
+      if (!providerConfig) {
+        return reply.status(404).send({ error: "Provider not found" });
+      }
+      let headers: Record<string, string>;
+      try {
+        const settings = await getModManagerSettings();
+        headers = buildProviderHeaders(providerConfig, settings);
+      } catch (error: any) {
+        return reply.status(409).send({ error: error?.message || "Missing provider API key" });
+      }
+
+      const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
+      let downloadUrl = "";
+      let filename = "";
+      if (provider === "modrinth") {
+        const metadataUrl = `${baseUrl}${providerConfig.endpoints.version.replace(
+          "{versionId}",
+          encodeURIComponent(String(versionId))
+        )}`;
+        const metadataResponse = await fetch(metadataUrl, { headers });
+        if (!metadataResponse.ok) {
+          const body = await metadataResponse.text();
+          return reply
+            .status(metadataResponse.status)
+            .send({ error: `Provider error: ${body}` });
+        }
+        const metadata = await metadataResponse.json();
+        const files = metadata?.files ?? [];
+        const file = files.find((entry: any) => entry.primary) ?? files[0];
+        downloadUrl = file?.url ?? "";
+        filename = file?.filename ?? "";
+      } else if (provider === "spigot") {
+        downloadUrl = `${baseUrl}${providerConfig.endpoints.versionDownload
+          .replace("{projectId}", encodeURIComponent(projectId))
+          .replace("{versionId}", encodeURIComponent(String(versionId)))}`;
+        const safeName = sanitizeFilename(String(versionId));
+        filename = `spigot-${projectId}-${safeName}.jar`;
+      } else if (provider === "paper") {
+        const rawProjectId = decodeURIComponent(String(projectId));
+        const encodedProjectId = rawProjectId
+          .split("/")
+          .map(encodeURIComponent)
+          .join("/");
+        const metadataUrl = `${baseUrl}${providerConfig.endpoints.version
+          .replace("{projectId}", encodedProjectId)
+          .replace("{versionId}", encodeURIComponent(String(versionId)))}`;
+        const metadataResponse = await fetch(metadataUrl, { headers });
+        if (!metadataResponse.ok) {
+          const body = await metadataResponse.text();
+          return reply
+            .status(metadataResponse.status)
+            .send({ error: `Provider error: ${body}` });
+        }
+        const metadata = await metadataResponse.json();
+        const downloads = metadata?.downloads ?? {};
+        const downloadEntry =
+          downloads?.PAPER ||
+          downloads?.paper ||
+          Object.values(downloads || {})[0];
+        downloadUrl = downloadEntry?.downloadUrl ?? "";
+        filename =
+          downloadEntry?.fileInfo?.name ||
+          metadata?.name ||
+          `paper-${projectId}-${versionId}.jar`;
+      } else {
+        return reply.status(400).send({ error: "Unsupported provider" });
+      }
+
+      if (!downloadUrl || !filename) {
+        return reply.status(409).send({ error: "Unable to resolve download asset" });
+      }
+
+      const normalizedBase = resolveTemplatePath(pluginManager.paths?.plugins, "plugins");
+      const normalizedFile = normalizeRequestPath(path.posix.join(normalizedBase, filename));
+
+      try {
+        const { targetPath: resolvedPath } = await resolveServerPath(server.uuid, normalizedFile);
+        await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+        const downloadResponse = await fetch(downloadUrl, { headers });
+        if (!downloadResponse.ok || !downloadResponse.body) {
+          const body = await downloadResponse.text();
+          return reply
+            .status(downloadResponse.status)
+            .send({ error: `Download failed: ${body}` });
+        }
+        await pipeline(downloadResponse.body, createWriteStream(resolvedPath));
+        await prisma.auditLog.create({
+          data: {
+            userId,
+            action: "plugin_manager.install",
             resource: "server",
             resourceId: serverId,
             details: { provider, projectId, versionId, target: normalizedFile },
