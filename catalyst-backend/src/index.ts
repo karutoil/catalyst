@@ -44,6 +44,14 @@ const app = Fastify({
   bodyLimit: 104857600, // 100MB for file uploads
 });
 
+app.setErrorHandler((error, _request, reply) => {
+  app.log.error(error);
+  const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
+  reply.status(status).send({
+    error: status === 500 ? "Internal Server Error" : error.message,
+  });
+});
+
 const wsGateway = new WebSocketGateway(prisma, logger);
 const rbac = new RbacMiddleware(prisma);
 const taskScheduler = new TaskScheduler(prisma, logger);

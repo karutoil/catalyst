@@ -434,6 +434,21 @@ export async function serverRoutes(app: FastifyInstance) {
     }
     return { baseDir, targetPath: safePath };
   };
+  const validateArchiveEntries = async (archivePath: string, isZip: boolean) => {
+    const { stdout } = isZip
+      ? await execFileAsync("unzip", ["-Z", "-1", archivePath])
+      : await execFileAsync("tar", ["-tzf", archivePath]);
+    const entries = stdout
+      .split("\n")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    for (const entry of entries) {
+      const normalized = path.posix.normalize(entry);
+      if (normalized.startsWith("..") || path.posix.isAbsolute(normalized)) {
+        throw new Error("Archive contains invalid paths");
+      }
+    }
+  };
 
   const isSuspensionEnforced = () => process.env.SUSPENSION_ENFORCED !== "false";
 
@@ -2357,7 +2372,9 @@ export async function serverRoutes(app: FastifyInstance) {
         const { targetPath: targetFullPath } = await resolveServerPath(server.uuid, normalizedTarget);
         await fs.mkdir(targetFullPath, { recursive: true });
 
-        if (archiveLower.endsWith(".zip")) {
+        const isZip = archiveLower.endsWith(".zip");
+        await validateArchiveEntries(archiveFullPath, isZip);
+        if (isZip) {
           await execFileAsync("unzip", ["-o", archiveFullPath, "-d", targetFullPath]);
         } else {
           await execFileAsync("tar", ["-xzf", archiveFullPath, "-C", targetFullPath]);
