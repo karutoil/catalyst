@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
+import { decryptBackupConfig, encryptBackupConfig, redactBackupConfig } from "../services/backup-credentials";
 import { ServerStateMachine } from "../services/state-machine";
 import { ServerState } from "../shared-types";
 import { createWriteStream } from "fs";
@@ -223,6 +224,8 @@ const buildConnectionInfo = (
 
   const withConnectionInfo = (server: any, fallbackNode?: { publicAddress?: string }) => ({
     ...server,
+    backupS3Config: redactBackupConfig(decryptBackupConfig(server.backupS3Config)),
+    backupSftpConfig: redactBackupConfig(decryptBackupConfig(server.backupSftpConfig)),
     connection: buildConnectionInfo(server, fallbackNode),
   });
 
@@ -4363,6 +4366,8 @@ export async function serverRoutes(app: FastifyInstance) {
           port?: number | null;
           username?: string | null;
           password?: string | null;
+          privateKey?: string | null;
+          privateKeyPassphrase?: string | null;
           basePath?: string | null;
         } | null;
       };
@@ -4400,6 +4405,8 @@ export async function serverRoutes(app: FastifyInstance) {
         return;
       }
 
+      const encryptedS3Config = s3Config ? encryptBackupConfig(s3Config) : undefined;
+      const encryptedSftpConfig = sftpConfig ? encryptBackupConfig(sftpConfig) : undefined;
       const updated = await prisma.server.update({
         where: { id },
         data: {
@@ -4408,8 +4415,8 @@ export async function serverRoutes(app: FastifyInstance) {
             retentionCount !== undefined ? retentionCount : server.backupRetentionCount,
           backupRetentionDays:
             retentionDays !== undefined ? retentionDays : server.backupRetentionDays,
-          backupS3Config: s3Config ? s3Config : server.backupS3Config,
-          backupSftpConfig: sftpConfig ? sftpConfig : server.backupSftpConfig,
+          backupS3Config: encryptedS3Config ?? server.backupS3Config,
+          backupSftpConfig: encryptedSftpConfig ?? server.backupSftpConfig,
         },
       });
 
@@ -4418,8 +4425,8 @@ export async function serverRoutes(app: FastifyInstance) {
         backupStorageMode: updated.backupStorageMode,
         backupRetentionCount: updated.backupRetentionCount,
         backupRetentionDays: updated.backupRetentionDays,
-        backupS3Config: updated.backupS3Config,
-        backupSftpConfig: updated.backupSftpConfig,
+        backupS3Config: redactBackupConfig(decryptBackupConfig(updated.backupS3Config)),
+        backupSftpConfig: redactBackupConfig(decryptBackupConfig(updated.backupSftpConfig)),
       });
     }
   );
@@ -4619,7 +4626,7 @@ export async function serverRoutes(app: FastifyInstance) {
             },
             server,
           );
-          await uploadStreamToAgent(wsGateway, targetNodeId, id, transferPath, stream);
+          await uploadStreamToAgent(wsGateway, targetNodeId, id, server.uuid, transferPath, stream);
         }
 
         if (mode === "sftp") {
@@ -4632,7 +4639,7 @@ export async function serverRoutes(app: FastifyInstance) {
             },
             server,
           );
-          await uploadStreamToAgent(wsGateway, targetNodeId, id, transferPath, stream);
+          await uploadStreamToAgent(wsGateway, targetNodeId, id, server.uuid, transferPath, stream);
         }
 
         if (mode === "stream") {
@@ -4642,7 +4649,7 @@ export async function serverRoutes(app: FastifyInstance) {
             storageMode: "local",
             metadata: { storageKey },
           });
-          await uploadStreamToAgent(wsGateway, targetNodeId, id, transferPath, stream);
+          await uploadStreamToAgent(wsGateway, targetNodeId, id, server.uuid, transferPath, stream);
         }
 
         await prisma.serverLog.create({

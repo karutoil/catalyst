@@ -18,6 +18,15 @@ export function useBackups(serverId?: string, options?: { page?: number; limit?:
             query.queryKey[0] === 'backups' &&
             query.queryKey[1] === serverId,
         });
+        // follow-up fetch to pick up updated size/metadata after remote upload
+        setTimeout(() => {
+          queryClient.invalidateQueries({
+            predicate: (query) =>
+              Array.isArray(query.queryKey) &&
+              query.queryKey[0] === 'backups' &&
+              query.queryKey[1] === serverId,
+          });
+        }, 1500);
       }
       if (
         message.type === 'backup_restore_complete' ||

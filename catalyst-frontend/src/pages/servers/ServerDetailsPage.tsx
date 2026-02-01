@@ -1445,6 +1445,12 @@ function ServerDetailsPage() {
               </div>
             )}
           </div>
+          {databaseAllocation === 0 ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 shadow-surface-light dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              Provider database allocation is not available for this server. You cannot create a
+              database until allocations are assigned.
+            </div>
+          ) : null}
 
           {databasesLoading ? (
             <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">Loading databases...</div>
