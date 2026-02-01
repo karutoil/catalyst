@@ -82,6 +82,8 @@ export interface Server {
     port?: number | null;
     username?: string | null;
     password?: string | null;
+    privateKey?: string | null;
+    privateKeyPassphrase?: string | null;
     basePath?: string | null;
   } | null;
   restartPolicy?: RestartPolicy;

@@ -47,12 +47,15 @@ function BackupSection({
   const [sftpPort, setSftpPort] = useState('22');
   const [sftpUsername, setSftpUsername] = useState('');
   const [sftpPassword, setSftpPassword] = useState('');
+  const [sftpPrivateKey, setSftpPrivateKey] = useState('');
+  const [sftpPrivateKeyPassphrase, setSftpPrivateKeyPassphrase] = useState('');
   const [sftpBasePath, setSftpBasePath] = useState('');
   const { progressByBackup, setProgress, clearProgress } = useBackupDownloadStore();
   const { data, isLoading, isError } = useBackups(serverId, { page, limit: 10 });
   const progressKeyPrefix = useMemo(() => `server:${serverId}:backup:`, [serverId]);
   const backupAllocationMb = server?.backupAllocationMb ?? 0;
   const backupBlocked = backupAllocationMb <= 0 && storageMode === 'local';
+  const localDisabled = backupAllocationMb <= 0;
 
   useEffect(() => {
     if (!server) return;
@@ -79,6 +82,8 @@ function BackupSection({
     );
     setSftpUsername(server.backupSftpConfig?.username ?? '');
     setSftpPassword(server.backupSftpConfig?.password ?? '');
+    setSftpPrivateKey(server.backupSftpConfig?.privateKey ?? '');
+    setSftpPrivateKeyPassphrase(server.backupSftpConfig?.privateKeyPassphrase ?? '');
     setSftpBasePath(server.backupSftpConfig?.basePath ?? '');
   }, [server?.id, server?.backupStorageMode, server?.backupRetentionCount, server?.backupRetentionDays]);
 
@@ -122,6 +127,12 @@ function BackupSection({
         </div>
         <CreateBackupModal serverId={serverId} disabled={isSuspended || backupBlocked} />
       </div>
+      {backupAllocationMb <= 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 shadow-surface-light dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          Provider backup allocation is not available for this server. Configure your own S3 or SFTP
+          storage to enable backups.
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -137,23 +148,23 @@ function BackupSection({
             ) : null}
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
-          <div>
-            <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Storage mode
-            </label>
-            <select
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
-              value={storageMode}
-              onChange={(event) => setStorageMode(event.target.value)}
-              disabled={isSuspended}
-            >
-              <option value="local">Local</option>
-              <option value="s3">S3</option>
-              <option value="sftp">SFTP</option>
-              <option value="stream">Stream</option>
-            </select>
-          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
+            <div>
+              <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Storage mode
+              </label>
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={storageMode}
+                onChange={(event) => setStorageMode(event.target.value)}
+                disabled={isSuspended}
+              >
+                {!localDisabled ? <option value="local">Local</option> : null}
+                <option value="s3">S3</option>
+                <option value="sftp">SFTP</option>
+                {!localDisabled ? <option value="stream">Stream</option> : null}
+              </select>
+            </div>
           <div>
             <label className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Keep last N
@@ -313,6 +324,31 @@ function BackupSection({
             </label>
             <label className="block sm:col-span-2">
               <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Private key (optional)
+              </span>
+              <textarea
+                className="mt-1 min-h-[88px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={sftpPrivateKey}
+                onChange={(event) => setSftpPrivateKey(event.target.value)}
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Private key passphrase (optional)
+              </span>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+                value={sftpPrivateKeyPassphrase}
+                onChange={(event) => setSftpPrivateKeyPassphrase(event.target.value)}
+                placeholder="••••••••"
+                disabled={isSuspended}
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Base path
               </span>
               <input
@@ -380,6 +416,8 @@ function BackupSection({
                         port: sftpPortValue ?? null,
                         username: sftpUsername.trim() || null,
                         password: sftpPassword || null,
+                        privateKey: sftpPrivateKey.trim() || null,
+                        privateKeyPassphrase: sftpPrivateKeyPassphrase || null,
                         basePath: sftpBasePath.trim() || null,
                       }
                     : undefined;
@@ -390,8 +428,8 @@ function BackupSection({
                   if (!sftpUsername.trim()) {
                     throw new Error('SFTP username is required');
                   }
-                  if (!sftpPassword.trim()) {
-                    throw new Error('SFTP password is required');
+                  if (!sftpPassword.trim() && !sftpPrivateKey.trim()) {
+                    throw new Error('SFTP password or private key is required');
                   }
                 }
                 await serversApi.updateBackupSettings(serverId, {

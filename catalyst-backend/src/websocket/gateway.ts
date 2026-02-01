@@ -811,66 +811,107 @@ export class WebSocketGateway {
         const agentPath =
           (backupRecord.metadata as any)?.agentPath ?? message.backupPath ?? backupRecord.path;
 
-        if (mode === "s3") {
-          try {
-            const { streamAgentBackupToS3 } = await import("../services/backup-storage");
-            const storageKey = (backupRecord.metadata as any)?.storageKey;
-            if (storageKey) {
-              await streamAgentBackupToS3(
-                this,
-                server.nodeId,
-                server.id,
-                agentPath,
-                storageKey,
-                server as any,
-              );
-            }
-          } catch (error) {
-            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to S3");
-          }
-        } else if (mode === "sftp") {
-          try {
-            const { streamAgentBackupToSftp } = await import("../services/backup-storage");
-            const storageKey = (backupRecord.metadata as any)?.storageKey;
-            if (storageKey) {
-              await streamAgentBackupToSftp(
-                this,
-                server.nodeId,
-                server.id,
-                agentPath,
-                storageKey,
-                server as any,
-              );
-            }
-          } catch (error) {
-            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to SFTP");
-          }
-        } else if (mode === "stream") {
-          try {
-            const { streamAgentBackupToLocal } = await import("../services/backup-storage");
-            await streamAgentBackupToLocal(
-              this,
-              server.nodeId,
-              server.id,
-              agentPath,
-              backupRecord.path,
-            );
-          } catch (error) {
-            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to fetch stream backup");
-          }
-        }
+        const nextSizeMb = Number(message.sizeMb);
+        const resolvedSizeMb = Number.isFinite(nextSizeMb) ? nextSizeMb : backupRecord.sizeMb;
+        const resolvedChecksum = message.checksum ?? backupRecord.checksum;
 
         const updated = await this.prisma.backup.update({
           where: { id: backupRecord.id },
           data: {
-            sizeMb: Number(message.sizeMb) || backupRecord.sizeMb,
-            checksum: message.checksum ?? backupRecord.checksum,
+            sizeMb: resolvedSizeMb,
+            checksum: resolvedChecksum,
           },
         });
         this.logger.info(
           { backupId: backupRecord.id, sizeMb: updated.sizeMb },
           "Backup updated from agent",
         );
+
+        await this.routeToClients(message.serverId, {
+          ...message,
+          sizeMb: updated.sizeMb,
+          checksum: updated.checksum,
+        });
+
+        if (mode === "s3") {
+          try {
+            const { streamAgentBackupToS3 } = await import("../services/backup-storage");
+            const storageKey = (backupRecord.metadata as any)?.storageKey;
+          if (storageKey) {
+            await streamAgentBackupToS3(
+              this,
+              server.nodeId,
+              server.id,
+              server.uuid,
+              agentPath,
+              storageKey,
+              server as any,
+            );
+            await this.prisma.backup.update({
+              where: { id: backupRecord.id },
+              data: { metadata: { ...(backupRecord.metadata as any), remoteUploadStatus: "completed" } },
+            });
+          }
+        } catch (error) {
+          this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to S3");
+          await this.prisma.backup.update({
+            where: { id: backupRecord.id },
+            data: {
+              metadata: {
+                ...(backupRecord.metadata as any),
+                remoteUploadStatus: "failed",
+                remoteUploadError: error instanceof Error ? error.message : "S3 upload failed",
+              },
+            },
+          });
+        }
+      } else if (mode === "sftp") {
+        try {
+          const { streamAgentBackupToSftp } = await import("../services/backup-storage");
+          const storageKey = (backupRecord.metadata as any)?.storageKey;
+          if (storageKey) {
+            await streamAgentBackupToSftp(
+              this,
+              server.nodeId,
+              server.id,
+              server.uuid,
+              agentPath,
+              storageKey,
+              server as any,
+            );
+            await this.prisma.backup.update({
+              where: { id: backupRecord.id },
+              data: { metadata: { ...(backupRecord.metadata as any), remoteUploadStatus: "completed" } },
+            });
+          }
+        } catch (error) {
+          this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to SFTP");
+          await this.prisma.backup.update({
+            where: { id: backupRecord.id },
+            data: {
+              metadata: {
+                ...(backupRecord.metadata as any),
+                remoteUploadStatus: "failed",
+                remoteUploadError: error instanceof Error ? error.message : "SFTP upload failed",
+              },
+            },
+          });
+        }
+      } else if (mode === "stream") {
+        try {
+          const { streamAgentBackupToLocal } = await import("../services/backup-storage");
+          await streamAgentBackupToLocal(
+            this,
+            server.nodeId,
+            server.id,
+            server.uuid,
+            agentPath,
+            backupRecord.path,
+          );
+        } catch (error) {
+          this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to fetch stream backup");
+          }
+        }
 
         const retentionCount = server.backupRetentionCount ?? 0;
         const retentionDays = server.backupRetentionDays ?? 0;
@@ -894,6 +935,7 @@ export class WebSocketGateway {
                 const { deleteBackupFromStorage } = await import("../services/backup-storage");
                 await deleteBackupFromStorage(this, backup, {
                   id: server.id,
+                  uuid: server.uuid,
                   nodeId: server.nodeId,
                   node: { isOnline: server.node?.isOnline ?? false },
                 });
@@ -905,7 +947,6 @@ export class WebSocketGateway {
           }
         }
 
-        await this.routeToClients(message.serverId, message);
       } else if (message.type === "backup_restore_complete") {
         await this.routeToClients(message.serverId, message);
       } else if (message.type === "backup_delete_complete") {

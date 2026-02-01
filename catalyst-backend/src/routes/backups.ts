@@ -370,6 +370,7 @@ export async function backupRoutes(app: FastifyInstance) {
       const gateway = (app as any).wsGateway;
        await deleteBackupFromStorage(gateway, backup, {
          id: server.id,
+         uuid: server.uuid,
          nodeId: server.nodeId,
          node: server.node,
          backupS3Config: (server as any).backupS3Config,
@@ -488,6 +489,7 @@ export async function backupRoutes(app: FastifyInstance) {
           const response = await gateway.requestFromAgent(server.nodeId, {
             type: "download_backup_start",
             serverId: server.id,
+            serverUuid: server.uuid,
             backupPath: agentPath,
           });
           const requestId = response?.requestId as string | undefined;
@@ -499,6 +501,7 @@ export async function backupRoutes(app: FastifyInstance) {
             {
               type: "download_backup",
               serverId: server.id,
+              serverUuid: server.uuid,
               backupPath: agentPath,
               requestId,
             },
