@@ -183,6 +183,7 @@ const authenticate = async (request: any, reply: any) => {
     };
   } catch {
     reply.status(401).send({ error: "Unauthorized" });
+    return;
   }
 };
 

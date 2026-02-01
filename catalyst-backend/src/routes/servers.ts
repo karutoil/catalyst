@@ -738,15 +738,18 @@ export async function serverRoutes(app: FastifyInstance) {
         0
       );
 
-      console.log('DEBUG: Node resource check', {
-        nodeId: node.id,
-        maxMemory: node.maxMemoryMb,
-        maxCpu: node.maxCpuCores,
-        totalAllocatedMemory,
-        totalAllocatedCpu,
-        requestedMemory: allocatedMemoryMb,
-        requestedCpu: allocatedCpuCores
-      });
+      request.log.debug(
+        {
+          nodeId: node.id,
+          maxMemory: node.maxMemoryMb,
+          maxCpu: node.maxCpuCores,
+          totalAllocatedMemory,
+          totalAllocatedCpu,
+          requestedMemory: allocatedMemoryMb,
+          requestedCpu: allocatedCpuCores,
+        },
+        "Node resource check"
+      );
 
       if (totalAllocatedMemory + allocatedMemoryMb > node.maxMemoryMb) {
         return reply.status(400).send({

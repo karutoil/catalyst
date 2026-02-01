@@ -127,8 +127,10 @@ export async function backupRoutes(app: FastifyInstance) {
         page?: string;
       };
 
-      const limitNum = parseInt(limit);
-      const pageNum = parseInt(page);
+      const parsedLimit = parseInt(limit);
+      const parsedPage = parseInt(page);
+      const limitNum = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 50;
+      const pageNum = Number.isFinite(parsedPage) ? Math.max(parsedPage, 1) : 1;
       const skip = (pageNum - 1) * limitNum;
 
       if (process.env.SUSPENSION_ENFORCED !== "false") {

@@ -146,7 +146,45 @@ export async function templateRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: "Template not found" });
       }
 
-      const nextData: Record<string, unknown> = { ...(request.body as any) };
+      const { name, description, author, version, image, installImage, startup, stopCommand, sendSignalTo, variables, installScript, configFile, supportedPorts, allocatedMemoryMb, allocatedCpuCores, features } =
+        request.body as {
+          name?: string;
+          description?: string;
+          author?: string;
+          version?: string;
+          image?: string;
+          installImage?: string;
+          startup?: string;
+          stopCommand?: string;
+          sendSignalTo?: string;
+          variables?: any[];
+          installScript?: string;
+          configFile?: string;
+          supportedPorts?: number[];
+          allocatedMemoryMb?: number;
+          allocatedCpuCores?: number;
+          features?: Record<string, any>;
+        };
+      const nextData: Record<string, unknown> = {};
+      if (name !== undefined) nextData.name = name;
+      if (description !== undefined) nextData.description = description;
+      if (author !== undefined) nextData.author = author;
+      if (version !== undefined) nextData.version = version;
+      if (image !== undefined) nextData.image = image;
+      if (installImage !== undefined) nextData.installImage = installImage;
+      if (startup !== undefined) nextData.startup = startup;
+      if (stopCommand !== undefined) nextData.stopCommand = stopCommand;
+      if (sendSignalTo !== undefined) nextData.sendSignalTo = sendSignalTo;
+      if (variables !== undefined) nextData.variables = variables;
+      if (installScript !== undefined) nextData.installScript = installScript;
+      if (supportedPorts !== undefined) nextData.supportedPorts = supportedPorts;
+      if (allocatedMemoryMb !== undefined) nextData.allocatedMemoryMb = allocatedMemoryMb;
+      if (allocatedCpuCores !== undefined) nextData.allocatedCpuCores = allocatedCpuCores;
+      if (features !== undefined) {
+        nextData.features = { ...features, ...(configFile ? { configFile } : {}) };
+      } else if (configFile !== undefined) {
+        nextData.features = { ...(template.features as Record<string, unknown>), configFile };
+      }
       if (images) {
         nextData.images = Array.isArray(images) ? images : [];
       }

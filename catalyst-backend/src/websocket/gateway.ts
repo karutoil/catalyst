@@ -1,6 +1,6 @@
 import pino from "pino";
 import crypto from "crypto";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { FastifyRequest } from "fastify";
 import { auth } from "../auth";
 import {
@@ -418,31 +418,36 @@ export class WebSocketGateway {
 
         // Use an upsert-style INSERT ... ON CONFLICT statement to dedupe and keep peaks
         // We use GREATEST(...) for memory / network to preserve spikes when backfilling
-        const tuples: string[] = [];
+        const tuples: Prisma.Sql[] = [];
         for (const it of items) {
-          const sid = String(it.serverId).replace(/'/g, "''");
           const cpu = Number(it.cpuPercent) || 0;
           const mem = Number(it.memoryUsageMb) || 0;
-          const rx = BigInt(it.networkRxBytes || 0).toString();
-          const tx = BigInt(it.networkTxBytes || 0).toString();
+          const rx = BigInt(it.networkRxBytes || 0);
+          const tx = BigInt(it.networkTxBytes || 0);
           const dio = Number(it.diskIoMb) || 0;
           const dusg = Number(it.diskUsageMb) || 0;
-          const tsMs = Number(new Date(it.timestamp).getTime());
-          tuples.push(`(DEFAULT, '${sid}', ${cpu}, ${mem}, ${rx}, ${tx}, ${dio}, ${dusg}, to_timestamp(${tsMs}::double precision / 1000.0))`);
+          const ts = new Date(it.timestamp);
+          tuples.push(
+            Prisma.sql`(DEFAULT, ${it.serverId}, ${cpu}, ${mem}, ${rx}, ${tx}, ${dio}, ${dusg}, ${ts})`
+          );
         }
 
         if (tuples.length === 0) return;
 
-        const sql = `INSERT INTO "ServerMetrics" ("id","serverId","cpuPercent","memoryUsageMb","networkRxBytes","networkTxBytes","diskIoMb","diskUsageMb","timestamp") VALUES ${tuples.join(',')} ON CONFLICT ("serverId","timestamp") DO UPDATE SET
-          "cpuPercent" = EXCLUDED."cpuPercent",
-          "memoryUsageMb" = GREATEST("ServerMetrics"."memoryUsageMb", EXCLUDED."memoryUsageMb"),
-          "networkRxBytes" = GREATEST("ServerMetrics"."networkRxBytes", EXCLUDED."networkRxBytes"),
-          "networkTxBytes" = GREATEST("ServerMetrics"."networkTxBytes", EXCLUDED."networkTxBytes"),
-          "diskIoMb" = GREATEST("ServerMetrics"."diskIoMb", EXCLUDED."diskIoMb"),
-          "diskUsageMb" = GREATEST("ServerMetrics"."diskUsageMb", EXCLUDED."diskUsageMb")`;
+        const sql = Prisma.sql`
+          INSERT INTO "ServerMetrics" ("id","serverId","cpuPercent","memoryUsageMb","networkRxBytes","networkTxBytes","diskIoMb","diskUsageMb","timestamp")
+          VALUES ${Prisma.join(tuples)}
+          ON CONFLICT ("serverId","timestamp") DO UPDATE SET
+            "cpuPercent" = EXCLUDED."cpuPercent",
+            "memoryUsageMb" = GREATEST("ServerMetrics"."memoryUsageMb", EXCLUDED."memoryUsageMb"),
+            "networkRxBytes" = GREATEST("ServerMetrics"."networkRxBytes", EXCLUDED."networkRxBytes"),
+            "networkTxBytes" = GREATEST("ServerMetrics"."networkTxBytes", EXCLUDED."networkTxBytes"),
+            "diskIoMb" = GREATEST("ServerMetrics"."diskIoMb", EXCLUDED."diskIoMb"),
+            "diskUsageMb" = GREATEST("ServerMetrics"."diskUsageMb", EXCLUDED."diskUsageMb")
+        `;
 
         try {
-          await this.prisma.$executeRawUnsafe(sql);
+          await this.prisma.$executeRaw(sql);
         } catch (err) {
           this.logger.error({ err }, 'Failed to upsert batched metrics, falling back to per-item safe upsert');
 

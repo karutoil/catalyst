@@ -15,8 +15,10 @@ export async function metricsRoutes(app: FastifyInstance) {
       const { hours, limit } = request.query as { hours?: string; limit?: string };
 
       // Calculate time range upfront
-      const hoursBack = hours ? parseInt(hours) : 1;
-      const maxRecords = limit ? parseInt(limit) : 100;
+      const parsedHours = hours ? parseInt(hours) : 1;
+      const parsedLimit = limit ? parseInt(limit) : 100;
+      const hoursBack = Number.isFinite(parsedHours) ? Math.min(Math.max(parsedHours, 1), 168) : 1;
+      const maxRecords = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 1000) : 100;
       const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
 
       // Run ALL queries in parallel - server, metrics, and access all at once
