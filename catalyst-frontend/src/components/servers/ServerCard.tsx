@@ -32,72 +32,98 @@ function ServerCard({ server }: { server: Server }) {
       : null;
 
   const isSuspended = server.status === 'suspended';
+  const cpuBar = cpuPercent ?? 0;
+  const memoryBar = memoryPercent ?? 0;
+  const diskBar = diskPercent ?? 0;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark dark:hover:border-primary-500/30">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
+    <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-surface-light transition-all duration-300 hover:-translate-y-1 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                to={`/servers/${server.id}`}
+                className="text-lg font-semibold text-slate-900 transition-all duration-300 hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+              >
+                {server.name}
+              </Link>
+              <ServerStatusBadge status={server.status} />
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-400">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 dark:border-slate-800 dark:bg-slate-950/50">
+                Node: {server.nodeName ?? server.nodeId}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 dark:border-slate-800 dark:bg-slate-950/50">
+                IP: {host}:{port}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <ServerControls serverId={server.id} status={server.status} />
             <Link
-              to={`/servers/${server.id}`}
-              className="text-lg font-semibold text-slate-900 transition-all duration-300 hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+              to={isSuspended ? '#' : `/servers/${server.id}/console`}
+              className={`rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 ${
+                isSuspended
+                  ? 'cursor-not-allowed opacity-60'
+                  : 'hover:border-primary-500 hover:text-slate-900 dark:hover:border-primary-500/30'
+              }`}
+              onClick={(event) => {
+                if (isSuspended) {
+                  event.preventDefault();
+                  notifyError('Server is suspended');
+                }
+              }}
             >
-              {server.name}
+              Open console
             </Link>
-            <ServerStatusBadge status={server.status} />
-          </div>
-          <div className="text-xs text-slate-600 dark:text-slate-400">
-            Node: {server.nodeName ?? server.nodeId}
-          </div>
-          <div className="text-xs text-slate-600 dark:text-slate-400">
-            IP: {host}:{port}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <ServerControls serverId={server.id} status={server.status} />
-          <Link
-            to={isSuspended ? '#' : `/servers/${server.id}/console`}
-            className={`rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 ${
-              isSuspended
-                ? 'cursor-not-allowed opacity-60'
-                : 'hover:border-primary-500 hover:text-slate-900 dark:hover:border-primary-500/30'
-            }`}
-            onClick={(event) => {
-              if (isSuspended) {
-                event.preventDefault();
-                notifyError('Server is suspended');
-              }
-            }}
-          >
-            Open console
-          </Link>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600 dark:text-slate-300">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:hover:border-primary-500/30">
-          <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-            CPU
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-surface-light transition-all duration-300 group-hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:group-hover:border-primary-500/30">
+            <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <span>CPU</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {formatPercent(cpuPercent)}
+              </span>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
+              <div
+                className="h-2 rounded-full bg-emerald-500 transition-all duration-300"
+                style={{ width: `${cpuBar}%` }}
+              />
+            </div>
           </div>
-          <div className="font-semibold text-slate-900 dark:text-slate-100">
-            {formatPercent(cpuPercent)}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-surface-light transition-all duration-300 group-hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:group-hover:border-primary-500/30">
+            <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <span>Memory</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {formatPercent(memoryPercent)}
+              </span>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
+              <div
+                className="h-2 rounded-full bg-sky-500 transition-all duration-300"
+                style={{ width: `${memoryBar}%` }}
+              />
+            </div>
           </div>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:hover:border-primary-500/30">
-          <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-            Memory
-          </div>
-          <div className="font-semibold text-slate-900 dark:text-slate-100">
-            {formatPercent(memoryPercent)}
-          </div>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:hover:border-primary-500/30">
-          <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-            Disk
-          </div>
-          <div className="font-semibold text-slate-900 dark:text-slate-100">
-            {server.diskUsageMb != null && diskTotalMb
-              ? `${server.diskUsageMb} / ${diskTotalMb} MB (${formatPercent(diskPercent)})`
-              : formatPercent(diskPercent)}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-surface-light transition-all duration-300 group-hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/40 dark:shadow-surface-dark dark:group-hover:border-primary-500/30">
+            <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <span>Disk</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {server.diskUsageMb != null && diskTotalMb
+                  ? `${server.diskUsageMb} / ${diskTotalMb} MB`
+                  : formatPercent(diskPercent)}
+              </span>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
+              <div
+                className="h-2 rounded-full bg-amber-500 transition-all duration-300"
+                style={{ width: `${diskBar}%` }}
+              />
+            </div>
           </div>
         </div>
       </div>
