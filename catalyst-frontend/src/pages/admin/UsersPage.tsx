@@ -147,27 +147,41 @@ function UsersPage() {
     items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <AdminTabs />
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">User Management</h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Create and manage administrator accounts.
-          </p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">User Management</h1>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Create and manage administrator accounts with role-based access.
+            </p>
+          </div>
+          <button
+            className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500"
+            onClick={() => {
+              setIsCreateOpen(true);
+              setRoleSearch('');
+              setServerSearch('');
+            }}
+          >
+            Create user
+          </button>
         </div>
-        <button
-          className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500"
-          onClick={() => {
-            setIsCreateOpen(true);
-            setRoleSearch('');
-            setServerSearch('');
-          }}
-        >
-          Create user
-        </button>
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {data?.pagination?.total ?? users.length} total users
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {roles.length} roles available
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {servers.length} servers assignable
+          </span>
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         <label className="text-xs text-slate-600 dark:text-slate-300">
           Search
           <Input
@@ -180,6 +194,9 @@ function UsersPage() {
             className="mt-1 w-56"
           />
         </label>
+        <div className="text-xs text-slate-500 dark:text-slate-400">
+          Showing {users.length} of {data?.pagination?.total ?? users.length}
+        </div>
       </div>
 
       {isLoading ? (
@@ -187,44 +204,25 @@ function UsersPage() {
           Loading users...
         </div>
       ) : users.length ? (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark dark:border-slate-800 dark:bg-slate-950/60">
-          <div className="grid grid-cols-12 gap-3 border-b border-slate-200 px-4 py-3 text-xs uppercase text-slate-500 dark:text-slate-500 dark:border-slate-800">
-            <div className="col-span-4">User</div>
-            <div className="col-span-3">Email</div>
-            <div className="col-span-3">Roles</div>
-            <div className="col-span-2 text-right">Actions</div>
-          </div>
-          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
             {users.map((user) => (
               <div
                 key={user.id}
-                className="grid grid-cols-12 gap-3 px-4 py-3 text-sm text-slate-600 dark:text-slate-200"
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-surface-light transition-all duration-300 hover:-translate-y-1 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/60 dark:shadow-surface-dark dark:hover:border-primary-500/30"
               >
-                <div className="col-span-4">
-                  <div className="font-semibold text-slate-900 dark:text-slate-100">{user.username}</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-500">
-                    Created {new Date(user.createdAt).toLocaleDateString()}
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      {user.username}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-500">
+                      Created {new Date(user.createdAt).toLocaleDateString()}
+                    </div>
                   </div>
-                </div>
-                <div className="col-span-3 text-slate-600 dark:text-slate-300">{user.email}</div>
-                <div className="col-span-3 flex flex-wrap gap-2">
-                  {user.roles.length ? (
-                    user.roles.map((role) => (
-                      <span
-                        key={role.id}
-                        className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
-                      >
-                        {role.name}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-500 dark:text-slate-500">No roles</span>
-                  )}
-                </div>
-                <div className="col-span-2 flex justify-end">
                   <div className="flex gap-2">
                     <button
-                      className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-primary-500/30"
+                      className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:border-primary-500/30"
                       onClick={() => {
                         const nextId = user.id;
                         const requestId = editingRequestRef.current + 1;
@@ -252,7 +250,7 @@ function UsersPage() {
                       Edit
                     </button>
                     <button
-                      className="rounded-md border border-rose-700 px-2 py-1 text-xs text-rose-200 hover:border-rose-500"
+                      className="rounded-md border border-rose-700 px-2 py-1 text-xs font-semibold text-rose-200 transition-all duration-300 hover:border-rose-500"
                       onClick={() => deleteMutation.mutate(user.id)}
                       disabled={deleteMutation.isPending}
                     >
@@ -260,25 +258,51 @@ function UsersPage() {
                     </button>
                   </div>
                 </div>
+                <div className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                    {user.email}
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-500">
+                      Roles
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {user.roles.length ? (
+                        user.roles.map((role) => (
+                          <span
+                            key={role.id}
+                            className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                          >
+                            {role.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-500 dark:text-slate-500">No roles</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
           {pagination ? (
-            <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-surface-light dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400 dark:shadow-surface-dark">
               <span>
                 Page {pagination.page} of {pagination.totalPages}
               </span>
               <div className="flex gap-2">
                 <button
-                  className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 disabled:opacity-50"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-200 disabled:opacity-50"
                   onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                   disabled={page <= 1}
                 >
                   Previous
                 </button>
                 <button
-                  className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 disabled:opacity-50"
-                  onClick={() => setPage((prev) => (pagination.page < pagination.totalPages ? prev + 1 : prev))}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-200 disabled:opacity-50"
+                  onClick={() =>
+                    setPage((prev) => (pagination.page < pagination.totalPages ? prev + 1 : prev))
+                  }
                   disabled={pagination.page >= pagination.totalPages}
                 >
                   Next
