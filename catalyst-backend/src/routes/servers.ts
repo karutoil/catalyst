@@ -684,6 +684,14 @@ export async function serverRoutes(app: FastifyInstance) {
         });
       }
 
+      const templateFeatures = (template.features as any) || {};
+      const templateBackupAllocation = Number(templateFeatures.backupAllocationMb);
+      const templateDatabaseAllocation = Number(templateFeatures.databaseAllocation);
+      const resolvedBackupAllocationMb =
+        backupAllocationMb ?? (Number.isFinite(templateBackupAllocation) ? templateBackupAllocation : undefined);
+      const resolvedDatabaseAllocation =
+        databaseAllocation ?? (Number.isFinite(templateDatabaseAllocation) ? templateDatabaseAllocation : undefined);
+
       // Validate variable values against rules
       for (const variable of templateVariables) {
         const value = resolvedEnvironment?.[variable.name];
@@ -729,6 +737,20 @@ export async function serverRoutes(app: FastifyInstance) {
 
       if (!node) {
         return reply.status(404).send({ error: "Node not found" });
+      }
+
+      if (
+        resolvedDatabaseAllocation !== undefined &&
+        (!Number.isFinite(resolvedDatabaseAllocation) || resolvedDatabaseAllocation < 0)
+      ) {
+        return reply.status(400).send({ error: "databaseAllocation must be 0 or more" });
+      }
+
+      if (
+        resolvedBackupAllocationMb !== undefined &&
+        (!Number.isFinite(resolvedBackupAllocationMb) || resolvedBackupAllocationMb < 0)
+      ) {
+        return reply.status(400).send({ error: "backupAllocationMb must be 0 or more" });
       }
 
       // Check resource availability
@@ -859,8 +881,8 @@ export async function serverRoutes(app: FastifyInstance) {
               allocatedMemoryMb,
               allocatedCpuCores,
               allocatedDiskMb,
-              backupAllocationMb: backupAllocationMb ?? 0,
-              databaseAllocation: databaseAllocation ?? 0,
+              backupAllocationMb: resolvedBackupAllocationMb ?? 0,
+              databaseAllocation: resolvedDatabaseAllocation ?? 0,
               primaryPort: allocationPort ?? validatedPrimaryPort,
               portBindings: resolvedPortBindings,
               networkMode: desiredNetworkMode,
