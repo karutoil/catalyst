@@ -19,20 +19,36 @@ function AdminNodesPage() {
   const locationId = nodes[0]?.locationId ?? '';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <AdminTabs />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Nodes</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Track connected infrastructure nodes.</p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Nodes</h1>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Track connected infrastructure and node availability.
+            </p>
+          </div>
+          {isAdmin ? (
+            <NodeCreateModal locationId={locationId} />
+          ) : (
+            <span className="text-xs text-slate-500 dark:text-slate-500">Admin access required</span>
+          )}
         </div>
-        {isAdmin ? (
-          <NodeCreateModal locationId={locationId} />
-        ) : (
-          <span className="text-xs text-slate-500 dark:text-slate-500">Admin access required</span>
-        )}
+        <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-400">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {nodes.length} nodes detected
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {nodes.filter((node) => node.isOnline).length} online
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {nodes.filter((node) => !node.isOnline).length} offline
+          </span>
+        </div>
       </div>
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 px-4 py-3">
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:border-slate-800 dark:bg-slate-950/60 dark:shadow-surface-dark">
         <label className="text-xs text-slate-600 dark:text-slate-300">
           Search
           <Input
@@ -42,6 +58,9 @@ function AdminNodesPage() {
             className="mt-1 w-56"
           />
         </label>
+        <div className="text-xs text-slate-500 dark:text-slate-400">
+          Showing {nodes.length} node{nodes.length === 1 ? '' : 's'}
+        </div>
       </div>
       {isLoading ? (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 px-4 py-6 text-slate-600 dark:text-slate-200">
