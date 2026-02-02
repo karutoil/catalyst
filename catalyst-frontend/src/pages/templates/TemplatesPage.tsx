@@ -29,23 +29,35 @@ function TemplatesPage({ hideHeader }: Props) {
   }, [templates, search]);
 
   return (
-    <div className={hideHeader ? '' : 'space-y-4'}>
+    <div className={hideHeader ? '' : 'space-y-6'}>
       {!hideHeader ? (
         <>
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Templates</h1>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Define server templates with images and start commands.
-              </p>
+                <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Templates</h1>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Define server templates with images and start commands.
+                </p>
               </div>
               {isAdmin ? (
                 <TemplateCreateModal />
               ) : (
-              <span className="text-xs text-slate-500 dark:text-slate-400">Admin access required</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  Admin access required
+                </span>
               )}
             </div>
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-400">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+                {templates.length} templates available
+              </span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+                {filteredTemplates.length} shown
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
             <label className="text-xs text-slate-600 dark:text-slate-300">
               Search
               <Input
@@ -55,6 +67,10 @@ function TemplatesPage({ hideHeader }: Props) {
                 className="mt-1 w-56"
               />
             </label>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Showing {filteredTemplates.length} template
+              {filteredTemplates.length === 1 ? '' : 's'}
+            </div>
           </div>
         </>
       ) : null}

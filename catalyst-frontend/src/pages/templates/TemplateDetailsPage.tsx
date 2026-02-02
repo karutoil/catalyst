@@ -39,11 +39,11 @@ function TemplateDetailsPage() {
   const imageVariants = template.images ?? [];
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark dark:hover:border-primary-500/30">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="h-14 w-14 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+            <div className="h-14 w-14 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
               {iconUrl ? (
                 <img src={iconUrl} alt="" className="h-full w-full object-cover" />
               ) : (
@@ -56,15 +56,20 @@ function TemplateDetailsPage() {
               <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
                 {template.name}
               </h1>
-              <div className="text-sm text-slate-600 dark:text-slate-400">
-                {template.author} · v{template.version}
+              <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-400">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 dark:border-slate-800 dark:bg-slate-950/60">
+                  {template.author}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 dark:border-slate-800 dark:bg-slate-950/60">
+                  v{template.version}
+                </span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <Link
               to="/admin/templates"
-              className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
+              className="rounded-full border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
             >
               Back
             </Link>
@@ -75,7 +80,7 @@ function TemplateDetailsPage() {
                   templateId={template.id}
                   templateName={template.name}
                   onDeleted={() => navigate('/admin/templates')}
-                  buttonClassName="rounded-md border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
+                  buttonClassName="rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
                 />
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                   Admin
@@ -90,7 +95,7 @@ function TemplateDetailsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Runtime</div>
           <div className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
             <div className="flex items-center justify-between gap-4">
@@ -146,7 +151,7 @@ function TemplateDetailsPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Startup</div>
           <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
             Variables are substituted before container start.
@@ -167,7 +172,7 @@ function TemplateDetailsPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+      <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Variables</div>
         <div className="mt-3">
           <TemplateVariablesList variables={template.variables ?? []} />
