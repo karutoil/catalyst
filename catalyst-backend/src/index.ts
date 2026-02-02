@@ -29,6 +29,7 @@ import { getSecuritySettings } from "./services/mailer";
 import { startAuditRetention } from "./services/audit-retention";
 import { auth } from "./auth";
 import { fromNodeHeaders } from "better-auth/node";
+import { normalizeHostIp } from "./utils/ipam";
 
 const logger = pino({
   transport: {
@@ -88,6 +89,16 @@ taskScheduler.setTaskExecutor({
     };
     if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
       environment.CATALYST_NETWORK_IP = server.primaryIp;
+    }
+    if (server.networkMode === "host" && !environment.CATALYST_NETWORK_IP) {
+      try {
+        environment.CATALYST_NETWORK_IP = normalizeHostIp(server.node.publicAddress) ?? undefined;
+      } catch (error: any) {
+        logger.warn(
+          { nodeId: server.nodeId, hostIp: server.node.publicAddress, error: error.message },
+          "Invalid host network IP"
+        );
+      }
     }
 
     if (action === "backup") {

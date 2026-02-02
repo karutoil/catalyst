@@ -9,6 +9,7 @@ import {
   CatalystError,
   ErrorCodes,
 } from "../shared-types";
+import { normalizeHostIp } from "../utils/ipam";
 
 interface ConnectedAgent {
   nodeId: string;
@@ -631,6 +632,20 @@ export class WebSocketGateway {
             ...(server.environment as Record<string, string>),
             SERVER_DIR: fullServerDir,
           };
+          if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
+            environment.CATALYST_NETWORK_IP = server.primaryIp;
+          }
+          if (server.networkMode === "host" && !environment.CATALYST_NETWORK_IP) {
+            try {
+              environment.CATALYST_NETWORK_IP =
+                normalizeHostIp(server.node.publicAddress) ?? undefined;
+            } catch (error: any) {
+              this.logger.warn(
+                { nodeId: server.nodeId, hostIp: server.node.publicAddress, error: error.message },
+                "Invalid host network IP"
+              );
+            }
+          }
           const restartSent = await this.sendToAgent(server.nodeId, {
             type: "start_server",
             serverId: server.id,

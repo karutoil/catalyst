@@ -1160,7 +1160,7 @@ function ServerDetailsPage() {
   const isBridge = server.networkMode === 'bridge';
   const nodeIp = isBridge
     ? server.node?.publicAddress ?? server.node?.hostname ?? 'n/a'
-    : server.primaryIp ?? 'n/a';
+    : server.connection?.host ?? server.primaryIp ?? 'n/a';
   const nodePort = server.primaryPort ?? 'n/a';
   const diskLimitMb = server.allocatedDiskMb ?? 0;
   const liveDiskUsageMb = liveMetrics?.diskUsageMb;

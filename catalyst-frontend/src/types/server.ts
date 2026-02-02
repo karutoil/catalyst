@@ -97,6 +97,7 @@ export interface Server {
   connection?: {
     assignedIp?: string | null;
     nodeIp?: string | null;
+    hostNetworkIp?: string | null;
     host?: string | null;
     port?: number | null;
   };

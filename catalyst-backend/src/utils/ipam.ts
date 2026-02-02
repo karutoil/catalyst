@@ -85,6 +85,22 @@ const getReservedIps = (pool: { reserved?: Prisma.JsonValue; gateway?: string | 
   return reserved;
 };
 
+const IPV4_REGEX =
+  /^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)$/;
+
+export const normalizeHostIp = (value?: string | null) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!IPV4_REGEX.test(trimmed)) {
+    throw new Error("Host IP must be a valid IPv4 address");
+  }
+  if (trimmed.startsWith("127.")) {
+    throw new Error("Host IP must be a non-loopback IPv4 address");
+  }
+  return trimmed;
+};
+
 export const shouldUseIpam = (networkMode?: string) => {
   if (!networkMode) return false;
   return networkMode !== "bridge" && networkMode !== "host";

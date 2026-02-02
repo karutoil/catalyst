@@ -16,6 +16,7 @@ import { auth } from "../auth";
 import {
   allocateIpForServer,
   releaseIpForServer,
+  normalizeHostIp,
   shouldUseIpam,
 } from "../utils/ipam";
 import {
@@ -206,17 +207,39 @@ const resolvePrimaryHostPort = (server: any) => {
   return bindings[primaryPort] ?? primaryPort;
 };
 
+const resolveHostNetworkIp = (server: any, fallbackNode?: { publicAddress?: string }) => {
+  if (server?.networkMode !== "host") {
+    return null;
+  }
+  if (typeof server?.environment?.CATALYST_NETWORK_IP === "string") {
+    try {
+      return normalizeHostIp(server.environment.CATALYST_NETWORK_IP);
+    } catch {
+      return null;
+    }
+  }
+  const candidate = fallbackNode?.publicAddress ?? server?.node?.publicAddress ?? null;
+  if (!candidate) return null;
+  try {
+    return normalizeHostIp(candidate);
+  } catch {
+    return null;
+  }
+};
+
 const buildConnectionInfo = (
   server: any,
   fallbackNode?: { publicAddress?: string }
 ) => {
   const assignedIp = server.primaryIp ?? null;
   const nodeIp = fallbackNode?.publicAddress ?? server.node?.publicAddress ?? null;
-  const host = assignedIp || nodeIp || null;
+  const hostNetworkIp = resolveHostNetworkIp(server, fallbackNode);
+  const host = assignedIp || hostNetworkIp || nodeIp || null;
 
   return {
     assignedIp,
     nodeIp,
+    hostNetworkIp,
     host,
     port: resolvePrimaryHostPort(server),
   };
@@ -801,6 +824,7 @@ export async function serverRoutes(app: FastifyInstance) {
           : "mc-lan-static";
       const hasPrimaryIp = primaryIp !== undefined;
       const normalizedPrimaryIp = typeof primaryIp === "string" ? primaryIp.trim() : null;
+      const isHostNetwork = desiredNetworkMode === "host";
       if (allocationId && shouldUseIpam(desiredNetworkMode)) {
         return reply.status(400).send({
           error: "Allocation IDs are only valid for bridge networking",
@@ -816,15 +840,41 @@ export async function serverRoutes(app: FastifyInstance) {
           error: "Primary IP can only be set for IPAM networks",
         });
       }
+      if (isHostNetwork && normalizedPrimaryIp) {
+        return reply.status(400).send({
+          error: "Primary IP is not used for host networking",
+        });
+      }
       const resolvedPortBindings = normalizePortBindings(portBindings, validatedPrimaryPort);
+      let resolvedHostIp: string | null = null;
+      try {
+        resolvedHostIp =
+          typeof resolvedEnvironment?.CATALYST_NETWORK_IP === "string"
+            ? normalizeHostIp(resolvedEnvironment.CATALYST_NETWORK_IP)
+            : null;
+      } catch (error: any) {
+        return reply.status(400).send({ error: error.message });
+      }
+      let hostNetworkIp: string | null = null;
+      if (isHostNetwork) {
+        try {
+          hostNetworkIp = resolvedHostIp ?? normalizeHostIp(node.publicAddress);
+        } catch (error: any) {
+          return reply.status(400).send({ error: error.message });
+        }
+      }
+      const nextEnvironment = isHostNetwork && hostNetworkIp
+        ? {
+            ...(resolvedEnvironment || {}),
+            CATALYST_NETWORK_IP: hostNetworkIp,
+          }
+        : resolvedEnvironment;
 
       if (!shouldUseIpam(desiredNetworkMode) && desiredNetworkMode !== "host") {
         const usedPorts = collectUsedHostPortsByIp(node.servers);
         const conflictPort = findPortConflict(
           usedPorts,
-          resolvedEnvironment?.CATALYST_NETWORK_IP
-            ? String(resolvedEnvironment.CATALYST_NETWORK_IP).trim()
-            : null,
+          resolvedHostIp,
           Object.values(resolvedPortBindings)
         );
         if (conflictPort) {
@@ -837,10 +887,7 @@ export async function serverRoutes(app: FastifyInstance) {
         ? normalizedPrimaryIp && normalizedPrimaryIp.length > 0
           ? normalizedPrimaryIp
           : null
-        : resolvedEnvironment?.CATALYST_NETWORK_IP &&
-          String(resolvedEnvironment.CATALYST_NETWORK_IP).trim().length > 0
-          ? String(resolvedEnvironment.CATALYST_NETWORK_IP).trim()
-          : null;
+        : resolvedHostIp ?? null;
 
       let allocationIp: string | null = null;
       let allocationPort: number | null = null;
@@ -890,7 +937,7 @@ export async function serverRoutes(app: FastifyInstance) {
               portBindings: resolvedPortBindings,
               networkMode: desiredNetworkMode,
               environment: {
-                ...resolvedEnvironment,
+                ...nextEnvironment,
                 TEMPLATE_IMAGE: resolvedImage,
               },
             },
@@ -903,7 +950,7 @@ export async function serverRoutes(app: FastifyInstance) {
                 primaryIp: allocationIp,
                 primaryPort: allocationPort ?? validatedPrimaryPort,
                 environment: {
-                  ...(resolvedEnvironment || {}),
+                  ...(nextEnvironment || {}),
                   TEMPLATE_IMAGE: resolvedImage,
                   CATALYST_NETWORK_IP: allocationIp,
                 },
@@ -928,8 +975,8 @@ export async function serverRoutes(app: FastifyInstance) {
               throw new Error("No IP pool configured for this network");
             }
 
-            const nextEnvironment = {
-              ...(resolvedEnvironment || {}),
+            const ipamEnvironment = {
+              ...(nextEnvironment || {}),
               TEMPLATE_IMAGE: resolvedImage,
               CATALYST_NETWORK_IP: allocatedIp,
             };
@@ -938,13 +985,13 @@ export async function serverRoutes(app: FastifyInstance) {
               where: { id: created.id },
               data: {
                 primaryIp: allocatedIp,
-                environment: nextEnvironment,
+                environment: ipamEnvironment,
               },
             });
 
             return {
               ...updated,
-              environment: nextEnvironment,
+              environment: ipamEnvironment,
             } as typeof updated;
           }
 
@@ -1233,6 +1280,23 @@ export async function serverRoutes(app: FastifyInstance) {
         Object.keys(resolvedPortBindings).length > 0
           ? resolvedPortBindings
           : normalizePortBindings({}, nextPrimaryPort);
+      let resolvedHostIp: string | null = null;
+      if (typeof environment?.CATALYST_NETWORK_IP === "string") {
+        try {
+          resolvedHostIp = normalizeHostIp(environment.CATALYST_NETWORK_IP);
+        } catch (error: any) {
+          return reply.status(400).send({ error: error.message });
+        }
+      }
+      const isHostNetwork = server.networkMode === "host";
+      let hostNetworkIp: string | null = null;
+      if (isHostNetwork) {
+        try {
+          hostNetworkIp = resolvedHostIp ?? normalizeHostIp(server.node.publicAddress);
+        } catch (error: any) {
+          return reply.status(400).send({ error: error.message });
+        }
+      }
 
       if (!shouldUseIpam(server.networkMode ?? undefined) && server.networkMode !== "host") {
         const siblingServers = await prisma.server.findMany({
@@ -1249,11 +1313,7 @@ export async function serverRoutes(app: FastifyInstance) {
           },
         });
         const usedPorts = collectUsedHostPortsByIp(siblingServers, serverId);
-        const hostIp =
-          typeof environment?.CATALYST_NETWORK_IP === "string" &&
-          environment.CATALYST_NETWORK_IP.trim().length > 0
-            ? environment.CATALYST_NETWORK_IP.trim()
-            : server.primaryIp ?? null;
+        const hostIp = resolvedHostIp ?? server.primaryIp ?? null;
         const conflictPort = findPortConflict(
           usedPorts,
           hostIp,
@@ -1269,6 +1329,11 @@ export async function serverRoutes(app: FastifyInstance) {
       if (hasPrimaryIpUpdate && !shouldUseIpam(server.networkMode ?? undefined)) {
         return reply.status(400).send({
           error: "Primary IP can only be updated for IPAM networks",
+        });
+      }
+      if (hasPrimaryIpUpdate && isHostNetwork && normalizedPrimaryIp) {
+        return reply.status(400).send({
+          error: "Primary IP is not used for host networking",
         });
       }
 
@@ -1312,6 +1377,11 @@ export async function serverRoutes(app: FastifyInstance) {
           } else {
             delete nextEnvironment.CATALYST_NETWORK_IP;
           }
+        } else if (isHostNetwork && hostNetworkIp) {
+          nextEnvironment = {
+            ...(environment || server.environment || {}),
+            CATALYST_NETWORK_IP: hostNetworkIp,
+          };
         }
 
         const updatedServer = await tx.server.update({
@@ -3666,8 +3736,12 @@ export async function serverRoutes(app: FastifyInstance) {
       if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
         environment.CATALYST_NETWORK_IP = server.primaryIp;
       }
-      if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
-        environment.CATALYST_NETWORK_IP = server.primaryIp;
+      if (server.networkMode === "host" && !environment.CATALYST_NETWORK_IP) {
+        try {
+          environment.CATALYST_NETWORK_IP = normalizeHostIp(server.node.publicAddress);
+        } catch (error: any) {
+          return reply.status(400).send({ error: error.message });
+        }
       }
 
       const success = await gateway.sendToAgent(server.nodeId, {
@@ -3782,6 +3856,16 @@ export async function serverRoutes(app: FastifyInstance) {
       if (server.template?.image) {
         const resolvedImage = resolveTemplateImage(server.template, environment);
         environment.TEMPLATE_IMAGE = resolvedImage;
+      }
+      if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
+        environment.CATALYST_NETWORK_IP = server.primaryIp;
+      }
+      if (server.networkMode === "host" && !environment.CATALYST_NETWORK_IP) {
+        try {
+          environment.CATALYST_NETWORK_IP = normalizeHostIp(server.node.publicAddress);
+        } catch (error: any) {
+          return reply.status(400).send({ error: error.message });
+        }
       }
 
       const success = await gateway.sendToAgent(server.nodeId, {
@@ -3974,6 +4058,13 @@ export async function serverRoutes(app: FastifyInstance) {
       }
       if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
         environment.CATALYST_NETWORK_IP = server.primaryIp;
+      }
+      if (server.networkMode === "host" && !environment.CATALYST_NETWORK_IP) {
+        try {
+          environment.CATALYST_NETWORK_IP = normalizeHostIp(server.node.publicAddress);
+        } catch (error: any) {
+          return reply.status(400).send({ error: error.message });
+        }
       }
 
       const success = await gateway.sendToAgent(server.nodeId, {
