@@ -68,14 +68,28 @@ function AdminServersPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <AdminTabs />
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">All Servers</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">View every server across all nodes.</p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-surface-light transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-surface-dark dark:hover:border-primary-500/30">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">All Servers</h1>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Monitor every server across nodes and manage suspensions.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-400">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+              {data?.pagination?.total ?? servers.length} total servers
+            </span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+              {statuses.length || 'All'} statuses
+            </span>
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-surface-light dark:border-slate-800 dark:bg-slate-950/60 dark:shadow-surface-dark">
         <label className="text-xs text-slate-600 dark:text-slate-300">
           Search
           <Input
@@ -110,6 +124,9 @@ function AdminServersPage() {
             </SelectContent>
           </Select>
         </label>
+        <div className="text-xs text-slate-500 dark:text-slate-400">
+          Showing {servers.length} of {data?.pagination?.total ?? servers.length}
+        </div>
       </div>
 
       {isLoading ? (
@@ -117,31 +134,49 @@ function AdminServersPage() {
           Loading servers...
         </div>
       ) : servers.length ? (
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60">
-          <div className="grid grid-cols-12 gap-3 border-b border-slate-200 dark:border-slate-800 px-4 py-3 text-xs uppercase text-slate-500 dark:text-slate-500">
-            <div className="col-span-3">Server</div>
-            <div className="col-span-2">Status</div>
-            <div className="col-span-3">Node</div>
-            <div className="col-span-2">Template</div>
-            <div className="col-span-2 text-right">Actions</div>
-          </div>
-          <div className="divide-y divide-slate-800">
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
             {servers.map((server: AdminServer) => (
-              <div key={server.id} className="grid grid-cols-12 gap-3 px-4 py-3 text-sm text-slate-600 dark:text-slate-200">
-                <div className="col-span-3">
-                  <div className="font-semibold text-slate-900 dark:text-slate-100">{server.name}</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-500">{server.id}</div>
+              <div
+                key={server.id}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-surface-light transition-all duration-300 hover:-translate-y-1 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/60 dark:shadow-surface-dark dark:hover:border-primary-500/30"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      {server.name}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-500">{server.id}</div>
+                  </div>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                    {server.status}
+                  </span>
                 </div>
-                <div className="col-span-2 text-slate-900 dark:text-slate-100">{server.status}</div>
-                <div className="col-span-3">
-                  <div className="text-slate-900 dark:text-slate-100">{server.node.name}</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-500">{server.node.hostname}</div>
+                <div className="mt-4 grid gap-3 text-xs text-slate-600 dark:text-slate-300 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-500">
+                      Node
+                    </div>
+                    <div className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+                      {server.node.name}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-500">
+                      {server.node.hostname}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-500">
+                      Template
+                    </div>
+                    <div className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+                      {server.template.name}
+                    </div>
+                  </div>
                 </div>
-                <div className="col-span-2 text-slate-600 dark:text-slate-300">{server.template.name}</div>
-                <div className="col-span-2 flex justify-end gap-2 text-xs">
+                <div className="mt-4 flex justify-end gap-2 text-xs">
                   {server.status === 'suspended' ? (
                     <button
-                      className="rounded-md border border-emerald-600 px-2 py-1 text-emerald-200 hover:border-emerald-500 disabled:opacity-60"
+                      className="rounded-md border border-emerald-600 px-3 py-1 font-semibold text-emerald-200 transition-all duration-300 hover:border-emerald-500 disabled:opacity-60"
                       onClick={() => unsuspendMutation.mutate(server.id)}
                       disabled={unsuspendMutation.isPending}
                     >
@@ -149,7 +184,7 @@ function AdminServersPage() {
                     </button>
                   ) : (
                     <button
-                      className="rounded-md border border-rose-700 px-2 py-1 text-rose-200 hover:border-rose-500 disabled:opacity-60"
+                      className="rounded-md border border-rose-700 px-3 py-1 font-semibold text-rose-200 transition-all duration-300 hover:border-rose-500 disabled:opacity-60"
                       onClick={() => {
                         setActionServer(server);
                         setSuspendReason('');
@@ -164,21 +199,23 @@ function AdminServersPage() {
             ))}
           </div>
           {pagination ? (
-            <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-surface-light dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400 dark:shadow-surface-dark">
               <span>
                 Page {pagination.page} of {pagination.totalPages}
               </span>
               <div className="flex gap-2">
                 <button
-                  className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 disabled:opacity-50"
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-200 disabled:opacity-50"
                   onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                   disabled={page <= 1}
                 >
                   Previous
                 </button>
                 <button
-                  className="rounded-md border border-slate-200 dark:border-slate-800 px-2 py-1 text-xs text-slate-600 dark:text-slate-200 disabled:opacity-50"
-                  onClick={() => setPage((prev) => (pagination.page < pagination.totalPages ? prev + 1 : prev))}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-200 disabled:opacity-50"
+                  onClick={() =>
+                    setPage((prev) => (pagination.page < pagination.totalPages ? prev + 1 : prev))
+                  }
                   disabled={pagination.page >= pagination.totalPages}
                 >
                   Next
