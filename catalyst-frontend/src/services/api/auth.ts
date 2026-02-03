@@ -138,4 +138,8 @@ export const authApi = {
     }
     return data;
   },
+
+  async logout(): Promise<void> {
+    await authClient.signOut();
+  },
 };

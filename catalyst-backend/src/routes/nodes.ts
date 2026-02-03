@@ -5,7 +5,12 @@ import { randomBytes } from "crypto";
 import { listAvailableIps } from "../utils/ipam";
 import { Prisma } from "@prisma/client";
 
-const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyReply) => {
+const ensureAdmin = async (
+  prisma: PrismaClient,
+  userId: string,
+  reply: FastifyReply,
+  requiredPermission: "admin.read" | "admin.write" = "admin.read",
+) => {
   const roles = await prisma.role.findMany({
     where: {
       users: {
@@ -14,7 +19,10 @@ const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyR
     },
   });
   const permissions = roles.flatMap((role) => role.permissions);
-  const isAdmin = permissions.includes("*") || permissions.includes("admin.read");
+  const isAdmin =
+    permissions.includes("*") ||
+    permissions.includes("admin.write") ||
+    (requiredPermission === "admin.read" && permissions.includes("admin.read"));
   const hasRole = roles.some((role) => role.name.toLowerCase() === "administrator");
   if (!isAdmin && !hasRole) {
     reply.status(403).send({ error: "Admin access required" });
@@ -116,7 +124,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { name, description, locationId, hostname, publicAddress, maxMemoryMb, maxCpuCores } =
         request.body as {
@@ -184,6 +192,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
       const nodes = await prisma.node.findMany({
         include: {
           _count: {
@@ -201,6 +211,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
 
       const node = await prisma.node.findUnique({
@@ -230,7 +242,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/deployment-token",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
 
@@ -274,7 +286,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
       const { name, description, hostname, publicAddress, maxMemoryMb, maxCpuCores } =
@@ -335,6 +347,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/stats",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
 
       const node = await prisma.node.findUnique({
@@ -466,7 +480,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
 
@@ -500,6 +514,8 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/ip-availability",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
       const { networkName, limit = "200" } = request.query as {
         networkName?: string;
@@ -535,7 +551,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/allocations",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
       const { serverId, search } = request.query as {
@@ -576,7 +592,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/allocations",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
       const { ip, ports, alias, notes } = request.body as {
@@ -632,7 +648,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/allocations/:allocationId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId, allocationId } = request.params as {
         nodeId: string;
@@ -663,7 +679,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     "/:nodeId/allocations/:allocationId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId, allocationId } = request.params as {
         nodeId: string;

@@ -144,10 +144,16 @@ export const useAuthStore = create<AuthState>()(
          }
          await get().refresh();
       },
-      logout: () => {
+      logout: async () => {
+        try {
+          await authApi.logout();
+        } catch {
+          // Continue local cleanup even if server sign-out fails
+        }
         localStorage.removeItem('catalyst-auth-token');
         localStorage.removeItem('catalyst-remember-me');
         sessionStorage.removeItem('catalyst-session-token');
+        localStorage.removeItem('catalyst-auth');
         set({ user: null, token: null, isAuthenticated: false, isReady: true, rememberMe: false });
       },
       setUser: (user) => set({ user, isAuthenticated: Boolean(user) }),

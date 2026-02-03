@@ -59,110 +59,110 @@ function App() {
           <Route path="profile" element={<ProfilePage />} />
           <Route path="servers" element={<ServersPage />} />
           <Route path="servers/:serverId/:tab?" element={<ServerDetailsPage />} />
-          <Route
-            path="admin/nodes/:nodeId"
-            element={
-              <ProtectedRoute requireAdmin>
-                <NodeDetailsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/templates/:templateId"
-            element={
-              <ProtectedRoute requireAdmin>
-                <TemplateDetailsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin"
-            element={
-              <ProtectedRoute requireAdmin>
-                <AdminDashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/users"
-            element={
-              <ProtectedRoute requireAdmin>
-                <UsersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/servers"
-            element={
-              <ProtectedRoute requireAdmin>
-                <AdminServersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/nodes"
-            element={
-              <ProtectedRoute requireAdmin>
-                <AdminNodesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/templates"
-            element={
-              <ProtectedRoute requireAdmin>
-                <AdminTemplatesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/database"
-            element={
-              <ProtectedRoute requireAdmin>
-                <DatabasePage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/network"
-            element={
-              <ProtectedRoute requireAdmin>
-                <NetworkPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/system"
-            element={
-              <ProtectedRoute requireAdmin>
-                <SystemPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/security"
-            element={
-              <ProtectedRoute requireAdmin>
-                <SecurityPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/alerts"
-            element={
-              <ProtectedRoute requireAdmin>
-                <AdminAlertsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/audit-logs"
-            element={
-              <ProtectedRoute requireAdmin>
-                <AuditLogsPage />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="admin/nodes/:nodeId"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <NodeDetailsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/templates/:templateId"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <TemplateDetailsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminDashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/users"
+              element={
+                <ProtectedRoute requireAdminWrite>
+                  <UsersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/servers"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminServersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/nodes"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminNodesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/templates"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminTemplatesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/database"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <DatabasePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/network"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <NetworkPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/system"
+              element={
+                <ProtectedRoute requireAdminWrite>
+                  <SystemPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/security"
+              element={
+                <ProtectedRoute requireAdminWrite>
+                  <SecurityPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/alerts"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminAlertsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/audit-logs"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AuditLogsPage />
+                </ProtectedRoute>
+              }
+            />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

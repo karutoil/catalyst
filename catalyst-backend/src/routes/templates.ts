@@ -1,7 +1,12 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 
-const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyReply) => {
+const ensureAdmin = async (
+  prisma: PrismaClient,
+  userId: string,
+  reply: FastifyReply,
+  requiredPermission: "admin.read" | "admin.write" = "admin.read",
+) => {
   const roles = await prisma.role.findMany({
     where: {
       users: {
@@ -10,7 +15,10 @@ const ensureAdmin = async (prisma: PrismaClient, userId: string, reply: FastifyR
     },
   });
   const permissions = roles.flatMap((role) => role.permissions);
-  const isAdmin = permissions.includes("*") || permissions.includes("admin.read");
+  const isAdmin =
+    permissions.includes("*") ||
+    permissions.includes("admin.write") ||
+    (requiredPermission === "admin.read" && permissions.includes("admin.read"));
   const hasRole = roles.some((role) => role.name.toLowerCase() === "administrator");
   if (!isAdmin && !hasRole) {
     reply.status(403).send({ error: "Admin access required" });
@@ -57,7 +65,7 @@ export async function templateRoutes(app: FastifyInstance) {
     "/",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const {
         name,
@@ -130,7 +138,7 @@ export async function templateRoutes(app: FastifyInstance) {
     "/:templateId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { templateId } = request.params as { templateId: string };
       const { images, defaultImage } = request.body as {
@@ -206,7 +214,7 @@ export async function templateRoutes(app: FastifyInstance) {
     "/:templateId",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply);
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { templateId } = request.params as { templateId: string };
 

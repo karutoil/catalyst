@@ -16,7 +16,7 @@ export class WebSocketManager {
   private candidateUrls: string[] = [];
   private candidateIndex = 0;
 
-  private buildWsUrl(token: string | null) {
+  private buildWsUrl() {
     const normalizeScheme = (url: string) => {
       if (url.startsWith('http://')) return `ws://${url.slice('http://'.length)}`;
       if (url.startsWith('https://')) return `wss://${url.slice('https://'.length)}`;
@@ -45,10 +45,6 @@ export class WebSocketManager {
       wsUrl.hostname = window.location.hostname || '127.0.0.1';
     }
 
-    if (token) {
-      wsUrl.searchParams.set('token', token);
-    }
-
     return wsUrl.toString();
   }
 
@@ -57,8 +53,7 @@ export class WebSocketManager {
       return;
     }
 
-    const token = useAuthStore.getState().token;
-    const url = this.buildWsUrl(token);
+    const url = this.buildWsUrl();
     this.candidateUrls = this.buildCandidateUrls(url);
     this.candidateIndex = 0;
     this.openWithCandidate(callbacks);
@@ -89,6 +84,10 @@ export class WebSocketManager {
     let opened = false;
 
     this.ws.onopen = () => {
+      const token = useAuthStore.getState().token;
+      if (token) {
+        this.ws?.send(JSON.stringify({ type: 'client_handshake', token }));
+      }
       opened = true;
       this.reconnectAttempts = 0;
       callbacks?.onOpen?.();

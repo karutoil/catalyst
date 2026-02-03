@@ -12,7 +12,9 @@ function Sidebar() {
   const { sidebarCollapsed, theme, setTheme } = useUIStore();
   const { user } = useAuthStore();
   const isAdmin =
-    user?.permissions?.includes('*') || user?.permissions?.includes('admin.read');
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.write') ||
+    user?.permissions?.includes('admin.read');
   return (
     <aside
       className={`flex h-[calc(100vh-72px)] flex-col border-r border-slate-200 bg-white px-2 py-6 text-sm shadow-surface-light transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark ${

@@ -89,6 +89,7 @@ async function main() {
         "server.delete",
         "server.suspend",
         "admin.read",
+        "admin.write",
       ],
     },
     create: {
@@ -107,6 +108,7 @@ async function main() {
         "server.delete",
         "server.suspend",
         "admin.read",
+        "admin.write",
       ],
     },
   });

@@ -27,6 +27,11 @@ export enum Permission {
   SERVER_START = "server.start",
   SERVER_STOP = "server.stop",
   SERVER_READ = "server.read",
+  SERVER_CREATE = "server.create",
+  SERVER_DELETE = "server.delete",
+  SERVER_SUSPEND = "server.suspend",
+  SERVER_TRANSFER = "server.transfer",
+  SERVER_SCHEDULE = "server.schedule",
   ALERT_READ = "alert.read",
   ALERT_CREATE = "alert.create",
   ALERT_UPDATE = "alert.update",
@@ -35,13 +40,12 @@ export enum Permission {
   FILE_WRITE = "file.write",
   CONSOLE_READ = "console.read",
   CONSOLE_WRITE = "console.write",
-  SERVER_CREATE = "server.create",
-  SERVER_DELETE = "server.delete",
-  SERVER_SUSPEND = "server.suspend",
   DATABASE_CREATE = "database.create",
   DATABASE_READ = "database.read",
   DATABASE_DELETE = "database.delete",
   DATABASE_ROTATE = "database.rotate",
+  ADMIN_READ = "admin.read",
+  ADMIN_WRITE = "admin.write",
 }
 
 // ============================================================================

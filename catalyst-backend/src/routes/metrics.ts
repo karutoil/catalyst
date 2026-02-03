@@ -326,6 +326,18 @@ export async function metricsRoutes(app: FastifyInstance) {
     "/nodes/:nodeId/metrics",
     { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const roles = await prisma.role.findMany({
+        where: { users: { some: { id: request.user.userId } } },
+        select: { permissions: true },
+      });
+      const permissions = roles.flatMap((role) => role.permissions);
+      const isAdmin =
+        permissions.includes("*") ||
+        permissions.includes("admin.write") ||
+        permissions.includes("admin.read");
+      if (!isAdmin) {
+        return reply.status(403).send({ error: "Admin access required" });
+      }
       const { nodeId } = request.params as { nodeId: string };
       const { hours, limit } = request.query as { hours?: string; limit?: string };
 

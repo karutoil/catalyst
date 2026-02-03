@@ -95,7 +95,11 @@ function ServerDetailsPage() {
   const { isConnected } = useWebSocketStore();
   const { user } = useAuthStore();
   const isAdmin = useMemo(
-    () => user?.permissions?.includes('*') || user?.permissions?.includes('admin.read'),
+    () => user?.permissions?.includes('*') || user?.permissions?.includes('admin.read') || user?.permissions?.includes('admin.write'),
+    [user?.permissions],
+  );
+  const canAdminWrite = useMemo(
+    () => user?.permissions?.includes('*') || user?.permissions?.includes('admin.write'),
     [user?.permissions],
   );
   const queryClient = useQueryClient();
@@ -1205,7 +1209,7 @@ function ServerDetailsPage() {
       <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
         {Object.entries(tabLabels)
           .filter(([key]) => {
-            if (key === 'admin') return isAdmin;
+            if (key === 'admin') return canAdminWrite;
             if (key === 'modManager') return Boolean(modManagerConfig);
             if (key === 'pluginManager') return Boolean(pluginManagerConfig);
             return true;

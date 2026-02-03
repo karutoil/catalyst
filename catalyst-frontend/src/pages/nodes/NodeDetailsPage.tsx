@@ -39,8 +39,8 @@ function NodeDetailsPage() {
     },
   });
 
-  const isAdmin = useMemo(
-    () => user?.permissions?.includes('admin.read') || user?.permissions?.includes('*'),
+  const canWrite = useMemo(
+    () => user?.permissions?.includes('admin.write') || user?.permissions?.includes('*'),
     [user?.permissions],
   );
   const lastSeen = node?.lastSeenAt ? new Date(node.lastSeenAt).toLocaleString() : 'n/a';
@@ -81,7 +81,7 @@ function NodeDetailsPage() {
             </div>
             <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Last seen: {lastSeen}</div>
           </div>
-          {isAdmin ? (
+          {canWrite ? (
             <div className="flex flex-wrap gap-2 text-xs">
               <button
                 className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 disabled:opacity-60 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"

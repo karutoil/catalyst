@@ -19,11 +19,13 @@ function BackupList({
   backups,
   serverStatus,
   isSuspended = false,
+  canWrite = true,
 }: {
   serverId: string;
   backups: BackupWithDownload[];
   serverStatus: string;
   isSuspended?: boolean;
+  canWrite?: boolean;
 }) {
   const sorted = useMemo(() => {
     const next = [...backups];
@@ -72,9 +74,9 @@ function BackupList({
                 <RestoreBackupDialog
                   serverId={serverId}
                   backup={backup}
-                  disabled={serverStatus !== 'stopped' || isSuspended}
+                  disabled={serverStatus !== 'stopped' || isSuspended || !canWrite}
                 />
-                <DeleteBackupDialog serverId={serverId} backup={backup} disabled={isSuspended} />
+                <DeleteBackupDialog serverId={serverId} backup={backup} disabled={isSuspended || !canWrite} />
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-5">

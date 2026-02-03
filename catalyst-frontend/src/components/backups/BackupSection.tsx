@@ -11,6 +11,7 @@ import { useServer } from '../../hooks/useServer';
 import { notifySuccess } from '../../utils/notify';
 import { formatBytes, formatPercent } from '../../utils/formatters';
 import { useBackupDownloadStore } from '../../stores/backupDownloadStore';
+import { useAuthStore } from '../../stores/authStore';
 
 const formatProgress = (progress?: { loaded: number; total?: number }) => {
   if (!progress) return undefined;
@@ -34,6 +35,7 @@ function BackupSection({
 }) {
   const [page, setPage] = useState(1);
   const { data: server } = useServer(serverId);
+  const { user } = useAuthStore();
   const [storageMode, setStorageMode] = useState<BackupStorageMode>('local');
   const [retentionCount, setRetentionCount] = useState('');
   const [retentionDays, setRetentionDays] = useState('');
@@ -56,6 +58,17 @@ function BackupSection({
   const backupAllocationMb = server?.backupAllocationMb ?? 0;
   const backupBlocked = backupAllocationMb <= 0 && storageMode === 'local';
   const localDisabled = backupAllocationMb <= 0;
+  const canWrite =
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.write') ||
+    user?.permissions?.includes('file.write') ||
+    Boolean(server && user?.id && server.ownerId === user.id);
+  const canRead =
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.read') ||
+    user?.permissions?.includes('admin.write') ||
+    user?.permissions?.includes('file.read') ||
+    Boolean(server && user?.id && server.ownerId === user.id);
 
   useEffect(() => {
     if (!server) return;
@@ -125,7 +138,7 @@ function BackupSection({
             Allocation: {backupAllocationMb > 0 ? `${backupAllocationMb} MB` : 'Disabled'}
           </p>
         </div>
-        <CreateBackupModal serverId={serverId} disabled={isSuspended || backupBlocked} />
+        <CreateBackupModal serverId={serverId} disabled={isSuspended || backupBlocked || !canWrite} />
       </div>
       {backupAllocationMb <= 0 ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 shadow-surface-light dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
@@ -157,7 +170,7 @@ function BackupSection({
                 className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
                 value={storageMode}
                 onChange={(event) => setStorageMode(event.target.value)}
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               >
                 {!localDisabled ? <option value="local">Local</option> : null}
                 <option value="s3">S3</option>
@@ -175,8 +188,8 @@ function BackupSection({
               min={0}
               max={1000}
               value={retentionCount}
-              onChange={(event) => setRetentionCount(event.target.value)}
-              disabled={isSuspended}
+                onChange={(event) => setRetentionCount(event.target.value)}
+                disabled={isSuspended || !canWrite}
             />
           </div>
           <div>
@@ -189,8 +202,8 @@ function BackupSection({
               min={0}
               max={3650}
               value={retentionDays}
-              onChange={(event) => setRetentionDays(event.target.value)}
-              disabled={isSuspended}
+                onChange={(event) => setRetentionDays(event.target.value)}
+                disabled={isSuspended || !canWrite}
             />
           </div>
         </div>
@@ -205,7 +218,7 @@ function BackupSection({
                 value={s3Bucket}
                 onChange={(event) => setS3Bucket(event.target.value)}
                 placeholder="catalyst-backups"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block">
@@ -217,7 +230,7 @@ function BackupSection({
                 value={s3Region}
                 onChange={(event) => setS3Region(event.target.value)}
                 placeholder="us-east-1"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block sm:col-span-2">
@@ -229,7 +242,7 @@ function BackupSection({
                 value={s3Endpoint}
                 onChange={(event) => setS3Endpoint(event.target.value)}
                 placeholder="https://s3.amazonaws.com"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block">
@@ -241,7 +254,7 @@ function BackupSection({
                 value={s3AccessKeyId}
                 onChange={(event) => setS3AccessKeyId(event.target.value)}
                 placeholder="AKIA..."
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block">
@@ -254,7 +267,7 @@ function BackupSection({
                 value={s3SecretAccessKey}
                 onChange={(event) => setS3SecretAccessKey(event.target.value)}
                 placeholder="••••••••"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -263,7 +276,7 @@ function BackupSection({
                 className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                 checked={s3PathStyle}
                 onChange={(event) => setS3PathStyle(event.target.checked)}
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
               Force path-style addressing
             </label>
@@ -280,7 +293,7 @@ function BackupSection({
                 value={sftpHost}
                 onChange={(event) => setSftpHost(event.target.value)}
                 placeholder="sftp.example.com"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block">
@@ -294,7 +307,7 @@ function BackupSection({
                 type="number"
                 min={1}
                 max={65535}
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block">
@@ -306,7 +319,7 @@ function BackupSection({
                 value={sftpUsername}
                 onChange={(event) => setSftpUsername(event.target.value)}
                 placeholder="backup-user"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block">
@@ -319,7 +332,7 @@ function BackupSection({
                 value={sftpPassword}
                 onChange={(event) => setSftpPassword(event.target.value)}
                 placeholder="••••••••"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block sm:col-span-2">
@@ -331,7 +344,7 @@ function BackupSection({
                 value={sftpPrivateKey}
                 onChange={(event) => setSftpPrivateKey(event.target.value)}
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block sm:col-span-2">
@@ -344,7 +357,7 @@ function BackupSection({
                 value={sftpPrivateKeyPassphrase}
                 onChange={(event) => setSftpPrivateKeyPassphrase(event.target.value)}
                 placeholder="••••••••"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
             <label className="block sm:col-span-2">
@@ -356,7 +369,7 @@ function BackupSection({
                 value={sftpBasePath}
                 onChange={(event) => setSftpBasePath(event.target.value)}
                 placeholder="/backups"
-                disabled={isSuspended}
+                disabled={isSuspended || !canWrite}
               />
             </label>
           </div>
@@ -445,7 +458,7 @@ function BackupSection({
                 notifyError(message);
               }
             }}
-            disabled={isSuspended}
+            disabled={isSuspended || !canWrite}
           >
             Save settings
           </button>
@@ -486,11 +499,12 @@ function BackupSection({
             serverId={serverId}
             backups={backups.map((backup) => ({
               ...backup,
-                download: isSuspended ? undefined : () => handleDownload(backup.id, backup.name),
+                download: isSuspended || !canRead ? undefined : () => handleDownload(backup.id, backup.name),
                 downloadProgress: formatProgress(progressByBackup[`${progressKeyPrefix}${backup.id}`]),
               }))}
               serverStatus={serverStatus}
               isSuspended={isSuspended}
+              canWrite={canWrite}
             />
         </div>
       ) : (

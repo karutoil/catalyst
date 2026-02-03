@@ -11,8 +11,8 @@ function AdminNodesPage() {
   const [search, setSearch] = useState('');
   const { data, isLoading } = useAdminNodes({ search: search.trim() || undefined });
   const { user } = useAuthStore();
-  const isAdmin = useMemo(
-    () => user?.permissions?.includes('admin.read') || user?.permissions?.includes('*'),
+  const canWrite = useMemo(
+    () => user?.permissions?.includes('admin.write') || user?.permissions?.includes('*'),
     [user?.permissions],
   );
   const nodes = data?.nodes ?? [];
@@ -29,7 +29,7 @@ function AdminNodesPage() {
               Track connected infrastructure and node availability.
             </p>
           </div>
-          {isAdmin ? (
+          {canWrite ? (
             <NodeCreateModal locationId={locationId} />
           ) : (
             <span className="text-xs text-slate-500 dark:text-slate-500">Admin access required</span>
@@ -76,7 +76,7 @@ function AdminNodesPage() {
               ? 'Try a different node name or hostname.'
               : 'Install the Catalyst agent and register nodes to begin.'
           }
-          action={isAdmin ? <NodeCreateModal locationId={locationId} /> : null}
+          action={canWrite ? <NodeCreateModal locationId={locationId} /> : null}
         />
       )}
     </div>

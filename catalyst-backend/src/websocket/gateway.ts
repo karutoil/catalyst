@@ -23,6 +23,7 @@ interface ClientConnection {
   socket: any;
   authenticated: boolean;
   subscriptions: Set<string>;
+  lastAuthAt?: number;
 }
 
 type PendingAgentRequest = {
@@ -63,8 +64,7 @@ export class WebSocketGateway {
 
   async handleConnection(socket: any, request: FastifyRequest) {
     const query = (request.query as any) || {};
-    const token =
-      typeof query.token === "string" ? query.token : null;
+    const token = typeof query.token === "string" ? query.token : null;
     const nodeId =
       typeof query.nodeId === "string"
         ? query.nodeId
@@ -73,20 +73,13 @@ export class WebSocketGateway {
     if (nodeId) {
       // Agent connection (token is expected in handshake if not provided here)
       await this.handleAgentConnection(socket, nodeId, token);
-    } else if (token) {
-      // Client connection
-      await this.handleClientConnection(socket, token);
     } else {
-      socket.end();
-      this.logger.warn("WebSocket connection rejected: Missing authentication");
+      // Client connection (token expected via Authorization header)
+      await this.handleClientConnection(socket, request);
     }
   }
 
-  private async handleAgentConnection(
-    socket: any,
-    nodeId: string,
-    token: string | null
-  ) {
+  private async handleAgentConnection(socket: any, nodeId: string, token: string | null) {
     try {
       const agent: ConnectedAgent = {
         nodeId,
@@ -109,7 +102,7 @@ export class WebSocketGateway {
         const node = await this.prisma.node.findUnique({
           where: { id: nodeId },
         });
-        if (node && node.secret === token) {
+        if (node && crypto.timingSafeEqual(Buffer.from(node.secret), Buffer.from(token))) {
           await this.finalizeAgentConnection(node, agent);
         } else {
           this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
@@ -176,26 +169,17 @@ export class WebSocketGateway {
     }
   }
 
-  private async handleClientConnection(socket: any, token: string) {
+  private async handleClientConnection(socket: any, request: FastifyRequest) {
     try {
-      const session = await auth.api.getSession({
-        headers: new Headers({ authorization: `Bearer ${token}` }),
-      });
-      if (!session) {
-        socket.end();
-        return;
-      }
-
-      const clientId = `${session.user.id}-${Date.now()}`;
+      const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const client: ClientConnection = {
-        userId: session.user.id,
+        userId: "",
         socket,
-        authenticated: true,
+        authenticated: false,
         subscriptions: new Set<string>(),
       };
-
       this.clients.set(clientId, client);
-      this.logger.info(`Client connected: ${clientId}`);
+      this.logger.info(`Client connected (pending auth): ${clientId}`);
 
       socket.socket.on("message", (data: any) => this.handleClientMessage(clientId, data));
       socket.socket.on("close", () => {
@@ -203,6 +187,15 @@ export class WebSocketGateway {
         this.clientCommandCounters.delete(clientId);
         this.logger.info(`Client disconnected: ${clientId}`);
       });
+
+      setTimeout(() => {
+        const pending = this.clients.get(clientId);
+        if (pending && !pending.authenticated) {
+          pending.socket.end();
+          this.clients.delete(clientId);
+          this.logger.warn({ clientId }, "Client handshake timeout");
+        }
+      }, 5000);
     } catch (err) {
       this.logger.error(err, "Error in client connection");
       socket.end();
@@ -212,12 +205,23 @@ export class WebSocketGateway {
   private async handleAgentMessage(nodeId: string, data: any) {
     try {
       const message = JSON.parse(data.toString());
+      const agent = this.agents.get(nodeId);
+      if (!agent) return;
+      if (!agent.authenticated && message.type !== "node_handshake") {
+        this.logger.warn({ nodeId }, "Rejected agent message before handshake");
+        return;
+      }
       if (message.type === "node_handshake") {
         const node = await this.prisma.node.findUnique({
           where: { id: nodeId },
         });
-        const agent = this.agents.get(nodeId);
-        if (!agent || !node || node.secret !== message.token) {
+        const tokenValue = typeof message.token === "string" ? message.token : "";
+        if (
+          !agent ||
+          !node ||
+          !tokenValue ||
+          !crypto.timingSafeEqual(Buffer.from(node.secret), Buffer.from(tokenValue))
+        ) {
           this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
           agent?.socket.end();
           this.agents.delete(nodeId);
@@ -313,7 +317,6 @@ export class WebSocketGateway {
       }
 
       if (message.type === "heartbeat") {
-        const agent = this.agents.get(nodeId);
         if (agent) {
           agent.lastHeartbeat = Date.now();
           await this.prisma.node.update({
@@ -397,6 +400,10 @@ export class WebSocketGateway {
         // message.metrics is expected to be an array of metric objects
         if (!Array.isArray(message.metrics)) {
           this.logger.warn('resource_stats_batch.metrics is not an array');
+          return;
+        }
+        if (message.metrics.length > 2000) {
+          this.logger.warn({ count: message.metrics.length }, "resource_stats_batch too large");
           return;
         }
 
@@ -980,6 +987,31 @@ export class WebSocketGateway {
       const client = this.clients.get(clientId);
 
       if (!client) {
+        return;
+      }
+
+      if (message.type === "client_handshake") {
+        const token = typeof message.token === "string" ? message.token : "";
+        if (!token) {
+          client.socket.end();
+          this.clients.delete(clientId);
+          return;
+        }
+        const session = await auth.api.getSession({
+          headers: new Headers({ authorization: `Bearer ${token}` }),
+        });
+        if (!session) {
+          client.socket.end();
+          this.clients.delete(clientId);
+          return;
+        }
+        client.userId = session.user.id;
+        client.authenticated = true;
+        client.lastAuthAt = Date.now();
+        return;
+      }
+
+      if (!client.authenticated) {
         return;
       }
 

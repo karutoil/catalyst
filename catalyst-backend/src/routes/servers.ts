@@ -508,6 +508,7 @@ export async function serverRoutes(app: FastifyInstance) {
     const permissions = roles.flatMap((role) => role.permissions);
     if (
       permissions.includes("*") ||
+      permissions.includes("admin.write") ||
       permissions.includes("admin.read") ||
       permissions.includes("server.suspend")
     ) {
@@ -517,13 +518,17 @@ export async function serverRoutes(app: FastifyInstance) {
     return false;
   };
 
-  const isAdminUser = async (userId: string) => {
+  const isAdminUser = async (userId: string, required: "admin.read" | "admin.write" = "admin.read") => {
     const roles = await prisma.role.findMany({
       where: { users: { some: { id: userId } } },
       select: { name: true, permissions: true },
     });
     const permissions = roles.flatMap((role) => role.permissions);
-    if (permissions.includes("*") || permissions.includes("admin.read")) {
+    if (
+      permissions.includes("*") ||
+      permissions.includes("admin.write") ||
+      (required === "admin.read" && permissions.includes("admin.read"))
+    ) {
       return true;
     }
     return roles.some((role) => role.name.toLowerCase() === "administrator");
@@ -658,6 +663,10 @@ export async function serverRoutes(app: FastifyInstance) {
       };
 
       const userId = request.user.userId;
+      const canCreate = await isAdminUser(userId, "admin.write");
+      if (!canCreate) {
+        return reply.status(403).send({ error: "Admin access required" });
+      }
 
       // Validate required fields
       if (
@@ -1055,7 +1064,7 @@ export async function serverRoutes(app: FastifyInstance) {
             { ownerId: userId },
             {
               access: {
-                some: { userId },
+                some: { userId, permissions: { has: "server.read" } },
               },
             },
           ],
@@ -1150,7 +1159,7 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       // Check permission
-      if (server.ownerId !== userId && !(await isAdminUser(userId))) {
+      if (server.ownerId !== userId && !(await isAdminUser(userId, "admin.write"))) {
         const access = await prisma.serverAccess.findUnique({
           where: { userId_serverId: { userId, serverId } },
         });
@@ -2801,7 +2810,7 @@ export async function serverRoutes(app: FastifyInstance) {
         });
       }
 
-      if (server.ownerId !== userId && !(await isAdminUser(userId))) {
+      if (server.ownerId !== userId && !(await isAdminUser(userId, "admin.write"))) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
@@ -3692,7 +3701,7 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       // Check permissions
-      if (server.ownerId !== userId && !(await isAdminUser(userId))) {
+      if (server.ownerId !== userId && !(await isAdminUser(userId, "admin.read"))) {
         const access = await prisma.serverAccess.findFirst({
           where: {
             userId,
@@ -3816,7 +3825,7 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       // Check permissions
-      if (server.ownerId !== userId && !(await isAdminUser(userId))) {
+      if (server.ownerId !== userId && !(await isAdminUser(userId, "admin.read"))) {
         const access = await prisma.serverAccess.findFirst({
           where: {
             userId,
@@ -3933,7 +3942,7 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       // Check permissions
-      if (server.ownerId !== userId && !(await isAdminUser(userId))) {
+      if (server.ownerId !== userId && !(await isAdminUser(userId, "admin.read"))) {
         const access = await prisma.serverAccess.findFirst({
           where: {
             userId,
@@ -4011,7 +4020,7 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       // Check permissions
-      if (server.ownerId !== userId && !(await isAdminUser(userId))) {
+      if (server.ownerId !== userId && !(await isAdminUser(userId, "admin.read"))) {
         const access = await prisma.serverAccess.findFirst({
           where: {
             userId,
@@ -4417,6 +4426,14 @@ export async function serverRoutes(app: FastifyInstance) {
         return;
       }
 
+      const canUpdate = await ensureServerAccess(
+        id,
+        request.user.userId,
+        "server.start",
+        reply
+      );
+      if (!canUpdate) return;
+
       // Update server
       const updated = await prisma.server.update({
         where: { id },
@@ -4452,6 +4469,14 @@ export async function serverRoutes(app: FastifyInstance) {
       if (!ensureNotSuspended(server, reply)) {
         return;
       }
+
+      const canUpdate = await ensureServerAccess(
+        id,
+        request.user.userId,
+        "server.start",
+        reply
+      );
+      if (!canUpdate) return;
 
       await prisma.server.update({
         where: { id },
@@ -4532,6 +4557,14 @@ export async function serverRoutes(app: FastifyInstance) {
       if (!ensureNotSuspended(server, reply)) {
         return;
       }
+
+      const canUpdate = await ensureServerAccess(
+        id,
+        request.user.userId,
+        "server.start",
+        reply
+      );
+      if (!canUpdate) return;
 
       const encryptedS3Config = s3Config ? encryptBackupConfig(s3Config) : undefined;
       const encryptedSftpConfig = sftpConfig ? encryptBackupConfig(sftpConfig) : undefined;

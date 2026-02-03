@@ -11,8 +11,8 @@ function TemplateDetailsPage() {
   const navigate = useNavigate();
   const { data: template, isLoading, isError } = useTemplate(templateId);
   const { user } = useAuthStore();
-  const isAdmin = useMemo(
-    () => user?.permissions?.includes('admin.read') || user?.permissions?.includes('*'),
+  const canWrite = useMemo(
+    () => user?.permissions?.includes('admin.write') || user?.permissions?.includes('*'),
     [user?.permissions],
   );
 
@@ -73,7 +73,7 @@ function TemplateDetailsPage() {
             >
               Back
             </Link>
-            {isAdmin ? (
+            {canWrite ? (
               <>
                 <TemplateEditModal template={template} />
                 <TemplateDeleteDialog

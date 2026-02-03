@@ -8,14 +8,74 @@ import {
   openStorageStream,
   deleteBackupFromStorage,
 } from "../services/backup-storage";
+import { randomUUID } from "crypto";
 
 export async function backupRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
   const BACKUP_DIR = process.env.BACKUP_DIR || "/var/lib/catalyst/backups";
+  const STREAM_DIR = process.env.BACKUP_STREAM_DIR || "/tmp/catalyst-backup-stream";
+  const TRANSFER_DIR = process.env.BACKUP_TRANSFER_DIR || "/tmp/catalyst-backup-transfer";
 
   const buildServerDir = (serverUuid: string) => {
     const serverDir = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
     return `${serverDir}/${serverUuid}`;
+  };
+
+  const sanitizeBackupName = (value?: string) => {
+    const trimmed = (value || "").trim();
+    if (!trimmed) return "";
+    const cleaned = trimmed.replace(/[^a-z0-9._-]/gi, "_");
+    return cleaned.slice(0, 120);
+  };
+
+  const isAllowedLocalBackupPath = (target: string) => {
+    const candidates = [BACKUP_DIR, STREAM_DIR, TRANSFER_DIR].map((dir) =>
+      path.resolve(dir)
+    );
+    const resolved = path.resolve(target);
+    return candidates.some((base) => {
+      const basePrefix = base.endsWith(path.sep) ? base : `${base}${path.sep}`;
+      return resolved === base || resolved.startsWith(basePrefix);
+    });
+  };
+
+  const ensureBackupAccess = async (
+    serverId: string,
+    userId: string,
+    reply: FastifyReply,
+    permission: string
+  ) => {
+    const server = await prisma.server.findUnique({
+      where: { id: serverId },
+      select: { id: true, ownerId: true, suspendedAt: true, suspensionReason: true },
+    });
+    if (!server) {
+      reply.status(404).send({ error: "Server not found" });
+      return null;
+    }
+    if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
+      reply.status(423).send({
+        error: "Server is suspended",
+        suspendedAt: server.suspendedAt,
+        suspensionReason: server.suspensionReason ?? null,
+      });
+      return null;
+    }
+    if (server.ownerId === userId) {
+      return server;
+    }
+    const access = await prisma.serverAccess.findFirst({
+      where: {
+        serverId,
+        userId,
+        permissions: { has: permission },
+      },
+    });
+    if (!access) {
+      reply.status(403).send({ error: "Forbidden" });
+      return null;
+    }
+    return server;
   };
 
   // Create a backup
@@ -25,6 +85,9 @@ export async function backupRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { serverId } = request.params as { serverId: string };
       const { name } = request.body as { name?: string };
+      const userId = request.user.userId;
+      const accessServer = await ensureBackupAccess(serverId, userId, reply, "file.write");
+      if (!accessServer) return;
 
       // Get server
       const server = await prisma.server.findUnique({
@@ -60,7 +123,8 @@ export async function backupRoutes(app: FastifyInstance) {
 
        // Generate backup name
        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-       const backupName = name || `backup-${timestamp}`;
+       const cleanedName = sanitizeBackupName(name);
+       const backupName = cleanedName || `backup-${timestamp}`;
        const { agentPath, storagePath, storageKey } = buildBackupPaths(
          server.uuid,
          backupName,
@@ -126,6 +190,9 @@ export async function backupRoutes(app: FastifyInstance) {
         limit?: string;
         page?: string;
       };
+      const userId = request.user.userId;
+      const accessServer = await ensureBackupAccess(serverId, userId, reply, "file.read");
+      if (!accessServer) return;
 
       const parsedLimit = parseInt(limit);
       const parsedPage = parseInt(page);
@@ -161,6 +228,9 @@ export async function backupRoutes(app: FastifyInstance) {
         backups.map(async (backup) => {
           if (backup.sizeMb > 0) return backup;
           try {
+            if (!isAllowedLocalBackupPath(backup.path)) {
+              return backup;
+            }
             const stats = await fs.stat(backup.path);
             if (!stats.isFile() || stats.size <= 0) return backup;
             const sizeMb = stats.size / (1024 * 1024);
@@ -198,6 +268,9 @@ export async function backupRoutes(app: FastifyInstance) {
         serverId: string;
         backupId: string;
       };
+      const userId = request.user.userId;
+      const accessServer = await ensureBackupAccess(serverId, userId, reply, "file.read");
+      if (!accessServer) return;
 
       const backup = await prisma.backup.findFirst({
         where: {
@@ -237,6 +310,9 @@ export async function backupRoutes(app: FastifyInstance) {
         serverId: string;
         backupId: string;
       };
+      const userId = request.user.userId;
+      const accessServer = await ensureBackupAccess(serverId, userId, reply, "file.write");
+      if (!accessServer) return;
 
       const server = await prisma.server.findUnique({
         where: { id: serverId },
@@ -281,17 +357,17 @@ export async function backupRoutes(app: FastifyInstance) {
       const serverDir = buildServerDir(server.uuid);
 
       const gateway = (app as any).wsGateway;
-      let restorePath = backup.path;
-      if (backup.storageMode === "s3" || backup.storageMode === "sftp") {
+       let restorePath = backup.path;
+       if (backup.storageMode === "s3" || backup.storageMode === "sftp") {
          const { storageKey } = backup.metadata as { storageKey?: string };
          if (!storageKey) {
            return reply
              .status(500)
              .send({ error: `Missing ${backup.storageMode?.toUpperCase() || "remote"} storage key` });
          }
-         const tmpPath = `${BACKUP_DIR}/${server.uuid}/${backup.name}.tar.gz`;
-         await fs.mkdir(`${BACKUP_DIR}/${server.uuid}`, { recursive: true });
-         const { stream } = await openStorageStream(backup, server);
+          const tmpPath = `${BACKUP_DIR}/${server.uuid}/${backup.name}.tar.gz`;
+          await fs.mkdir(`${BACKUP_DIR}/${server.uuid}`, { recursive: true });
+          const { stream } = await openStorageStream(backup, server);
          await new Promise<void>((resolve, reject) => {
            const writeStream = require("fs").createWriteStream(tmpPath);
            stream.pipe(writeStream);
@@ -338,6 +414,9 @@ export async function backupRoutes(app: FastifyInstance) {
         serverId: string;
         backupId: string;
       };
+      const userId = request.user.userId;
+      const accessServer = await ensureBackupAccess(serverId, userId, reply, "file.write");
+      if (!accessServer) return;
 
       const backup = await prisma.backup.findFirst({
         where: {
@@ -393,6 +472,9 @@ export async function backupRoutes(app: FastifyInstance) {
         serverId: string;
         backupId: string;
       };
+      const userId = request.user.userId;
+      const accessServer = await ensureBackupAccess(serverId, userId, reply, "file.read");
+      if (!accessServer) return;
 
       const backup = await prisma.backup.findFirst({
         where: {
@@ -440,10 +522,13 @@ export async function backupRoutes(app: FastifyInstance) {
       }
 
       // Check if backup file exists locally; otherwise request from agent.
-      try {
-        await fs.access(backup.path);
-        const stats = await fs.stat(backup.path);
-        const stream = require("fs").createReadStream(backup.path);
+       try {
+         if (!isAllowedLocalBackupPath(backup.path)) {
+           throw new Error("Invalid backup path");
+         }
+         await fs.access(backup.path);
+         const stats = await fs.stat(backup.path);
+         const stream = require("fs").createReadStream(backup.path);
 
         reply.header("Content-Type", "application/gzip");
         reply.header("Content-Length", stats.size.toString());
@@ -463,8 +548,8 @@ export async function backupRoutes(app: FastifyInstance) {
           return reply.status(404).send({ error: "Backup file not found on disk" });
         }
 
-        const gateway = (app as any).wsGateway;
-        const stream = new PassThrough();
+         const gateway = (app as any).wsGateway;
+         const stream = new PassThrough();
         let bytesWritten = 0;
         const finalize = (error?: Error) => {
           if (error) {

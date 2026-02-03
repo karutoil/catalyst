@@ -18,7 +18,7 @@ export async function adminRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
   const authenticate = (app as any).authenticate;
   const auth = (app as any).auth;
-  const isAdminUser = async (userId: string) => {
+  const isAdminUser = async (userId: string, required: 'admin.read' | 'admin.write' = 'admin.read') => {
     const userRoles = await prisma.role.findMany({
       where: {
         users: {
@@ -28,7 +28,11 @@ export async function adminRoutes(app: FastifyInstance) {
     });
 
     const permissions = userRoles.flatMap((role) => role.permissions);
-    if (permissions.includes('*') || permissions.includes('admin.read')) {
+    if (
+      permissions.includes('*') ||
+      permissions.includes('admin.write') ||
+      (required === 'admin.read' && permissions.includes('admin.read'))
+    ) {
       return true;
     }
 
@@ -81,19 +85,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      // Check if user has admin permissions (wildcard or admin.read)
-      const userRoles = await prisma.role.findMany({
-        where: {
-          users: {
-            some: { id: user.userId },
-          },
-        },
-      });
-
-      const permissions = userRoles.flatMap((role) => role.permissions);
-      const isAdmin = permissions.includes('*') || permissions.includes('admin.read');
-
-      if (!isAdmin) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -121,19 +113,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      // Check admin permissions
-      const userRoles = await prisma.role.findMany({
-        where: {
-          users: {
-            some: { id: user.userId },
-          },
-        },
-      });
-
-      const permissions = userRoles.flatMap((role) => role.permissions);
-      const isAdmin = permissions.includes('*') || permissions.includes('admin.read');
-
-      if (!isAdmin) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -196,7 +176,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -266,30 +246,29 @@ export async function adminRoutes(app: FastifyInstance) {
               ];
       }
 
-      const created = await prisma.user.create({
-        data: {
-          email,
-          username,
-          name: username,
-        },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-
-      await auth.api.requestPasswordReset({
+      const signUpResponse = await auth.api.signUpEmail({
         headers: new Headers({
-          origin: request.headers.origin || request.headers.host || "http://localhost:3000",
+          origin: request.headers.origin || request.headers.host || 'http://localhost:3000',
         }),
         body: {
           email,
-          redirectTo: `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password`,
-        },
+          password,
+          name: username,
+          username,
+        } as any,
+        returnHeaders: true,
       });
+
+      const signUpData =
+        'headers' in signUpResponse && signUpResponse.response
+          ? signUpResponse.response
+          : (signUpResponse as any);
+      const created = signUpData?.user;
+      if (!created) {
+        return reply.status(400).send({ error: 'User creation failed' });
+      }
+
+      const emailWarning: string | null = null;
 
       const createdUser = await prisma.user.update({
         where: { id: created.id },
@@ -333,7 +312,7 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       });
 
-      return reply.status(201).send(createdUser);
+      return reply.status(201).send({ ...createdUser, warning: emailWarning });
     }
   );
 
@@ -344,7 +323,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -514,7 +493,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -540,7 +519,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -565,7 +544,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -603,19 +582,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      // Check admin permissions
-      const userRoles = await prisma.role.findMany({
-        where: {
-          users: {
-            some: { id: user.userId },
-          },
-        },
-      });
-
-      const permissions = userRoles.flatMap((role) => role.permissions);
-      const isAdmin = permissions.includes('*') || permissions.includes('admin.read');
-
-      if (!isAdmin) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -663,19 +630,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      // Check admin permissions
-      const userRoles = await prisma.role.findMany({
-        where: {
-          users: {
-            some: { id: user.userId },
-          },
-        },
-      });
-
-      const permissions = userRoles.flatMap((role) => role.permissions);
-      const isAdmin = permissions.includes('*') || permissions.includes('admin.read');
-
-      if (!isAdmin) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -785,7 +740,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1130,19 +1085,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      // Check admin permissions
-      const userRoles = await prisma.role.findMany({
-        where: {
-          users: {
-            some: { id: user.userId },
-          },
-        },
-      });
-
-      const permissions = userRoles.flatMap((role) => role.permissions);
-      const isAdmin = permissions.includes('*') || permissions.includes('admin.read');
-
-      if (!isAdmin) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1225,7 +1168,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1316,7 +1259,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1331,7 +1274,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1393,7 +1336,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1441,7 +1384,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1528,7 +1471,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1583,7 +1526,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1649,7 +1592,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1711,7 +1654,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1740,7 +1683,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1759,7 +1702,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1815,7 +1758,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1877,7 +1820,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
 
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
@@ -1909,7 +1852,7 @@ export async function adminRoutes(app: FastifyInstance) {
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
       const settings = await getSmtpSettings();
@@ -1922,7 +1865,7 @@ export async function adminRoutes(app: FastifyInstance) {
     { preHandler: authenticate },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = (request as any).user;
-      if (!(await isAdminUser(user.userId))) {
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
       const {

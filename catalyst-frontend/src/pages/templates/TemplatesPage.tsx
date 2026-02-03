@@ -14,8 +14,8 @@ function TemplatesPage({ hideHeader }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
   const [search, setSearch] = useState('');
   const { user } = useAuthStore();
-  const isAdmin = useMemo(
-    () => user?.permissions?.includes('admin.read') || user?.permissions?.includes('*'),
+  const canWrite = useMemo(
+    () => user?.permissions?.includes('admin.write') || user?.permissions?.includes('*'),
     [user?.permissions],
   );
   const filteredTemplates = useMemo(() => {
@@ -40,7 +40,7 @@ function TemplatesPage({ hideHeader }: Props) {
                   Define server templates with images and start commands.
                 </p>
               </div>
-              {isAdmin ? (
+              {canWrite ? (
                 <TemplateCreateModal />
               ) : (
                 <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -88,7 +88,7 @@ function TemplatesPage({ hideHeader }: Props) {
               ? 'Try a different template name or author.'
               : 'Create a template to bootstrap new game servers quickly.'
           }
-          action={isAdmin ? <TemplateCreateModal /> : null}
+          action={canWrite ? <TemplateCreateModal /> : null}
         />
       )}
     </div>

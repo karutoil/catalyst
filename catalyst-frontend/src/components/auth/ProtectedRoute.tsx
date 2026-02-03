@@ -6,13 +6,18 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 type Props = {
   children: ReactNode;
   requireAdmin?: boolean;
+  requireAdminWrite?: boolean;
 };
 
-function ProtectedRoute({ children, requireAdmin }: Props) {
+function ProtectedRoute({ children, requireAdmin, requireAdminWrite }: Props) {
   const location = useLocation();
   const { isAuthenticated, isReady, user } = useAuthStore();
   const hasAdminAccess =
-    user?.permissions?.includes('*') || user?.permissions?.includes('admin.read');
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.write') ||
+    user?.permissions?.includes('admin.read');
+  const hasAdminWrite =
+    user?.permissions?.includes('*') || user?.permissions?.includes('admin.write');
 
   if (!isReady) {
     return <LoadingSpinner />;
@@ -20,6 +25,10 @@ function ProtectedRoute({ children, requireAdmin }: Props) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (requireAdminWrite && !hasAdminWrite) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (requireAdmin && !hasAdminAccess) {

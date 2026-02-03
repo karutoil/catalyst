@@ -12,8 +12,8 @@ type Props = {
 function NodesPage({ hideHeader }: Props) {
   const { data: nodes = [], isLoading } = useNodes();
   const { user } = useAuthStore();
-  const isAdmin = useMemo(
-    () => user?.permissions?.includes('admin.read') || user?.permissions?.includes('*'),
+  const canWrite = useMemo(
+    () => user?.permissions?.includes('admin.write') || user?.permissions?.includes('*'),
     [user?.permissions],
   );
 
@@ -30,7 +30,7 @@ function NodesPage({ hideHeader }: Props) {
                 Track connected infrastructure nodes.
               </p>
             </div>
-            {isAdmin ? (
+            {canWrite ? (
               <NodeCreateModal locationId={locationId} />
             ) : (
               <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
@@ -61,7 +61,7 @@ function NodesPage({ hideHeader }: Props) {
         <EmptyState
           title="No nodes detected"
           description="Install the Catalyst agent and register nodes to begin."
-          action={isAdmin ? <NodeCreateModal locationId={locationId} /> : null}
+          action={canWrite ? <NodeCreateModal locationId={locationId} /> : null}
         />
       )}
     </div>
