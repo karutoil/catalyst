@@ -36,6 +36,7 @@ export function useAdminServers(params?: {
   limit?: number;
   status?: string;
   search?: string;
+  owner?: string;
 }) {
   return useQuery({
     queryKey: ['admin-servers', params],

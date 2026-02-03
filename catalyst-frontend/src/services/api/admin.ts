@@ -3,6 +3,8 @@ import type { CreateIpPoolPayload, IpPool } from '../../types/ipam';
 import type {
   AdminHealthResponse,
   AdminRolesResponse,
+  AdminServerAction,
+  AdminServerActionResponse,
   AdminServersResponse,
   AdminStats,
   AdminUsersResponse,
@@ -77,8 +79,22 @@ export const adminApi = {
     const { data } = await apiClient.delete<{ success: boolean }>(`/api/admin/users/${userId}`);
     return data;
   },
-  listServers: async (params?: { page?: number; limit?: number; status?: string; search?: string }) => {
+  listServers: async (params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    search?: string;
+    owner?: string;
+  }) => {
     const { data } = await apiClient.get<AdminServersResponse>('/api/admin/servers', { params });
+    return data;
+  },
+  bulkServerAction: async (payload: {
+    serverIds: string[];
+    action: AdminServerAction;
+    reason?: string;
+  }) => {
+    const { data } = await apiClient.post<AdminServerActionResponse>('/api/admin/servers/actions', payload);
     return data;
   },
   listNodes: async (params?: { search?: string }) => {

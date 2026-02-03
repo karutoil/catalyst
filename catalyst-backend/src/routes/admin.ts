@@ -1,5 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
+import { ServerState } from '../shared-types';
+import { ServerStateMachine } from '../services/state-machine';
+import { normalizeHostIp, releaseIpForServer, summarizePool } from '../utils/ipam';
 import { createAuditLog } from '../middleware/audit';
 import {
   DEFAULT_SECURITY_SETTINGS,
@@ -10,7 +13,6 @@ import {
   upsertSecuritySettings,
   upsertSmtpSettings,
 } from '../services/mailer';
-import { summarizePool } from '../utils/ipam';
 
 export async function adminRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
@@ -31,6 +33,45 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     return userRoles.some((role) => role.name.toLowerCase() === 'administrator');
+  };
+
+  const parseStoredPortBindings = (value: unknown): Record<number, number> => {
+    if (!value || typeof value !== 'object') {
+      return {};
+    }
+    const bindings: Record<number, number> = {};
+    for (const [containerKey, hostValue] of Object.entries(value as Record<string, unknown>)) {
+      const containerPort = typeof containerKey === 'string' ? Number(containerKey) : Number.NaN;
+      const hostPort = typeof hostValue === 'string' ? Number(hostValue) : Number(hostValue);
+      if (!Number.isInteger(containerPort) || !Number.isInteger(hostPort)) {
+        continue;
+      }
+      bindings[containerPort] = hostPort;
+    }
+    return bindings;
+  };
+
+  const resolveTemplateImage = (
+    template: { image: string; images?: any; defaultImage?: string | null },
+    environment: Record<string, string>
+  ) => {
+    const options = Array.isArray(template.images) ? template.images : [];
+    if (!options.length) return template.image;
+    const requested = environment.IMAGE_VARIANT;
+    if (requested) {
+      const match = options.find((option) => option?.name === requested);
+      if (match?.image) {
+        return match.image;
+      }
+    }
+    if (template.defaultImage) {
+      const defaultMatch = options.find((option) => option?.image === template.defaultImage);
+      if (defaultMatch?.image) {
+        return defaultMatch.image;
+      }
+      return template.defaultImage;
+    }
+    return template.image;
   };
 
   // Get system-wide stats
@@ -638,16 +679,42 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'Admin access required' });
       }
 
-      const { page = 1, limit = 20, status, search } = request.query as {
+      const { page = 1, limit = 20, status, search, owner } = request.query as {
         page?: number;
         limit?: number;
         status?: string;
         search?: string;
+        owner?: string;
       };
 
       const skip = (Number(page) - 1) * Number(limit);
 
       const searchQuery = typeof search === 'string' ? search.trim() : '';
+      const ownerQuery = typeof owner === 'string' ? owner.trim() : '';
+      const ownerMatches = ownerQuery
+        ? await prisma.user.findMany({
+            where: {
+              OR: [
+                { username: { contains: ownerQuery, mode: 'insensitive' } },
+                { email: { contains: ownerQuery, mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true },
+            take: 50,
+          })
+        : [];
+      const ownerFilterIds = ownerMatches.map((entry) => entry.id);
+      if (ownerQuery && ownerFilterIds.length === 0) {
+        return reply.send({
+          servers: [],
+          pagination: {
+            page: Number(page),
+            limit: Number(limit),
+            total: 0,
+            totalPages: 0,
+          },
+        });
+      }
       const where = {
         ...(status ? { status } : {}),
         ...(searchQuery
@@ -659,6 +726,7 @@ export async function adminRoutes(app: FastifyInstance) {
               ],
             }
           : {}),
+        ...(ownerFilterIds.length ? { ownerId: { in: ownerFilterIds } } : {}),
       };
 
         const [servers, total] = await Promise.all([
@@ -667,26 +735,39 @@ export async function adminRoutes(app: FastifyInstance) {
             skip,
             take: Number(limit),
             include: {
-            node: {
-              select: {
-                id: true,
-                name: true,
-                hostname: true,
+              node: {
+                select: {
+                  id: true,
+                  name: true,
+                  hostname: true,
+                },
               },
-            },
-            template: {
-              select: {
-                id: true,
-                name: true,
+              template: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
-            },
             },
           }),
           prisma.server.count({ where }),
         ]);
 
+        const ownerIds = Array.from(new Set(servers.map((server) => server.ownerId).filter(Boolean)));
+        const owners = ownerIds.length
+          ? await prisma.user.findMany({
+              where: { id: { in: ownerIds } },
+              select: { id: true, username: true, email: true },
+            })
+          : [];
+        const ownerMap = new Map(owners.map((owner) => [owner.id, owner]));
+        const serversWithOwners = servers.map((server) => ({
+          ...server,
+          owner: ownerMap.get(server.ownerId) ?? null,
+        }));
+
       reply.send({
-        servers,
+        servers: serversWithOwners,
         pagination: {
           page: Number(page),
           limit: Number(limit),
@@ -695,6 +776,351 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       });
     }
+  );
+
+  // Bulk server actions (admin only)
+  app.post(
+    '/servers/actions',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+
+      if (!(await isAdminUser(user.userId))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const { serverIds, action, reason } = request.body as {
+        serverIds?: string[];
+        action?: 'start' | 'stop' | 'restart' | 'suspend' | 'unsuspend' | 'delete';
+        reason?: string;
+      };
+
+      if (!Array.isArray(serverIds) || serverIds.length === 0) {
+        return reply.status(400).send({ error: 'serverIds are required' });
+      }
+
+      const uniqueServerIds = Array.from(new Set(serverIds.filter((id) => typeof id === 'string')));
+      if (uniqueServerIds.length === 0) {
+        return reply.status(400).send({ error: 'serverIds are required' });
+      }
+
+      const allowedActions = new Set(['start', 'stop', 'restart', 'suspend', 'unsuspend', 'delete']);
+      if (!action || !allowedActions.has(action)) {
+        return reply.status(400).send({ error: 'Invalid action' });
+      }
+
+      const servers = await prisma.server.findMany({
+        where: { id: { in: uniqueServerIds } },
+        include: { node: true, template: true },
+      });
+
+      const serverMap = new Map(servers.map((server) => [server.id, server]));
+      const missing = uniqueServerIds.filter((id) => !serverMap.has(id));
+      if (missing.length) {
+        return reply.status(404).send({ error: 'One or more servers were not found', missing });
+      }
+
+      const gateway = (app as any).wsGateway;
+      const results = await Promise.all(
+        servers.map(async (server) => {
+          try {
+            if (action === 'start') {
+              if (!ServerStateMachine.canStart(server.status as ServerState)) {
+                return { serverId: server.id, status: 'skipped', error: 'Invalid server state' };
+              }
+              if (!server.node?.isOnline) {
+                return { serverId: server.id, status: 'skipped', error: 'Node is offline' };
+              }
+              if (!gateway) {
+                return { serverId: server.id, status: 'failed', error: 'WebSocket gateway not available' };
+              }
+              const serverDir = process.env.SERVER_DATA_PATH || '/tmp/catalyst-servers';
+              const fullServerDir = `${serverDir}/${server.uuid}`;
+              const templateVariables = (server.template?.variables as any[]) || [];
+              const templateDefaults = templateVariables.reduce((acc, variable) => {
+                if (variable?.name && variable?.default !== undefined) {
+                  acc[variable.name] = String(variable.default);
+                }
+                return acc;
+              }, {} as Record<string, string>);
+              const environment: Record<string, string> = {
+                ...templateDefaults,
+                ...(server.environment as Record<string, string>),
+                SERVER_DIR: fullServerDir,
+              };
+              if (server.template?.image) {
+                const resolvedImage = resolveTemplateImage(server.template as any, environment);
+                if (resolvedImage) {
+                  environment.TEMPLATE_IMAGE = resolvedImage;
+                }
+              }
+              if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
+                environment.CATALYST_NETWORK_IP = server.primaryIp;
+              }
+              if (server.networkMode === 'host' && !environment.CATALYST_NETWORK_IP) {
+                try {
+                  environment.CATALYST_NETWORK_IP = normalizeHostIp(server.node.publicAddress);
+                } catch (error: any) {
+                  return { serverId: server.id, status: 'failed', error: error.message };
+                }
+              }
+              const success = await gateway.sendToAgent(server.nodeId, {
+                type: 'start_server',
+                serverId: server.id,
+                serverUuid: server.uuid,
+                template: server.template,
+                environment,
+                allocatedMemoryMb: server.allocatedMemoryMb,
+                allocatedCpuCores: server.allocatedCpuCores,
+                allocatedDiskMb: server.allocatedDiskMb,
+                primaryPort: server.primaryPort,
+                portBindings: parseStoredPortBindings(server.portBindings),
+                networkMode: server.networkMode,
+              });
+              if (!success) {
+                return { serverId: server.id, status: 'failed', error: 'Failed to send command to agent' };
+              }
+              await prisma.server.update({
+                where: { id: server.id },
+                data: { status: 'starting' },
+              });
+              await prisma.auditLog.create({
+                data: {
+                  userId: user.userId,
+                  action: 'server.start',
+                  resource: 'server',
+                  resourceId: server.id,
+                  details: {},
+                },
+              });
+              return { serverId: server.id, status: 'success' };
+            }
+
+            if (action === 'stop') {
+              if (!ServerStateMachine.canStop(server.status as ServerState)) {
+                return { serverId: server.id, status: 'skipped', error: 'Invalid server state' };
+              }
+              if (!server.node?.isOnline) {
+                return { serverId: server.id, status: 'skipped', error: 'Node is offline' };
+              }
+              if (!gateway) {
+                return { serverId: server.id, status: 'failed', error: 'WebSocket gateway not available' };
+              }
+              const success = await gateway.sendToAgent(server.nodeId, {
+                type: 'stop_server',
+                serverId: server.id,
+                serverUuid: server.uuid,
+                template: server.template,
+              });
+              if (!success) {
+                return { serverId: server.id, status: 'failed', error: 'Failed to send command to agent' };
+              }
+              await prisma.server.update({
+                where: { id: server.id },
+                data: { status: 'stopping' },
+              });
+              await prisma.auditLog.create({
+                data: {
+                  userId: user.userId,
+                  action: 'server.stop',
+                  resource: 'server',
+                  resourceId: server.id,
+                  details: {},
+                },
+              });
+              return { serverId: server.id, status: 'success' };
+            }
+
+            if (action === 'restart') {
+              if (!ServerStateMachine.canRestart(server.status as ServerState)) {
+                return { serverId: server.id, status: 'skipped', error: 'Invalid server state' };
+              }
+              if (!server.node?.isOnline) {
+                return { serverId: server.id, status: 'skipped', error: 'Node is offline' };
+              }
+              if (!gateway) {
+                return { serverId: server.id, status: 'failed', error: 'WebSocket gateway not available' };
+              }
+              if (server.status === ServerState.RUNNING) {
+                await gateway.sendToAgent(server.nodeId, {
+                  type: 'stop_server',
+                  serverId: server.id,
+                  serverUuid: server.uuid,
+                  template: server.template,
+                });
+                await prisma.server.update({
+                  where: { id: server.id },
+                  data: { status: 'stopping' },
+                });
+              }
+              const serverDir = process.env.SERVER_DATA_PATH || '/tmp/catalyst-servers';
+              const fullServerDir = `${serverDir}/${server.uuid}`;
+              const environment: Record<string, string> = {
+                ...(server.environment as Record<string, string>),
+                SERVER_DIR: fullServerDir,
+              };
+              if (server.template?.image) {
+                const resolvedImage = resolveTemplateImage(server.template as any, environment);
+                if (resolvedImage) {
+                  environment.TEMPLATE_IMAGE = resolvedImage;
+                }
+              }
+              if (server.primaryIp && !environment.CATALYST_NETWORK_IP) {
+                environment.CATALYST_NETWORK_IP = server.primaryIp;
+              }
+              if (server.networkMode === 'host' && !environment.CATALYST_NETWORK_IP) {
+                try {
+                  environment.CATALYST_NETWORK_IP = normalizeHostIp(server.node.publicAddress);
+                } catch (error: any) {
+                  return { serverId: server.id, status: 'failed', error: error.message };
+                }
+              }
+              const success = await gateway.sendToAgent(server.nodeId, {
+                type: 'restart_server',
+                serverId: server.id,
+                serverUuid: server.uuid,
+                template: server.template,
+                environment,
+                allocatedMemoryMb: server.allocatedMemoryMb,
+                allocatedCpuCores: server.allocatedCpuCores,
+                allocatedDiskMb: server.allocatedDiskMb,
+                primaryPort: server.primaryPort,
+                portBindings: parseStoredPortBindings(server.portBindings),
+                networkMode: server.networkMode,
+              });
+              if (!success) {
+                return { serverId: server.id, status: 'failed', error: 'Failed to send command to agent' };
+              }
+              await prisma.auditLog.create({
+                data: {
+                  userId: user.userId,
+                  action: 'server.restart',
+                  resource: 'server',
+                  resourceId: server.id,
+                  details: {},
+                },
+              });
+              return { serverId: server.id, status: 'success' };
+            }
+
+            if (action === 'suspend') {
+              if (server.suspendedAt) {
+                return { serverId: server.id, status: 'skipped', error: 'Server already suspended' };
+              }
+              if ((server.status === 'running' || server.status === 'starting') && gateway) {
+                if (!server.node?.isOnline) {
+                  return { serverId: server.id, status: 'skipped', error: 'Node is offline' };
+                }
+                await gateway.sendToAgent(server.nodeId, {
+                  type: 'stop_server',
+                  serverId: server.id,
+                  serverUuid: server.uuid,
+                });
+              }
+              await prisma.server.update({
+                where: { id: server.id },
+                data: {
+                  status: 'suspended',
+                  suspendedAt: new Date(),
+                  suspendedByUserId: user.userId,
+                  suspensionReason: reason?.trim() || null,
+                },
+              });
+              await prisma.auditLog.create({
+                data: {
+                  userId: user.userId,
+                  action: 'server.suspend',
+                  resource: 'server',
+                  resourceId: server.id,
+                  details: { reason: reason?.trim() || undefined },
+                },
+              });
+              await prisma.serverLog.create({
+                data: {
+                  serverId: server.id,
+                  stream: 'system',
+                  data: `Server suspended${reason?.trim() ? `: ${reason.trim()}` : ''}`,
+                },
+              });
+              return { serverId: server.id, status: 'success' };
+            }
+
+            if (action === 'unsuspend') {
+              if (!server.suspendedAt) {
+                return { serverId: server.id, status: 'skipped', error: 'Server is not suspended' };
+              }
+              await prisma.server.update({
+                where: { id: server.id },
+                data: {
+                  status: 'stopped',
+                  suspendedAt: null,
+                  suspendedByUserId: null,
+                  suspensionReason: null,
+                },
+              });
+              await prisma.auditLog.create({
+                data: {
+                  userId: user.userId,
+                  action: 'server.unsuspend',
+                  resource: 'server',
+                  resourceId: server.id,
+                  details: {},
+                },
+              });
+              await prisma.serverLog.create({
+                data: {
+                  serverId: server.id,
+                  stream: 'system',
+                  data: 'Server unsuspended',
+                },
+              });
+              return { serverId: server.id, status: 'success' };
+            }
+
+            if (action === 'delete') {
+              if (isSuspensionEnforced() && server.suspendedAt && isSuspensionDeleteBlocked()) {
+                return { serverId: server.id, status: 'skipped', error: 'Server is suspended' };
+              }
+              if (server.status !== 'stopped') {
+                return { serverId: server.id, status: 'skipped', error: 'Server must be stopped' };
+              }
+              await prisma.$transaction(async (tx) => {
+                await releaseIpForServer(tx, server.id);
+                await tx.server.delete({ where: { id: server.id } });
+              });
+              await prisma.auditLog.create({
+                data: {
+                  userId: user.userId,
+                  action: 'server.delete',
+                  resource: 'server',
+                  resourceId: server.id,
+                  details: {},
+                },
+              });
+              return { serverId: server.id, status: 'success' };
+            }
+
+            return { serverId: server.id, status: 'skipped', error: 'Unsupported action' };
+          } catch (error: any) {
+            return {
+              serverId: server.id,
+              status: 'failed',
+              error: error?.message || 'Action failed',
+            };
+          }
+        }),
+      );
+
+      const summary = results.reduce(
+        (acc, entry) => {
+          acc[entry.status] = (acc[entry.status] || 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
+
+      return reply.send({ success: true, results, summary });
+    },
   );
 
   // Get audit logs (admin only)

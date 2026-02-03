@@ -81,8 +81,40 @@ export interface AdminServer {
   suspendedAt?: string | null;
   suspensionReason?: string | null;
   databaseAllocation?: number;
+  allocatedMemoryMb?: number;
+  allocatedCpuCores?: number;
+  allocatedDiskMb?: number;
+  ownerId?: string;
+  owner?: {
+    id: string;
+    username: string;
+    email: string;
+  } | null;
+  primaryIp?: string | null;
+  primaryPort?: number | null;
+  networkMode?: string | null;
   node: AdminServerNode;
   template: AdminServerTemplate;
+}
+
+export type AdminServerAction =
+  | 'start'
+  | 'stop'
+  | 'restart'
+  | 'suspend'
+  | 'unsuspend'
+  | 'delete';
+
+export interface AdminServerActionResult {
+  serverId: string;
+  status: 'success' | 'failed' | 'skipped';
+  error?: string;
+}
+
+export interface AdminServerActionResponse {
+  success: boolean;
+  results: AdminServerActionResult[];
+  summary: Record<string, number>;
 }
 
 export interface AdminServersResponse {
