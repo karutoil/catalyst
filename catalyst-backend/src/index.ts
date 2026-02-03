@@ -374,6 +374,15 @@ async function bootstrap() {
           ...(body ? { body: Buffer.isBuffer(body) ? body.toString() : body } : {}),
         });
         const response = await auth.handler(req);
+        if (url.pathname === "/api/auth/sign-out") {
+          const passkeyCookie = "better-auth-passkey=; Max-Age=0; Path=/; SameSite=Lax; HttpOnly";
+          const existing = response.headers.get("set-cookie");
+          if (existing) {
+            response.headers.append("set-cookie", passkeyCookie);
+          } else {
+            response.headers.set("set-cookie", passkeyCookie);
+          }
+        }
         reply.status(response.status);
         response.headers.forEach((value, key) => {
           reply.header(key, value);
