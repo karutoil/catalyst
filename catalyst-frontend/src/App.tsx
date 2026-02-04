@@ -5,7 +5,10 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import { ToastProvider } from './components/providers/ToastProvider';
 import { useAuthInit } from './hooks/useAuthInit';
 import ErrorBoundary from './components/shared/ErrorBoundary';
-import { useUIStore } from './stores/uiStore';
+import { useThemeStore } from './stores/themeStore';
+import { themeApi } from './services/api/theme';
+import { adminApi } from './services/api/admin';
+import { useAuthStore } from './stores/authStore';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import TwoFactorPage from './pages/auth/TwoFactorPage';
@@ -26,6 +29,7 @@ import UsersPage from './pages/admin/UsersPage';
 import SystemPage from './pages/admin/SystemPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
 import SecurityPage from './pages/admin/SecurityPage';
+import ThemeSettingsPage from './pages/admin/ThemeSettingsPage';
 import InvitesPage from './pages/InvitesPage';
 import ProfilePage from './pages/ProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -33,12 +37,52 @@ import { ApiKeysPage } from './pages/ApiKeysPage';
 
 function App() {
   useAuthInit();
-  const { theme } = useUIStore();
+  const { theme, setThemeSettings, applyTheme, injectCustomCss } = useThemeStore();
+  const { user, isAuthenticated } = useAuthStore();
+
+  // Load public theme settings on mount
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove('light', 'dark');
-    root.classList.add(theme);
-  }, [theme]);
+    const loadThemeSettings = async () => {
+      try {
+        const settings = await themeApi.getPublicSettings();
+        setThemeSettings(settings);
+      } catch (error) {
+        console.error('Failed to load theme settings:', error);
+        // Continue with defaults
+      }
+    };
+    loadThemeSettings();
+  }, [setThemeSettings]);
+
+  // Load custom CSS for admin users
+  useEffect(() => {
+    const loadCustomCss = async () => {
+      if (!isAuthenticated || !user) return;
+
+      const hasAdminAccess =
+        user?.permissions?.includes('*') ||
+        user?.permissions?.includes('admin.write') ||
+        user?.permissions?.includes('admin.read');
+
+      if (hasAdminAccess) {
+        try {
+          const fullSettings = await adminApi.getThemeSettings();
+          if (fullSettings.customCss) {
+            injectCustomCss(fullSettings.customCss);
+          }
+        } catch (error) {
+          console.error('Failed to load custom CSS:', error);
+        }
+      }
+    };
+    loadCustomCss();
+  }, [isAuthenticated, user, injectCustomCss]);
+
+  // Apply theme whenever it changes
+  useEffect(() => {
+    applyTheme();
+  }, [theme, applyTheme]);
+
   return (
     <ErrorBoundary>
       <ToastProvider />
@@ -145,6 +189,14 @@ function App() {
               element={
                 <ProtectedRoute requireAdminWrite>
                   <SecurityPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/theme-settings"
+              element={
+                <ProtectedRoute requireAdminWrite>
+                  <ThemeSettingsPage />
                 </ProtectedRoute>
               }
             />

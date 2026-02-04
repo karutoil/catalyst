@@ -1994,4 +1994,124 @@ export async function adminRoutes(app: FastifyInstance) {
       reply.send({ success: true });
     }
   );
+
+  // Theme settings: get
+  app.get(
+    '/theme-settings',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      if (!(await isAdminUser(user.userId, 'admin.read'))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      let settings = await prisma.themeSettings.findUnique({
+        where: { id: 'default' },
+      });
+
+      if (!settings) {
+        settings = await prisma.themeSettings.create({
+          data: { id: 'default' },
+        });
+      }
+
+      reply.send({ success: true, data: settings });
+    }
+  );
+
+  // Theme settings: update
+  app.patch(
+    '/theme-settings',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = (request as any).user;
+      if (!(await isAdminUser(user.userId, 'admin.write'))) {
+        return reply.status(403).send({ error: 'Admin access required' });
+      }
+
+      const {
+        panelName,
+        logoUrl,
+        faviconUrl,
+        defaultTheme,
+        enabledThemes,
+        customCss,
+        primaryColor,
+        secondaryColor,
+        accentColor,
+        metadata,
+      } = request.body as {
+        panelName?: string;
+        logoUrl?: string | null;
+        faviconUrl?: string | null;
+        defaultTheme?: string;
+        enabledThemes?: string[];
+        customCss?: string | null;
+        primaryColor?: string;
+        secondaryColor?: string;
+        accentColor?: string;
+        metadata?: any;
+      };
+
+      // Validation
+      if (panelName !== undefined && panelName.trim().length < 1) {
+        return reply.status(400).send({ error: 'Panel name cannot be empty' });
+      }
+
+      if (defaultTheme !== undefined && !['light', 'dark', 'system'].includes(defaultTheme)) {
+        return reply.status(400).send({ error: 'Invalid default theme' });
+      }
+
+      if (enabledThemes !== undefined) {
+        if (!Array.isArray(enabledThemes) || enabledThemes.length === 0) {
+          return reply.status(400).send({ error: 'At least one theme must be enabled' });
+        }
+        const validThemes = ['light', 'dark'];
+        if (!enabledThemes.every((t) => validThemes.includes(t))) {
+          return reply.status(400).send({ error: 'Invalid theme in enabledThemes' });
+        }
+      }
+
+      const colorRegex = /^#[0-9A-Fa-f]{6}$/;
+      if (primaryColor !== undefined && !colorRegex.test(primaryColor)) {
+        return reply.status(400).send({ error: 'Invalid primary color format' });
+      }
+      if (secondaryColor !== undefined && !colorRegex.test(secondaryColor)) {
+        return reply.status(400).send({ error: 'Invalid secondary color format' });
+      }
+      if (accentColor !== undefined && !colorRegex.test(accentColor)) {
+        return reply.status(400).send({ error: 'Invalid accent color format' });
+      }
+
+      if (customCss !== undefined && customCss !== null && customCss.length > 100000) {
+        return reply.status(400).send({ error: 'Custom CSS too large (max 100KB)' });
+      }
+
+      const updateData: any = {};
+      if (panelName !== undefined) updateData.panelName = panelName.trim();
+      if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
+      if (faviconUrl !== undefined) updateData.faviconUrl = faviconUrl;
+      if (defaultTheme !== undefined) updateData.defaultTheme = defaultTheme;
+      if (enabledThemes !== undefined) updateData.enabledThemes = enabledThemes;
+      if (customCss !== undefined) updateData.customCss = customCss;
+      if (primaryColor !== undefined) updateData.primaryColor = primaryColor;
+      if (secondaryColor !== undefined) updateData.secondaryColor = secondaryColor;
+      if (accentColor !== undefined) updateData.accentColor = accentColor;
+      if (metadata !== undefined) updateData.metadata = metadata;
+
+      const settings = await prisma.themeSettings.upsert({
+        where: { id: 'default' },
+        update: updateData,
+        create: { id: 'default', ...updateData },
+      });
+
+      await createAuditLog(user.userId, {
+        action: 'theme_settings.update',
+        resource: 'system',
+        details: updateData,
+      });
+
+      reply.send({ success: true, data: settings });
+    }
+  );
 }

@@ -17,7 +17,7 @@ function Sidebar() {
     user?.permissions?.includes('admin.read');
   return (
     <aside
-      className={`flex h-[calc(100vh-72px)] flex-col border-r border-slate-200 bg-white px-2 py-6 text-sm shadow-surface-light transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark ${
+      className={`sticky top-[73px] flex h-[calc(100vh-73px)] flex-col border-r border-slate-200 bg-white px-2 py-6 text-sm shadow-surface-light transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 dark:shadow-surface-dark ${
         sidebarCollapsed ? 'w-16' : 'w-64'
       }`}
     >

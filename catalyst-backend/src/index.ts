@@ -486,6 +486,34 @@ async function bootstrap() {
       reply.type("text/plain").send(script);
     });
 
+    // Public theme settings endpoint (unauthenticated)
+    app.get("/api/theme-settings/public", async (_request, reply) => {
+      let settings = await prisma.themeSettings.findUnique({
+        where: { id: "default" },
+      });
+
+      if (!settings) {
+        settings = await prisma.themeSettings.create({
+          data: { id: "default" },
+        });
+      }
+
+      // Return only public fields
+      reply.send({
+        success: true,
+        data: {
+          panelName: settings.panelName,
+          logoUrl: settings.logoUrl,
+          faviconUrl: settings.faviconUrl,
+          defaultTheme: settings.defaultTheme,
+          enabledThemes: settings.enabledThemes,
+          primaryColor: settings.primaryColor,
+          secondaryColor: settings.secondaryColor,
+          accentColor: settings.accentColor,
+        },
+      });
+    });
+
     // Start server
     await app.listen({ port: parseInt(process.env.PORT || "3000"), host: "0.0.0.0" });
     logger.info(

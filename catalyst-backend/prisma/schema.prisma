@@ -238,6 +238,22 @@ model SystemSetting {
   updatedAt          DateTime @updatedAt
 }
 
+model ThemeSettings {
+  id             String   @id @default("default")
+  panelName      String   @default("Catalyst")
+  logoUrl        String?
+  faviconUrl     String?
+  defaultTheme   String   @default("dark") // light, dark, system
+  enabledThemes  String[] @default(["light", "dark"])
+  customCss      String?  @db.Text
+  primaryColor   String   @default("#3b82f6")
+  secondaryColor String   @default("#8b5cf6")
+  accentColor    String   @default("#06b6d4")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 // ============================================================================
 // INFRASTRUCTURE
 // ============================================================================

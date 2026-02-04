@@ -100,3 +100,10 @@ export function useAuthLockouts(params?: { page?: number; limit?: number; search
     queryFn: () => adminApi.listAuthLockouts(params),
   });
 }
+
+export function useThemeSettings() {
+  return useQuery({
+    queryKey: ['admin-theme-settings'],
+    queryFn: adminApi.getThemeSettings,
+  });
+}

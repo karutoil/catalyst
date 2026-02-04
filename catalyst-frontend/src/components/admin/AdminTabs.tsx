@@ -11,6 +11,7 @@ const tabs = [
   { to: '/admin/api-keys', label: 'API Keys' },
   { to: '/admin/system', label: 'System' },
   { to: '/admin/security', label: 'Security' },
+  { to: '/admin/theme-settings', label: 'Theme' },
   { to: '/admin/alerts', label: 'Alerts' },
   { to: '/admin/audit-logs', label: 'Audit Logs' },
 ];

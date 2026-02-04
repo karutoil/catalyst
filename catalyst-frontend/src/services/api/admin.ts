@@ -227,4 +227,12 @@ export const adminApi = {
     });
     return data;
   },
+  getThemeSettings: async () => {
+    const { data } = await apiClient.get<ApiResponse<any>>('/api/admin/theme-settings');
+    return data.data;
+  },
+  updateThemeSettings: async (payload: any) => {
+    const { data } = await apiClient.patch<ApiResponse<any>>('/api/admin/theme-settings', payload);
+    return data.data;
+  },
 };
