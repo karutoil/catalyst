@@ -35,6 +35,11 @@ const adminSections = [
     to: '/admin/network',
   },
   {
+    title: 'API Keys',
+    description: 'Manage API keys for automated access.',
+    to: '/admin/api-keys',
+  },
+  {
     title: 'Mod Manager',
     description: 'Configure mod marketplace access keys.',
     to: '/admin/system',

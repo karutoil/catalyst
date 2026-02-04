@@ -46,6 +46,7 @@ export enum Permission {
   DATABASE_ROTATE = "database.rotate",
   ADMIN_READ = "admin.read",
   ADMIN_WRITE = "admin.write",
+  APIKEY_MANAGE = "apikey.manage",
 }
 
 // ============================================================================

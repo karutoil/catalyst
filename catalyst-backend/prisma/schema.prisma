@@ -124,6 +124,34 @@ model twoFactor {
   @@index([userId])
 }
 
+model apikey {
+  id                  String    @id @default(cuid())
+  name                String?
+  start               String?
+  prefix              String?
+  key                 String    @unique
+  userId              String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean   @default(true)
+  rateLimitEnabled    Boolean   @default(true)
+  rateLimitTimeWindow Int       @default(60000)
+  rateLimitMax        Int       @default(100)
+  requestCount        Int       @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  permissions         Json?
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([key])
+  @@index([expiresAt])
+}
+
 
 // ============================================================================
 // ROLES & PERMISSIONS

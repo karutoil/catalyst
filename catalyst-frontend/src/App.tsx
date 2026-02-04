@@ -29,6 +29,7 @@ import SecurityPage from './pages/admin/SecurityPage';
 import InvitesPage from './pages/InvitesPage';
 import ProfilePage from './pages/ProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
+import { ApiKeysPage } from './pages/ApiKeysPage';
 
 function App() {
   useAuthInit();
@@ -160,6 +161,14 @@ function App() {
               element={
                 <ProtectedRoute requireAdmin>
                   <AuditLogsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/api-keys"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <ApiKeysPage />
                 </ProtectedRoute>
               }
             />
