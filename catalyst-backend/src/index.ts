@@ -216,7 +216,7 @@ async function bootstrap() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'"],
           scriptSrc: ["'self'"],
           imgSrc: ["'self'", "data:", "https:"],
         },
@@ -272,17 +272,17 @@ async function bootstrap() {
       process.env.CORS_ORIGIN,
     ].filter(Boolean) as string[];
     const isAllowedOrigin = (origin?: string) =>
-      !origin || allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development';
+      Boolean(origin && allowedOrigins.includes(origin));
 
     await app.register(fastifyCors, {
       origin: (origin, callback) => {
         callback(null, isAllowedOrigin(origin));
       },
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-      credentials: true,
-      maxAge: 86400,
-    });
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Client-Info"],
+        credentials: true,
+        maxAge: 86400,
+      });
 
     await app.register(fastifySwagger, {
       openapi: {
@@ -303,6 +303,7 @@ async function bootstrap() {
     });
 
     await app.register(fastifyWebsocket, {
+      options: { maxPayload: 64 * 1024 },
       errorHandler: (error) => {
         logger.error(error, "WebSocket error handler");
       },
@@ -455,8 +456,7 @@ async function bootstrap() {
 
     // Start SFTP server
     if (process.env.SFTP_ENABLED !== 'false') {
-      startSFTPServer();
-      logger.info(`SFTP server enabled on port ${process.env.SFTP_PORT || 2022}`);
+      startSFTPServer(logger);
     }
 
     // Start task scheduler

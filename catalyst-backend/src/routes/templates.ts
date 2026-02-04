@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 
 const ensureAdmin = async (
@@ -33,7 +33,10 @@ export async function templateRoutes(app: FastifyInstance) {
   // List all templates
   app.get(
     "/",
+    { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
       const templates = await prisma.serverTemplate.findMany({
         orderBy: { createdAt: "desc" },
       });
@@ -45,7 +48,10 @@ export async function templateRoutes(app: FastifyInstance) {
   // Get template details
   app.get(
     "/:templateId",
+    { onRequest: [app.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
       const { templateId } = request.params as { templateId: string };
 
       const template = await prisma.serverTemplate.findUnique({

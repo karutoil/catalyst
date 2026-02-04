@@ -1,7 +1,8 @@
 import { createReadStream, createWriteStream } from "fs";
 import * as fs from "fs/promises";
 import path from "path";
-import { PassThrough, Readable } from "stream";
+import type { Readable } from "stream";
+import { PassThrough } from "stream";
 import crypto from "crypto";
 import { Client as SftpClient } from "ssh2";
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";

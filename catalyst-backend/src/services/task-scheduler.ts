@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import cronParser from 'cron-parser';
-import { PrismaClient } from '@prisma/client';
-import pino from 'pino';
+import type { PrismaClient } from '@prisma/client';
+import type pino from 'pino';
 
 interface TaskExecutor {
   executeTask(task: any): Promise<void>;

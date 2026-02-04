@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
 import { decryptBackupConfig, encryptBackupConfig, redactBackupConfig } from "../services/backup-credentials";
@@ -468,10 +468,17 @@ export async function serverRoutes(app: FastifyInstance) {
       .split("\n")
       .map((entry) => entry.trim())
       .filter(Boolean);
+    if (entries.length > 5000) {
+      throw new Error("Archive contains too many entries");
+    }
     for (const entry of entries) {
       const normalized = path.posix.normalize(entry);
       if (normalized.startsWith("..") || path.posix.isAbsolute(normalized)) {
         throw new Error("Archive contains invalid paths");
+      }
+      const depth = normalized.split("/").filter(Boolean).length;
+      if (depth > 20) {
+        throw new Error("Archive contains deeply nested paths");
       }
     }
   };

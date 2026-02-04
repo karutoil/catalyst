@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useAuthStore } from '../../stores/authStore';
 
 const statCards = [
   { title: 'Servers', value: '12', delta: '+2 this week' },
@@ -19,6 +20,11 @@ const activities = [
 ];
 
 function DashboardPage() {
+  const { user } = useAuthStore();
+  const canCreateServer =
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.write') ||
+    user?.permissions?.includes('server.create');
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -29,12 +35,14 @@ function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link
-            to="/servers"
-            className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500"
-          >
-            Create Server
-          </Link>
+          {canCreateServer ? (
+            <Link
+              to="/servers"
+              className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500"
+            >
+              Create Server
+            </Link>
+          ) : null}
           <Link
             to="/admin/nodes"
             className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:bg-emerald-500"

@@ -1,5 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-import pino from 'pino';
+import type { PrismaClient } from '@prisma/client';
+import type pino from 'pino';
 import fetch from 'node-fetch';
 import { renderAlertEmail, sendEmail } from './mailer';
 

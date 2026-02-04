@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { auth } from "../auth";
 import { logAuthAttempt } from "../middleware/audit";
@@ -327,7 +327,7 @@ export async function authRoutes(app: FastifyInstance) {
   // Get current user (compatibility shim)
   app.get(
     "/me",
-    { onRequest: [app.authenticate] },
+    { onRequest: [app.authenticate], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = await prisma.user.findUnique({
         where: { id: request.user.userId },
@@ -366,7 +366,7 @@ export async function authRoutes(app: FastifyInstance) {
   // Profile summary
   app.get(
     "/profile",
-    { onRequest: [app.authenticate] },
+    { onRequest: [app.authenticate], config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const userRecord = await prisma.user.findUnique({
         where: { id: request.user.userId },

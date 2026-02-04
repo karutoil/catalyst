@@ -1,14 +1,17 @@
-import pino from "pino";
+import type pino from "pino";
 import crypto from "crypto";
-import { Prisma, PrismaClient } from "@prisma/client";
-import { FastifyRequest } from "fastify";
+import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { FastifyRequest } from "fastify";
 import { auth } from "../auth";
+import type {
+  WsEvent} from "../shared-types";
 import {
-  WsEvent,
   ServerState,
   CatalystError,
   ErrorCodes,
 } from "../shared-types";
+import { ServerStateMachine } from "../services/state-machine";
 import { normalizeHostIp } from "../utils/ipam";
 
 interface ConnectedAgent {
@@ -42,9 +45,20 @@ export class WebSocketGateway {
   private pendingAgentRequests = new Map<string, PendingAgentRequest>();
   private consoleOutputCounters = new Map<string, { count: number; resetAt: number; warned: boolean }>();
   private clientCommandCounters = new Map<string, { count: number; resetAt: number }>();
+  private agentMessageCounters = new Map<string, { count: number; resetAt: number }>();
+  private agentMetricsCounters = new Map<string, { count: number; resetAt: number }>();
+  private serverMetricsCounters = new Map<string, { count: number; resetAt: number }>();
+  private agentLimitWarnings = new Map<string, { resetAt: number }>();
+  private serverCommandCounters = new Map<string, { count: number; resetAt: number }>();
+  private serverConsoleBytes = new Map<string, { count: number; resetAt: number }>();
   private consoleResumeTimestamps = new Map<string, number>();
   private readonly consoleOutputLimit = { max: 200, windowMs: 1000 };
   private consoleInputLimit = { max: 10, windowMs: 1000 };
+  private readonly agentMessageLimit = { max: 10000, windowMs: 1000 };
+  private readonly agentMetricsLimit = { max: 10000, windowMs: 1000 };
+  private readonly serverMetricsLimit = { max: 60, windowMs: 1000 };
+  private readonly agentConsoleBytesLimit = { maxBytes: 32 * 1024 };
+  private readonly pendingAgentRequestLimit = 2000;
   private readonly autoRestartingServers = new Set<string>();
 
   constructor(private prisma: PrismaClient, logger: pino.Logger) {
@@ -87,28 +101,32 @@ export class WebSocketGateway {
         authenticated: false,
         lastHeartbeat: Date.now(),
       };
-      this.agents.set(nodeId, agent);
-      socket.socket.on("message", (data: any) => this.handleAgentMessage(nodeId, data));
-      socket.socket.on("close", () => {
+      const onMessage = (data: any) => this.handleAgentMessage(nodeId, data);
+      const onClose = () => {
         this.agents.delete(nodeId);
         this.prisma.node.update({
           where: { id: nodeId },
           data: { isOnline: false },
         });
         this.logger.info(`Agent disconnected: ${nodeId}`);
-      });
+      };
 
       if (token) {
         const node = await this.prisma.node.findUnique({
           where: { id: nodeId },
         });
         if (node && crypto.timingSafeEqual(Buffer.from(node.secret), Buffer.from(token))) {
+          this.agents.set(nodeId, agent);
+          socket.socket.on("message", onMessage);
+          socket.socket.on("close", onClose);
           await this.finalizeAgentConnection(node, agent);
         } else {
           this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
           agent.socket.end();
-          this.agents.delete(nodeId);
         }
+      } else {
+        socket.socket.on("message", onMessage);
+        socket.socket.on("close", onClose);
       }
     } catch (err) {
       this.logger.error(err, "Error in agent connection");
@@ -202,9 +220,120 @@ export class WebSocketGateway {
     }
   }
 
+  private allowAgentMessage(nodeId: string, limit: { max: number; windowMs: number }) {
+    const now = Date.now();
+    const existing = this.agentMessageCounters.get(nodeId);
+    if (!existing || now >= existing.resetAt) {
+      this.agentMessageCounters.set(nodeId, { count: 1, resetAt: now + limit.windowMs });
+      return true;
+    }
+    if (existing.count >= limit.max) {
+      return false;
+    }
+    existing.count += 1;
+    return true;
+  }
+
+  private allowAgentMetrics(nodeId: string, count = 1) {
+    const now = Date.now();
+    const existing = this.agentMetricsCounters.get(nodeId);
+    if (!existing || now >= existing.resetAt) {
+      this.agentMetricsCounters.set(nodeId, { count, resetAt: now + this.agentMetricsLimit.windowMs });
+      return true;
+    }
+    if (existing.count + count > this.agentMetricsLimit.max) {
+      return false;
+    }
+    existing.count += count;
+    return true;
+  }
+
+  private allowServerMetrics(serverId: string, count = 1) {
+    const now = Date.now();
+    const existing = this.serverMetricsCounters.get(serverId);
+    if (!existing || now >= existing.resetAt) {
+      this.serverMetricsCounters.set(serverId, { count, resetAt: now + this.serverMetricsLimit.windowMs });
+      return true;
+    }
+    if (existing.count + count > this.serverMetricsLimit.max) {
+      return false;
+    }
+    existing.count += count;
+    return true;
+  }
+
+  private shouldWarnRateLimit(nodeId: string, windowMs: number) {
+    const now = Date.now();
+    const existing = this.agentLimitWarnings.get(nodeId);
+    if (!existing || now >= existing.resetAt) {
+      this.agentLimitWarnings.set(nodeId, { resetAt: now + windowMs });
+      return true;
+    }
+    return false;
+  }
+
+  private allowServerCommand(serverId: string) {
+    const now = Date.now();
+    const existing = this.serverCommandCounters.get(serverId);
+    if (!existing || now >= existing.resetAt) {
+      this.serverCommandCounters.set(serverId, { count: 1, resetAt: now + this.consoleInputLimit.windowMs });
+      return true;
+    }
+    if (existing.count >= this.consoleInputLimit.max) {
+      return false;
+    }
+    existing.count += 1;
+    return true;
+  }
+
+  private allowConsoleOutputBytes(serverId: string, bytes: number) {
+    const now = Date.now();
+    const windowMs = this.consoleOutputLimit.windowMs;
+    const limit = this.agentConsoleBytesLimit.maxBytes;
+    const existing = this.serverConsoleBytes.get(serverId);
+    if (!existing || now >= existing.resetAt) {
+      this.serverConsoleBytes.set(serverId, { count: bytes, resetAt: now + windowMs });
+      return bytes <= limit;
+    }
+    existing.count += bytes;
+    return existing.count <= limit;
+  }
+
+  private parseAgentMessage(data: any): { ok: true; value: any } | { ok: false } {
+    try {
+      if (typeof data === "string") {
+        return { ok: true, value: JSON.parse(data) };
+      }
+      if (Buffer.isBuffer(data)) {
+        return { ok: true, value: JSON.parse(data.toString()) };
+      }
+      if (data?.toString) {
+        return { ok: true, value: JSON.parse(data.toString()) };
+      }
+      return { ok: false };
+    } catch {
+      return { ok: false };
+    }
+  }
+
   private async handleAgentMessage(nodeId: string, data: any) {
     try {
-      const message = JSON.parse(data.toString());
+      if (!this.allowAgentMessage(nodeId, this.agentMessageLimit)) {
+        if (this.shouldWarnRateLimit(nodeId, this.agentMessageLimit.windowMs)) {
+          this.logger.warn({ nodeId }, "Agent message rate limit exceeded");
+        }
+        return;
+      }
+      const parsed = this.parseAgentMessage(data);
+      if (!parsed.ok || !parsed.value || typeof parsed.value !== "object") {
+        this.logger.warn({ nodeId }, "Invalid agent message payload");
+        return;
+      }
+      const message = parsed.value;
+      if (typeof message.type !== "string") {
+        this.logger.warn({ nodeId }, "Agent message missing type");
+        return;
+      }
       const agent = this.agents.get(nodeId);
       if (!agent) return;
       if (!agent.authenticated && message.type !== "node_handshake") {
@@ -238,7 +367,7 @@ export class WebSocketGateway {
         if (pending) {
           clearTimeout(pending.timeout);
           if (message.success === false) {
-            pending.reject(new Error(message.error || "Backup download failed"));
+            pending.reject(new Error("Backup download failed"));
           } else {
             pending.resolve(message);
           }
@@ -256,7 +385,7 @@ export class WebSocketGateway {
         if (pending) {
           clearTimeout(pending.timeout);
           if (message.success === false) {
-            pending.reject(new Error(message.error || "Backup upload failed"));
+            pending.reject(new Error("Backup upload failed"));
           } else {
             pending.resolve(message);
           }
@@ -285,7 +414,7 @@ export class WebSocketGateway {
             { requestId: message.requestId, error: message.error },
             "Agent download chunk error",
           );
-          pending.reject(new Error(message.error));
+          pending.reject(new Error("Backup download failed"));
           this.pendingAgentRequests.delete(message.requestId);
           return;
         }
@@ -325,10 +454,33 @@ export class WebSocketGateway {
           });
         }
       } else if (message.type === "health_report") {
+        if (!this.allowAgentMetrics(nodeId)) {
+          if (this.shouldWarnRateLimit(nodeId, this.agentMetricsLimit.windowMs)) {
+            this.logger.warn({ nodeId }, "Agent metrics rate limit exceeded");
+          }
+          return;
+        }
         const node = await this.prisma.node.findUnique({
           where: { id: nodeId },
         });
         if (!node) {
+          return;
+        }
+        const cpuPercent = Number(message.cpuPercent);
+        const memoryUsageMb = Number(message.memoryUsageMb);
+        const memoryTotalMb = Number(message.memoryTotalMb ?? node.maxMemoryMb);
+        const diskUsageMb = Number(message.diskUsageMb ?? 0);
+        const diskTotalMb = Number(message.diskTotalMb ?? 0);
+        const containerCount = Number(message.containerCount);
+        if (
+          !Number.isFinite(cpuPercent) ||
+          !Number.isFinite(memoryUsageMb) ||
+          !Number.isFinite(memoryTotalMb) ||
+          !Number.isFinite(diskUsageMb) ||
+          !Number.isFinite(diskTotalMb) ||
+          !Number.isFinite(containerCount)
+        ) {
+          this.logger.warn({ nodeId }, "Invalid health report payload");
           return;
         }
         await this.prisma.node.update({
@@ -338,17 +490,23 @@ export class WebSocketGateway {
         await this.prisma.nodeMetrics.create({
           data: {
             nodeId,
-            cpuPercent: Number(message.cpuPercent) || 0,
-            memoryUsageMb: Math.round(Number(message.memoryUsageMb) || 0),
-            memoryTotalMb: Math.round(Number(message.memoryTotalMb) || node.maxMemoryMb),
-            diskUsageMb: Math.round(Number(message.diskUsageMb) || 0),
-            diskTotalMb: Math.round(Number(message.diskTotalMb) || 0),
+            cpuPercent,
+            memoryUsageMb: Math.round(memoryUsageMb),
+            memoryTotalMb: Math.round(memoryTotalMb),
+            diskUsageMb: Math.round(diskUsageMb),
+            diskTotalMb: Math.round(diskTotalMb),
             networkRxBytes: BigInt(0),
             networkTxBytes: BigInt(0),
-            containerCount: Number(message.containerCount) || 0,
+            containerCount: Math.max(0, Math.round(containerCount)),
           },
         });
       } else if (message.type === "resource_stats") {
+        if (!this.allowAgentMetrics(nodeId)) {
+          if (this.shouldWarnRateLimit(nodeId, this.agentMetricsLimit.windowMs)) {
+            this.logger.warn({ nodeId }, "Agent metrics rate limit exceeded");
+          }
+          return;
+        }
         const serverUuid = message.serverUuid;
         if (!serverUuid) {
           this.logger.warn("resource_stats missing serverUuid");
@@ -363,6 +521,10 @@ export class WebSocketGateway {
           this.logger.warn({ serverId: serverUuid }, "resource_stats for unknown server");
           return;
         }
+        if (server.nodeId !== nodeId) {
+          this.logger.warn({ nodeId, serverId: server.id }, "resource_stats for wrong node");
+          return;
+        }
 
         const cpuPercent = Number(message.cpuPercent);
         const memoryUsageMb = Number(message.memoryUsageMb);
@@ -372,37 +534,46 @@ export class WebSocketGateway {
         const networkRxBytes = BigInt(Math.max(0, Number(message.networkRxBytes ?? 0)));
         const networkTxBytes = BigInt(Math.max(0, Number(message.networkTxBytes ?? 0)));
 
+        if (!this.allowServerMetrics(server.id)) {
+          return;
+        }
         await this.prisma.serverMetrics.create({
           data: {
             serverId: server.id,
-            cpuPercent: Number.isFinite(cpuPercent) ? cpuPercent : 0,
-            memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? memoryUsageMb : 0),
+            cpuPercent: Number.isFinite(cpuPercent) ? Math.min(Math.max(cpuPercent, 0), 100) : 0,
+            memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? Math.max(memoryUsageMb, 0) : 0),
             networkRxBytes,
             networkTxBytes,
-            diskIoMb: Math.round(Number.isFinite(diskIoMb) ? diskIoMb : 0),
-            diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? diskUsageMb : 0),
+            diskIoMb: Math.round(Number.isFinite(diskIoMb) ? Math.max(diskIoMb, 0) : 0),
+            diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? Math.max(diskUsageMb, 0) : 0),
           },
         });
 
         await this.routeToClients(server.id, {
           type: "resource_stats",
           serverId: server.id,
-          cpuPercent: Number.isFinite(cpuPercent) ? cpuPercent : 0,
-          memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? memoryUsageMb : 0),
+          cpuPercent: Number.isFinite(cpuPercent) ? Math.min(Math.max(cpuPercent, 0), 100) : 0,
+          memoryUsageMb: Math.round(Number.isFinite(memoryUsageMb) ? Math.max(memoryUsageMb, 0) : 0),
           networkRxBytes: networkRxBytes.toString(),
           networkTxBytes: networkTxBytes.toString(),
-          diskIoMb: Math.round(Number.isFinite(diskIoMb) ? diskIoMb : 0),
-          diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? diskUsageMb : 0),
-          diskTotalMb: Math.round(Number.isFinite(diskTotalMb) ? diskTotalMb : 0),
+          diskIoMb: Math.round(Number.isFinite(diskIoMb) ? Math.max(diskIoMb, 0) : 0),
+          diskUsageMb: Math.round(Number.isFinite(diskUsageMb) ? Math.max(diskUsageMb, 0) : 0),
+          diskTotalMb: Math.round(Number.isFinite(diskTotalMb) ? Math.max(diskTotalMb, 0) : 0),
           timestamp: Date.now(),
         });
       } else if (message.type === "resource_stats_batch") {
+        if (!this.allowAgentMetrics(nodeId, message.metrics.length)) {
+          if (this.shouldWarnRateLimit(nodeId, this.agentMetricsLimit.windowMs)) {
+            this.logger.warn({ nodeId }, "Agent metrics rate limit exceeded");
+          }
+          return;
+        }
         // message.metrics is expected to be an array of metric objects
         if (!Array.isArray(message.metrics)) {
           this.logger.warn('resource_stats_batch.metrics is not an array');
           return;
         }
-        if (message.metrics.length > 2000) {
+        if (message.metrics.length > 500) {
           this.logger.warn({ count: message.metrics.length }, "resource_stats_batch too large");
           return;
         }
@@ -410,24 +581,41 @@ export class WebSocketGateway {
         const items: any[] = [];
         for (const m of message.metrics) {
           if (!m.serverUuid || !m.timestamp) continue;
+          if (!Number.isFinite(Number(m.timestamp))) continue;
           items.push({
             serverId: m.serverUuid,
-            cpuPercent: Number.isFinite(Number(m.cpuPercent)) ? Number(m.cpuPercent) : 0,
-            memoryUsageMb: Math.round(Number(m.memoryUsageMb) || 0),
+            cpuPercent: Number.isFinite(Number(m.cpuPercent)) ? Math.min(Math.max(Number(m.cpuPercent), 0), 100) : 0,
+            memoryUsageMb: Math.round(Number.isFinite(Number(m.memoryUsageMb)) ? Math.max(Number(m.memoryUsageMb), 0) : 0),
             networkRxBytes: BigInt(Math.max(0, Number(m.networkRxBytes || 0))),
             networkTxBytes: BigInt(Math.max(0, Number(m.networkTxBytes || 0))),
-            diskIoMb: Math.round(Number(m.diskIoMb || 0)),
-            diskUsageMb: Math.round(Number(m.diskUsageMb || 0)),
+            diskIoMb: Math.round(Number.isFinite(Number(m.diskIoMb)) ? Math.max(Number(m.diskIoMb), 0) : 0),
+            diskUsageMb: Math.round(Number.isFinite(Number(m.diskUsageMb)) ? Math.max(Number(m.diskUsageMb), 0) : 0),
             timestamp: new Date(Number(m.timestamp)),
           });
         }
 
         if (items.length === 0) return;
 
+        const serverIds = Array.from(new Set(items.map((i) => i.serverId)));
+        const servers = await this.prisma.server.findMany({
+          where: { id: { in: serverIds }, nodeId },
+          select: { id: true },
+        });
+        const allowed = new Set(servers.map((s) => s.id));
+        const filtered = items.filter((item) => {
+          if (!allowed.has(item.serverId)) {
+            return false;
+          }
+          return this.allowServerMetrics(item.serverId);
+        });
+        if (!filtered.length) {
+          return;
+        }
+
         // Use an upsert-style INSERT ... ON CONFLICT statement to dedupe and keep peaks
         // We use GREATEST(...) for memory / network to preserve spikes when backfilling
         const tuples: Prisma.Sql[] = [];
-        for (const it of items) {
+        for (const it of filtered) {
           const cpu = Number(it.cpuPercent) || 0;
           const mem = Number(it.memoryUsageMb) || 0;
           const rx = BigInt(it.networkRxBytes || 0);
@@ -461,7 +649,7 @@ export class WebSocketGateway {
 
           // Fallback: upsert each item individually (safe but slower). We attempt
           // to preserve spike semantics by keeping max(memory, disk, network) where applicable.
-          for (const it of items) {
+          for (const it of filtered) {
             try {
               const existing = await this.prisma.serverMetrics.findUnique({
                 where: {
@@ -513,8 +701,8 @@ export class WebSocketGateway {
         }
 
         // Broadcast latest metrics for affected servers
-        const serverIds = Array.from(new Set(items.map((i) => i.serverId)));
-        for (const sid of serverIds) {
+        const filteredIds = Array.from(new Set(filtered.map((i) => i.serverId)));
+        for (const sid of filteredIds) {
           const latest = await this.prisma.serverMetrics.findFirst({ where: { serverId: sid }, orderBy: { timestamp: 'desc' } });
           if (latest) {
             await this.routeToClients(sid, {
@@ -532,6 +720,12 @@ export class WebSocketGateway {
           }
         }
       } else if (message.type === "console_output") {
+        if (typeof message.data === "string") {
+          if (!this.allowConsoleOutputBytes(message.serverId, Buffer.byteLength(message.data))) {
+            this.logger.warn({ nodeId, serverId: message.serverId }, "console_output exceeded byte limit");
+            return;
+          }
+        }
         if (message.serverId && message.data) {
           await this.prisma.serverLog.create({
             data: {
@@ -547,6 +741,9 @@ export class WebSocketGateway {
         }
         await this.routeConsoleToSubscribers(message.serverId, message);
       } else if (message.type === "server_state_update") {
+        if (!message.serverId || typeof message.state !== "string") {
+          return;
+        }
         if (process.env.SUSPENSION_ENFORCED !== "false") {
           const current = await this.prisma.server.findUnique({
             where: { id: message.serverId },
@@ -562,6 +759,18 @@ export class WebSocketGateway {
         });
 
         if (!server) {
+          return;
+        }
+        if (server.nodeId !== nodeId) {
+          this.logger.warn({ nodeId, serverId: server.id }, "server_state_update from wrong node");
+          return;
+        }
+        const transition = ServerStateMachine.validateTransition(
+          server.status as ServerState,
+          message.state as ServerState
+        );
+        if (!transition.allowed) {
+          this.logger.warn({ serverId: server.id, from: server.status, to: message.state }, "Invalid state transition");
           return;
         }
 
@@ -701,6 +910,10 @@ export class WebSocketGateway {
           this.logger.warn(`State sync for unknown server ID: ${message.serverUuid}`);
           return;
         }
+        if (server.nodeId !== nodeId) {
+          this.logger.warn({ nodeId, serverId: server.id }, "server_state_sync from wrong node");
+          return;
+        }
 
         // Check if server is suspended - don't update suspended servers
         if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
@@ -709,6 +922,14 @@ export class WebSocketGateway {
 
         // Only update if state is different to avoid unnecessary writes
         if (server.status !== message.state) {
+          const transition = ServerStateMachine.validateTransition(
+            server.status as ServerState,
+            message.state as ServerState
+          );
+          if (!transition.allowed) {
+            this.logger.warn({ serverId: server.id, from: server.status, to: message.state }, "Invalid state transition");
+            return;
+          }
           this.logger.info(
             { serverId: server.id, oldStatus: server.status, newStatus: message.state },
             "State reconciliation: updating server status"
@@ -746,6 +967,10 @@ export class WebSocketGateway {
         }
       } else if (message.type === "server_state_sync_complete") {
         // Reconciliation completed - check for servers that should exist but weren't found
+        if (!message.nodeId || message.nodeId !== nodeId) {
+          this.logger.warn({ nodeId, messageNodeId: message.nodeId }, "server_state_sync_complete node mismatch");
+          return;
+        }
         const nodeId = message.nodeId;
         const foundContainers = Array.isArray(message.foundContainers) 
           ? new Set(message.foundContainers) 
@@ -814,6 +1039,10 @@ export class WebSocketGateway {
         if (!server) {
           return;
         }
+        if (server.nodeId !== nodeId) {
+          this.logger.warn({ nodeId, serverId: server.id }, "backup_complete from wrong node");
+          return;
+        }
 
         const backupRecord = message.backupId
           ? await this.prisma.backup.findUnique({ where: { id: message.backupId } })
@@ -835,7 +1064,10 @@ export class WebSocketGateway {
 
         const nextSizeMb = Number(message.sizeMb);
         const resolvedSizeMb = Number.isFinite(nextSizeMb) ? nextSizeMb : backupRecord.sizeMb;
-        const resolvedChecksum = message.checksum ?? backupRecord.checksum;
+        const resolvedChecksum =
+          typeof message.checksum === "string" && message.checksum.length <= 256
+            ? message.checksum
+            : backupRecord.checksum;
 
         const updated = await this.prisma.backup.update({
           where: { id: backupRecord.id },
@@ -859,79 +1091,79 @@ export class WebSocketGateway {
           try {
             const { streamAgentBackupToS3 } = await import("../services/backup-storage");
             const storageKey = (backupRecord.metadata as any)?.storageKey;
-          if (storageKey) {
-            await streamAgentBackupToS3(
+            if (storageKey) {
+              await streamAgentBackupToS3(
+                this,
+                server.nodeId,
+                server.id,
+                server.uuid,
+                agentPath,
+                storageKey,
+                server as any,
+              );
+              await this.prisma.backup.update({
+                where: { id: backupRecord.id },
+                data: { metadata: { ...(backupRecord.metadata as any), remoteUploadStatus: "completed" } },
+              });
+            }
+          } catch (error) {
+            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to S3");
+            await this.prisma.backup.update({
+              where: { id: backupRecord.id },
+              data: {
+                metadata: {
+                  ...(backupRecord.metadata as any),
+                  remoteUploadStatus: "failed",
+                  remoteUploadError: error instanceof Error ? error.message : "S3 upload failed",
+                },
+              },
+            });
+          }
+        } else if (mode === "sftp") {
+          try {
+            const { streamAgentBackupToSftp } = await import("../services/backup-storage");
+            const storageKey = (backupRecord.metadata as any)?.storageKey;
+            if (storageKey) {
+              await streamAgentBackupToSftp(
+                this,
+                server.nodeId,
+                server.id,
+                server.uuid,
+                agentPath,
+                storageKey,
+                server as any,
+              );
+              await this.prisma.backup.update({
+                where: { id: backupRecord.id },
+                data: { metadata: { ...(backupRecord.metadata as any), remoteUploadStatus: "completed" } },
+              });
+            }
+          } catch (error) {
+            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to SFTP");
+            await this.prisma.backup.update({
+              where: { id: backupRecord.id },
+              data: {
+                metadata: {
+                  ...(backupRecord.metadata as any),
+                  remoteUploadStatus: "failed",
+                  remoteUploadError: error instanceof Error ? error.message : "SFTP upload failed",
+                },
+              },
+            });
+          }
+        } else if (mode === "stream") {
+          try {
+            const { streamAgentBackupToLocal } = await import("../services/backup-storage");
+            await streamAgentBackupToLocal(
               this,
               server.nodeId,
               server.id,
               server.uuid,
               agentPath,
-              storageKey,
-              server as any,
+              backupRecord.path,
             );
-            await this.prisma.backup.update({
-              where: { id: backupRecord.id },
-              data: { metadata: { ...(backupRecord.metadata as any), remoteUploadStatus: "completed" } },
-            });
-          }
-        } catch (error) {
-          this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to S3");
-          await this.prisma.backup.update({
-            where: { id: backupRecord.id },
-            data: {
-              metadata: {
-                ...(backupRecord.metadata as any),
-                remoteUploadStatus: "failed",
-                remoteUploadError: error instanceof Error ? error.message : "S3 upload failed",
-              },
-            },
-          });
-        }
-      } else if (mode === "sftp") {
-        try {
-          const { streamAgentBackupToSftp } = await import("../services/backup-storage");
-          const storageKey = (backupRecord.metadata as any)?.storageKey;
-          if (storageKey) {
-            await streamAgentBackupToSftp(
-              this,
-              server.nodeId,
-              server.id,
-              server.uuid,
-              agentPath,
-              storageKey,
-              server as any,
-            );
-            await this.prisma.backup.update({
-              where: { id: backupRecord.id },
-              data: { metadata: { ...(backupRecord.metadata as any), remoteUploadStatus: "completed" } },
-            });
-          }
-        } catch (error) {
-          this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to upload backup to SFTP");
-          await this.prisma.backup.update({
-            where: { id: backupRecord.id },
-            data: {
-              metadata: {
-                ...(backupRecord.metadata as any),
-                remoteUploadStatus: "failed",
-                remoteUploadError: error instanceof Error ? error.message : "SFTP upload failed",
-              },
-            },
-          });
-        }
-      } else if (mode === "stream") {
-        try {
-          const { streamAgentBackupToLocal } = await import("../services/backup-storage");
-          await streamAgentBackupToLocal(
-            this,
-            server.nodeId,
-            server.id,
-            server.uuid,
-            agentPath,
-            backupRecord.path,
-          );
-        } catch (error) {
-          this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to fetch stream backup");
+          } catch (error) {
+            this.logger.error({ err: error, backupId: backupRecord.id }, "Failed to fetch stream backup");
           }
         }
 
@@ -1031,11 +1263,16 @@ export class WebSocketGateway {
         if (!access && server.ownerId !== client.userId) {
           return;
         }
-        if (!access?.permissions?.includes("console.read") && server.ownerId !== client.userId) {
+        const isOwner = server.ownerId === client.userId;
+        const canConsoleRead = isOwner || access?.permissions?.includes("console.read");
+        const canServerRead = isOwner || access?.permissions?.includes("server.read");
+        if (!canConsoleRead && !canServerRead) {
           return;
         }
         client.subscriptions.add(server.id);
-        await this.requestConsoleStream(server.id, server.uuid);
+        if (canConsoleRead) {
+          await this.requestConsoleStream(server.id, server.uuid);
+        }
         return;
       }
 
@@ -1046,8 +1283,12 @@ export class WebSocketGateway {
         return;
       }
 
-      if (message.type === "server_control") {
-        const event: WsEvent.ServerControl = message;
+        if (message.type === "server_control") {
+          const event: WsEvent.ServerControl = message;
+          const validActions = new Set(["start", "stop", "kill", "restart", "reboot"]);
+          if (!event.serverId || !validActions.has(event.action)) {
+            return;
+          }
 
         // Verify permission
         const access = await this.prisma.serverAccess.findUnique({
@@ -1088,6 +1329,22 @@ export class WebSocketGateway {
             })
           );
         }
+        const requiredPermission =
+          event.action === "start"
+            ? "server.start"
+            : event.action === "stop"
+              ? "server.stop"
+              : event.action === "restart" || event.action === "reboot" || event.action === "kill"
+                ? "server.start"
+                : "server.start";
+        if (!isOwner && !access?.permissions?.includes(requiredPermission)) {
+          return client.socket.socket.send(
+            JSON.stringify({
+              type: "error",
+              error: ErrorCodes.PERMISSION_DENIED,
+            })
+          );
+        }
 
         // Route to agent
         const agent = this.agents.get(server.nodeId);
@@ -1106,8 +1363,11 @@ export class WebSocketGateway {
             })
           );
         }
-      } else if (message.type === "console_input") {
-        const event: WsEvent.ConsoleInput = message;
+        } else if (message.type === "console_input") {
+          const event: WsEvent.ConsoleInput = message;
+          if (!event.serverId || typeof event.data !== "string") {
+            return;
+          }
 
         const server = await this.prisma.server.findUnique({
           where: { id: event.serverId },
@@ -1161,7 +1421,11 @@ export class WebSocketGateway {
           }
           return;
         }
-        if (!this.allowConsoleCommand(clientId)) {
+        if (
+          !this.allowConsoleCommand(clientId) ||
+          !this.allowServerCommand(server.id) ||
+          event.data.length > 4096
+        ) {
           if (client.socket.socket.readyState === 1) {
             client.socket.socket.send(
               JSON.stringify({
@@ -1373,6 +1637,9 @@ export class WebSocketGateway {
       throw new Error(`Agent ${nodeId} not connected`);
     }
 
+    if (this.pendingAgentRequests.size >= this.pendingAgentRequestLimit) {
+      throw new Error("Too many pending agent requests");
+    }
     const requestId = crypto.randomUUID();
     const payload = { ...message, requestId };
 
@@ -1394,6 +1661,9 @@ export class WebSocketGateway {
       throw new Error(`Agent ${nodeId} not connected`);
     }
 
+    if (this.pendingAgentRequests.size >= this.pendingAgentRequestLimit) {
+      throw new Error("Too many pending agent requests");
+    }
     const requestId = crypto.randomUUID();
     const payload = { ...message, requestId };
 
@@ -1426,6 +1696,9 @@ export class WebSocketGateway {
       throw new Error(`Agent ${nodeId} not connected`);
     }
 
+    if (this.pendingAgentRequests.size >= this.pendingAgentRequestLimit) {
+      throw new Error("Too many pending agent requests");
+    }
     const requestId = crypto.randomUUID();
     const payload = { ...message, requestId };
 

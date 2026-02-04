@@ -182,9 +182,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
   });
 
   const compressMutation = useMutation({
-    mutationFn: async ({ paths, archive }: { paths: string[]; archive: string }) => {
-      return filesApi.compress(serverId, { paths, archiveName: archive });
-    },
+    mutationFn: async ({ paths, archive }: { paths: string[]; archive: string }) => filesApi.compress(serverId, { paths, archiveName: archive }),
     onSuccess: (data) => {
       invalidateFiles();
       setShowCompress(false);
@@ -197,9 +195,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
   });
 
   const decompressMutation = useMutation({
-    mutationFn: async ({ archivePath, targetPath }: { archivePath: string; targetPath: string }) => {
-      return filesApi.decompress(serverId, { archivePath, targetPath });
-    },
+    mutationFn: async ({ archivePath, targetPath }: { archivePath: string; targetPath: string }) => filesApi.decompress(serverId, { archivePath, targetPath }),
     onSuccess: () => {
       invalidateFiles();
       setShowDecompress(false);
@@ -212,9 +208,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
   });
 
   const permissionsMutation = useMutation({
-    mutationFn: async ({ path: targetPath, mode }: { path: string; mode: number }) => {
-      return filesApi.updatePermissions(serverId, targetPath, mode);
-    },
+    mutationFn: async ({ path: targetPath, mode }: { path: string; mode: number }) => filesApi.updatePermissions(serverId, targetPath, mode),
     onSuccess: () => {
       invalidateFiles();
       setPermissionsEntry(null);

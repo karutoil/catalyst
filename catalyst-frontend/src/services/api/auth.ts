@@ -14,51 +14,47 @@ export const authApi = {
     values: LoginSchema,
     options?: { forcePasskeyFallback?: boolean },
   ): Promise<{ token: string; user: User; rememberMe?: boolean }> {
+    let token = '';
     try {
-      if (values.rememberMe) {
-        localStorage.setItem('catalyst-remember-me', 'true');
-      } else {
-        localStorage.removeItem('catalyst-remember-me');
-      }
       const forceFallback = Boolean(options?.forcePasskeyFallback);
-      const { data, headers } = await apiClient.post<any>(
-        '/api/auth/login',
+      const response = await authClient.signIn.email(
         {
-          ...values,
+          email: values.email,
+          password: values.password,
           allowPasskeyFallback: forceFallback || Boolean(values.allowPasskeyFallback),
         },
         {
           headers: forceFallback || values.allowPasskeyFallback
             ? { 'X-Allow-Passkey-Fallback': 'true' }
             : undefined,
+          onSuccess(context) {
+            token = context.response?.headers?.get?.('set-auth-token') || '';
+          },
         },
       );
+      const data = (response as any)?.data ?? response;
+      token = token || data?.token || '';
+      if (data?.twoFactorRedirect) {
+        const error: any = new Error('Two-factor authentication required');
+        error.code = 'TWO_FACTOR_REQUIRED';
+        error.token = token;
+        throw error;
+      }
       if (data?.code === 'PASSKEY_REQUIRED') {
         throw createPasskeyRequiredError();
       }
-      if (data?.data?.twoFactorRequired) {
-        const error: any = new Error('Two-factor authentication required');
-        error.code = 'TWO_FACTOR_REQUIRED';
-        if (data?.data?.token) {
-          error.token = data.data.token;
-        } else if (headers?.['set-auth-token']) {
-          error.token = headers['set-auth-token'];
-        }
-        throw error;
+      if (!data?.user) {
+        throw new Error(data?.error?.message || data?.error || 'Login failed');
       }
-      if (!data.success || !data.data) {
-        throw new Error(data.error || 'Login failed');
-      }
-      const token = data.data.token || headers?.['set-auth-token'] || '';
       return {
         token,
         rememberMe: values.rememberMe,
         user: {
-          id: data.data.userId,
-          email: data.data.email,
-          username: data.data.username,
+          id: data.user.id,
+          email: data.user.email,
+          username: data.user.username,
           role: 'user',
-          permissions: data.data.permissions ?? [],
+          permissions: data.user.permissions ?? [],
         },
       };
     } catch (error: any) {
@@ -70,28 +66,42 @@ export const authApi = {
   },
 
   async register(values: RegisterSchema): Promise<{ token: string; user: User }> {
-    const { data, headers } = await apiClient.post<any>('/api/auth/register', values);
-    if (!data.success || !data.data) {
-      throw new Error(data.error || 'Registration failed');
+    let token = '';
+    const response = await authClient.signUp.email(
+      {
+        email: values.email,
+        password: values.password,
+        name: values.username,
+        username: values.username,
+      } as any,
+      {
+        onSuccess(context) {
+          token = context.response?.headers?.get?.('set-auth-token') || '';
+        },
+      },
+    );
+    const data = (response as any)?.data ?? response;
+    token = token || data?.token || '';
+    if (!data?.user) {
+      throw new Error(data?.error?.message || data?.error || 'Registration failed');
     }
     return {
-      token: data.data.token || headers?.['set-auth-token'] || '',
+      token,
       user: {
-        id: data.data.userId,
-        email: data.data.email,
-        username: data.data.username,
+        id: data.user.id,
+        email: data.user.email,
+        username: data.user.username,
         role: 'user',
-        permissions: data.data.permissions ?? [],
+        permissions: data.user.permissions ?? [],
       },
     };
   },
 
-  async refresh(): Promise<{ token?: string; user: User }> {
-    // The backend uses a GET /me endpoint to verify and refresh the current session
-    // The actual token is already set in the client interceptors
-    const { data } = await apiClient.get<any>('/api/auth/me');
-    if (!data.success || !data.data) {
-      throw new Error(data.error || 'Refresh failed');
+  async refresh(): Promise<{ user: User }> {
+    const response = await apiClient.get<any>('/api/auth/me');
+    const data = response.data;
+    if (!data?.success || !data?.data) {
+      throw new Error(data?.error || 'Refresh failed');
     }
     return {
       user: {

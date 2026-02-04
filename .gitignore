@@ -1,3 +1,26 @@
 catalyst-frontend/screenshots/
 catalyst-frontend/playwright-report/
 docs.md
+
+# Development-only scripts (keep these local)
+catalyst-backend/generate-better-auth-schema.ts
+catalyst-backend/inspect-auth.ts
+catalyst-backend/update-template*.ts
+catalyst-backend/upload-*.ts
+catalyst-backend/sftp_host_key
+catalyst-backend/schema-additions.prisma
+catalyst-backend/updated-user-model.prisma
+
+# Test environment config
+tests/config.env
+tests/lib/node_modules/
+
+# Build artifacts
+*.tgz
+*.tar.gz
+
+# IDE and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

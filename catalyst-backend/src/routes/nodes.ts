@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
@@ -425,6 +425,7 @@ export async function nodeRoutes(app: FastifyInstance) {
   // Update node status (called by agent via heartbeat)
   app.post(
     "/:nodeId/heartbeat",
+    { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { nodeId } = request.params as { nodeId: string };
       const { secret, health } = request.body as {
@@ -439,12 +440,34 @@ export async function nodeRoutes(app: FastifyInstance) {
         };
       };
 
+      if (!secret) {
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+
       const node = await prisma.node.findUnique({
         where: { id: nodeId },
       });
 
       if (!node || node.secret !== secret) {
         return reply.status(401).send({ error: "Unauthorized" });
+      }
+
+      const cpuPercent = Number(health?.cpuPercent);
+      const memoryUsageMb = Number(health?.memoryUsageMb);
+      const memoryTotalMb = Number(health?.memoryTotalMb ?? node.maxMemoryMb);
+      const diskUsageMb = Number(health?.diskUsageMb ?? 0);
+      const diskTotalMb = Number(health?.diskTotalMb ?? 0);
+      const containerCount = Number(health?.containerCount);
+
+      if (
+        !Number.isFinite(cpuPercent) ||
+        !Number.isFinite(memoryUsageMb) ||
+        !Number.isFinite(memoryTotalMb) ||
+        !Number.isFinite(diskUsageMb) ||
+        !Number.isFinite(diskTotalMb) ||
+        !Number.isFinite(containerCount)
+      ) {
+        return reply.status(400).send({ error: "Invalid health payload" });
       }
 
       await prisma.node.update({
@@ -458,16 +481,14 @@ export async function nodeRoutes(app: FastifyInstance) {
       await prisma.nodeMetrics.create({
         data: {
           nodeId,
-          cpuPercent: Number(health?.cpuPercent) || 0,
-          memoryUsageMb: Math.round(Number(health?.memoryUsageMb) || 0),
-          memoryTotalMb: Math.round(
-            Number(health?.memoryTotalMb) || node.maxMemoryMb
-          ),
-          diskUsageMb: Math.round(Number(health?.diskUsageMb) || 0),
-          diskTotalMb: Math.round(Number(health?.diskTotalMb) || 0),
+          cpuPercent,
+          memoryUsageMb: Math.round(memoryUsageMb),
+          memoryTotalMb: Math.round(memoryTotalMb),
+          diskUsageMb: Math.round(diskUsageMb),
+          diskTotalMb: Math.round(diskTotalMb),
           networkRxBytes: BigInt(0),
           networkTxBytes: BigInt(0),
-          containerCount: Number(health?.containerCount) || 0,
+          containerCount: Math.max(0, Math.round(containerCount)),
         },
       });
 

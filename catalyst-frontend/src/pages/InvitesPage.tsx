@@ -51,9 +51,8 @@ function InvitesPage() {
       return response;
     },
     onSuccess: (response: any) => {
-      if (response?.data?.token && response?.data?.userId) {
+      if (response?.data?.userId) {
         setSession({
-          token: response.data.token,
           user: {
             id: response.data.userId,
             email: response.data.email,

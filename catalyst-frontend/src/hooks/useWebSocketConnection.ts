@@ -4,11 +4,11 @@ import { useAuthStore } from '../stores/authStore';
 
 export function useWebSocketConnection() {
   const { connect } = useWebSocketStore();
-  const { token } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated) {
       connect();
     }
-  }, [token, connect]);
+  }, [isAuthenticated, connect]);
 }
