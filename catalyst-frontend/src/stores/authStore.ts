@@ -19,7 +19,7 @@ interface AuthState {
   init: () => Promise<void>;
   logout: () => void;
   setUser: (user: User | null) => void;
-  setSession: (payload: { token: string; user: User }) => void;
+  setSession: (payload: { user: User }) => void;
   verifyTwoFactor: (payload: { code: string; trustDevice?: boolean }) => Promise<void>;
 }
 
@@ -42,8 +42,9 @@ export const useAuthStore = create<AuthState>()(
       login: async (values, options) => {
         set({ isLoading: true, error: null });
         try {
-          const { token, user, rememberMe } = await authApi.login(values, options);
-          if (token && rememberMe) {
+          localStorage.setItem('catalyst-remember-me', values.rememberMe ? 'true' : 'false');
+          const { user, token } = await authApi.login(values, options);
+          if (token && values.rememberMe) {
             localStorage.setItem('catalyst-auth-token', token);
             sessionStorage.removeItem('catalyst-session-token');
           } else if (token) {
@@ -55,8 +56,8 @@ export const useAuthStore = create<AuthState>()(
           }
           set({
             user,
-            token,
-            rememberMe: Boolean(rememberMe),
+            token: token || null,
+            rememberMe: Boolean(values.rememberMe),
             isAuthenticated: true,
             isLoading: false,
             isReady: true,
@@ -64,7 +65,17 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch (err: any) {
           if (err.code === 'TWO_FACTOR_REQUIRED' || err.code === 'PASSKEY_REQUIRED') {
-            set({ isLoading: false, error: null });
+            const token = err.token || null;
+            if (token) {
+              if (values.rememberMe) {
+                localStorage.setItem('catalyst-auth-token', token);
+                sessionStorage.removeItem('catalyst-session-token');
+              } else {
+                sessionStorage.setItem('catalyst-session-token', token);
+                localStorage.removeItem('catalyst-auth-token');
+              }
+            }
+            set({ isLoading: false, error: null, token, rememberMe: Boolean(values.rememberMe) });
             throw err;
           }
           const message = err.response?.data?.error || err.message || 'Login failed';
@@ -75,50 +86,44 @@ export const useAuthStore = create<AuthState>()(
       register: async (values) => {
         set({ isLoading: true, error: null });
         try {
-          const { token, user } = await authApi.register(values);
+          const { user, token } = await authApi.register(values);
           if (token) {
             localStorage.setItem('catalyst-auth-token', token);
+          } else {
+            localStorage.removeItem('catalyst-auth-token');
+            sessionStorage.removeItem('catalyst-session-token');
           }
-          set({ user, token, isAuthenticated: true, isLoading: false, isReady: true, error: null });
+          set({ user, token: token || null, isAuthenticated: true, isLoading: false, isReady: true, error: null });
         } catch (err: any) {
           const message = err.response?.data?.error || err.message || 'Registration failed';
           set({ isLoading: false, error: message });
           throw err;
         }
       },
-      refresh: async () => {
-        const currentToken = get().token;
-        if (!currentToken) {
-          set({
-            isRefreshing: false,
-            isReady: true,
-            isAuthenticated: false,
-            user: null,
-            error: null,
-            rememberMe: false,
-          });
-          return;
-        }
-        set({ isRefreshing: true, error: null });
-        try {
-          const { token: newToken, user } = await authApi.refresh();
-          // Keep using the current token unless the backend explicitly returns a new one
-          const nextToken = newToken ?? currentToken;
-          if (nextToken && get().rememberMe) {
-            localStorage.setItem('catalyst-auth-token', nextToken);
-            sessionStorage.removeItem('catalyst-session-token');
-          } else if (nextToken) {
-            sessionStorage.setItem('catalyst-session-token', nextToken);
+        refresh: async () => {
+          if (!get().token) {
+            set({
+              isRefreshing: false,
+              isReady: true,
+              isAuthenticated: false,
+              user: null,
+              error: null,
+              rememberMe: false,
+            });
+            return;
           }
-          set({
-            token: nextToken,
-            user,
-            isAuthenticated: true,
-            isRefreshing: false,
-            isReady: true,
-            error: null,
-          });
-        } catch (error: any) {
+          set({ isRefreshing: true, error: null, isReady: true });
+          try {
+            const { user } = await authApi.refresh();
+            set({
+              token: get().token,
+              user,
+              isAuthenticated: true,
+              isRefreshing: false,
+              isReady: true,
+              error: null,
+            });
+          } catch (error: any) {
           const message = error.response?.data?.error || error.message || 'Session expired';
           localStorage.removeItem('catalyst-auth-token');
           sessionStorage.removeItem('catalyst-session-token');
@@ -130,60 +135,46 @@ export const useAuthStore = create<AuthState>()(
             isReady: true,
             error: message,
             rememberMe: false,
-          });
-          throw error;
-        }
-      },
-       init: async () => {
-         if (!get().rememberMe) {
-           localStorage.removeItem('catalyst-auth-token');
-         }
-         if (!get().token) {
-           set({ isReady: true });
-           return;
-         }
-         await get().refresh();
-      },
-      logout: async () => {
-        try {
-          await authApi.logout();
-        } catch {
-          // Continue local cleanup even if server sign-out fails
-        }
+            });
+            throw error;
+          } finally {
+            set({ isRefreshing: false, isReady: true });
+          }
+        },
+        init: () => {
+          set({ isReady: true });
+          if (!get().token) {
+            return;
+          }
+          void get().refresh();
+        },
+      logout: () => {
         localStorage.removeItem('catalyst-auth-token');
         localStorage.removeItem('catalyst-remember-me');
         sessionStorage.removeItem('catalyst-session-token');
         localStorage.removeItem('catalyst-auth');
         set({ user: null, token: null, isAuthenticated: false, isReady: true, rememberMe: false });
-      },
-      setUser: (user) => set({ user, isAuthenticated: Boolean(user) }),
-      setSession: ({ token, user }) => {
-        const rememberMe = localStorage.getItem('catalyst-remember-me') === 'true';
-        if (token && rememberMe) {
-          localStorage.setItem('catalyst-auth-token', token);
-          sessionStorage.removeItem('catalyst-session-token');
-        } else if (token) {
-          sessionStorage.setItem('catalyst-session-token', token);
-          localStorage.removeItem('catalyst-auth-token');
-        } else {
-          sessionStorage.removeItem('catalyst-session-token');
-          localStorage.removeItem('catalyst-auth-token');
-        }
-        set({
-          user,
-          token,
-          rememberMe,
-          isAuthenticated: true,
-          isLoading: false,
-          isReady: true,
-          error: null,
+        void authApi.logout().catch(() => {
+          // Ignore network errors after local logout
         });
       },
+      setUser: (user) => set({ user, isAuthenticated: Boolean(user) }),
+        setSession: ({ user }) => {
+          set({
+            user,
+            token: get().token,
+            rememberMe: get().rememberMe,
+            isAuthenticated: true,
+            isLoading: false,
+            isReady: true,
+            error: null,
+          });
+        },
       verifyTwoFactor: async (payload) => {
         set({ isLoading: true, error: null });
         try {
-          const { token, user, rememberMe } = await authApi.verifyTwoFactor(payload);
-          if (token && rememberMe) {
+          const { user, token } = await authApi.verifyTwoFactor(payload);
+          if (token && payload.rememberMe) {
             localStorage.setItem('catalyst-auth-token', token);
             sessionStorage.removeItem('catalyst-session-token');
           } else if (token) {
@@ -195,8 +186,8 @@ export const useAuthStore = create<AuthState>()(
           }
           set({
             user,
-            token,
-            rememberMe: Boolean(rememberMe),
+            token: token || null,
+            rememberMe: Boolean(payload.rememberMe),
             isAuthenticated: true,
             isLoading: false,
             isReady: true,

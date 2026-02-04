@@ -6,6 +6,7 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import { createReadStream, createWriteStream } from 'fs';
 import { generateKeyPairSync } from 'crypto';
+import type { Logger } from 'pino';
 import { auth } from './auth';
 
 const { Server: SSHServer, utils } = ssh2;
@@ -37,7 +38,7 @@ try {
   });
   fsSync.writeFileSync(HOST_KEY_PATH, keyPair.privateKey);
   hostKey = Buffer.from(keyPair.privateKey);
-  console.log('Generated new SFTP host key at', HOST_KEY_PATH);
+  // Logger not available at module init time, will log when server starts
 }
 
 interface SFTPSession {
@@ -76,7 +77,6 @@ async function validateTokenAndGetServer(username: string, password: string): Pr
     });
 
     if (!serverAccess) {
-      console.log(`SFTP: User ${session.user.email} attempted access to server ${serverId} - not found or no permission`);
       return null;
     }
 
@@ -88,10 +88,8 @@ async function validateTokenAndGetServer(username: string, password: string): Pr
     try {
       await fs.mkdir(serverPath, { recursive: true });
     } catch (err) {
-      console.error(`Failed to create server directory ${serverPath}:`, err);
+      // Directory creation errors are non-fatal
     }
-
-    console.log(`SFTP: User ${session.user.email} authenticated for server ${serverId}`);
 
     return {
       userId: session.user.id,
@@ -101,7 +99,6 @@ async function validateTokenAndGetServer(username: string, password: string): Pr
       permissions,
     };
   } catch (err) {
-    console.error('SFTP authentication error:', err);
     return null;
   }
 }
@@ -125,13 +122,15 @@ function normalizePath(serverPath: string, requestedPath: string): string {
   return normalized;
 }
 
-function startSFTPServer() {
+function startSFTPServer(logger: Logger) {
+  logger.info({ path: HOST_KEY_PATH }, 'SFTP server starting with host key');
+  
   const sshServer = new SSHServer(
     {
       hostKeys: [hostKey],
     },
     (client) => {
-      console.log('SFTP: Client connected');
+      logger.debug('SFTP client connected');
 
       let session: SFTPSession | null = null;
 
@@ -153,17 +152,17 @@ function startSFTPServer() {
           }
         })
         .on('ready', () => {
-          console.log('SFTP: Client authenticated');
+          logger.debug({ username: session?.username }, 'SFTP client authenticated');
 
           client.on('session', (accept) => {
             const sshSession = accept();
 
             sshSession.on('sftp', (accept) => {
-              console.log('SFTP: SFTP session started');
+              logger.debug({ serverId: session?.serverId }, 'SFTP session started');
               const sftpStream = accept();
 
               if (!session) {
-                console.error('SFTP: No session data available');
+                logger.error('SFTP session has no authentication data');
                 return;
               }
 
@@ -172,16 +171,16 @@ function startSFTPServer() {
           });
         })
         .on('error', (err) => {
-          console.error('SFTP: Client error:', err);
+          logger.error({ err }, 'SFTP client error');
         })
         .on('close', () => {
-          console.log('SFTP: Client disconnected');
+          logger.debug('SFTP client disconnected');
         });
     }
   );
 
   sshServer.listen(SFTP_PORT, '0.0.0.0', () => {
-    console.log(`SFTP server listening on port ${SFTP_PORT}`);
+    logger.info({ port: SFTP_PORT }, 'SFTP server listening');
   });
 
   return sshServer;
@@ -516,7 +515,7 @@ function handleSFTPSession(sftpStream: SFTPStream, session: SFTPSession) {
     .on('REALPATH', (reqid, path) => {
       try {
         // For chroot, we always resolve relative to the server root
-        const normalized = path === '.' || path === '/' ? '/' : '/' + path.replace(/^\/+/, '');
+        const normalized = path === '.' || path === '/' ? '/' : `/${  path.replace(/^\/+/, '')}`;
         sftpStream.name(reqid, [{ filename: normalized, longname: normalized, attrs: {} }]);
       } catch (err: any) {
         console.error('SFTP REALPATH error:', err);

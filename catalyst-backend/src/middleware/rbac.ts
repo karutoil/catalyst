@@ -1,5 +1,5 @@
-import { Permission } from "../shared-types";
-import { PrismaClient } from "@prisma/client";
+import type { Permission } from "../shared-types";
+import type { PrismaClient } from "@prisma/client";
 import pino from "pino";
 
 export class RbacMiddleware {

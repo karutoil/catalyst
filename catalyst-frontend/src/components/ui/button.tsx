@@ -1,11 +1,11 @@
-import { forwardRef, ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes } from 'react';
+import { forwardRef } from 'react';
 import { twMerge } from 'tailwind-merge';
 
-const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(function Button(
+const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>((
   { className, children, ...props },
   ref,
-) {
-  return (
+) => (
     <button
       ref={ref}
       className={twMerge(
@@ -16,7 +16,6 @@ const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElem
     >
       {children}
     </button>
-  );
-});
+  ));
 
 export default Button;

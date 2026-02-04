@@ -7,8 +7,14 @@ import { useNodes } from '../../hooks/useNodes';
 import { notifyError, notifySuccess } from '../../utils/notify';
 import type { Template } from '../../types/template';
 import { nodesApi } from '../../services/api/nodes';
+import { useAuthStore } from '../../stores/authStore';
 
 function CreateServerModal() {
+  const { user } = useAuthStore();
+  const canCreateServer =
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.write') ||
+    user?.permissions?.includes('server.create');
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
@@ -41,9 +47,7 @@ function CreateServerModal() {
   const queryClient = useQueryClient();
 
   // Get selected template
-  const selectedTemplate = useMemo(() => {
-    return templates.find(t => t.id === templateId);
-  }, [templates, templateId]);
+  const selectedTemplate = useMemo(() => templates.find(t => t.id === templateId), [templates, templateId]);
 
   // Filter out SERVER_DIR from variables
   const templateVariables = useMemo(() => {
@@ -280,6 +284,9 @@ function CreateServerModal() {
     !startupValid ||
     (networkMode === 'custom' && !customNetworkMode.trim());
 
+  if (!canCreateServer) {
+    return null;
+  }
   return (
     <div>
       <button

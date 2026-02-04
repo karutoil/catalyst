@@ -6,9 +6,10 @@ import {
   usernameClient,
 } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
+import { useAuthStore } from '../stores/authStore';
 
 const envBaseURL = import.meta.env.VITE_BETTER_AUTH_URL || import.meta.env.VITE_API_URL || '';
-const baseURL = envBaseURL || (typeof window !== 'undefined' ? window.location.origin : '');
+const baseURL = import.meta.env.DEV ? '' : envBaseURL || (typeof window !== 'undefined' ? window.location.origin : '');
 
 export const authClient = createAuthClient({
   baseURL,
@@ -30,22 +31,8 @@ export const authClient = createAuthClient({
   fetchOptions: {
     auth: {
       type: 'Bearer',
-      token: () =>
-        sessionStorage.getItem('catalyst-session-token') ||
-        localStorage.getItem('catalyst-auth-token') ||
-        undefined,
+      token: () => useAuthStore.getState().token || undefined,
     },
-    onResponse: ({ response }) => {
-      const token = response.headers.get('set-auth-token');
-      if (token) {
-        const rememberMe = localStorage.getItem('catalyst-remember-me') === 'true';
-        if (rememberMe) {
-          localStorage.setItem('catalyst-auth-token', token);
-          sessionStorage.removeItem('catalyst-session-token');
-        } else {
-          sessionStorage.setItem('catalyst-session-token', token);
-        }
-      }
-    },
+    onResponse: () => {},
   },
 });

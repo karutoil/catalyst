@@ -4,7 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { authApi } from '../../services/api/auth';
-import { loginSchema, LoginSchema } from '../../validators/auth';
+import type { LoginSchema } from '../../validators/auth';
+import { loginSchema } from '../../validators/auth';
 import { authClient } from '../../services/authClient';
 import { notifyError } from '../../utils/notify';
 
@@ -30,28 +31,28 @@ function LoginPage() {
   const from = (location.state as { from?: { pathname?: string } } | undefined)?.from?.pathname;
 
   const syncPasskeySession = async () => {
-    const token =
-      sessionStorage.getItem('catalyst-session-token') ||
-      localStorage.getItem('catalyst-auth-token');
-    if (!token) {
-      return false;
-    }
     try {
       const { user } = await authApi.refresh();
-      setSession({ user, token });
+      setSession({ user });
       return true;
     } catch {
       return false;
     }
   };
 
-  const applyPasskeySession = async (data?: any) => {
-    if (data?.user && data?.session?.token) {
-      setSession({ user: data.user, token: data.session.token });
-      return true;
+  const applyPasskeySession = async (data?: any, tokenOverride?: string | null) => {
+    if (tokenOverride) {
+      const rememberMe = localStorage.getItem('catalyst-remember-me') === 'true';
+      if (rememberMe) {
+        localStorage.setItem('catalyst-auth-token', tokenOverride);
+        sessionStorage.removeItem('catalyst-session-token');
+      } else {
+        sessionStorage.setItem('catalyst-session-token', tokenOverride);
+        localStorage.removeItem('catalyst-auth-token');
+      }
     }
-    if (data?.user && data?.token) {
-      setSession({ user: data.user, token: data.token });
+    if (data?.user) {
+      setSession({ user: data.user });
       return true;
     }
     return syncPasskeySession();
@@ -69,10 +70,6 @@ function LoginPage() {
         return;
       }
       localStorage.setItem('catalyst-remember-me', values.rememberMe ? 'true' : 'false');
-      if (!values.rememberMe) {
-        localStorage.removeItem('catalyst-auth-token');
-        sessionStorage.removeItem('catalyst-session-token');
-      }
       await login(
         { ...values, allowPasskeyFallback: Boolean(allowFallback) },
         allowFallback ? { forcePasskeyFallback: true } : undefined,
@@ -88,10 +85,6 @@ function LoginPage() {
         return;
       }
       if ((err as any).code === 'TWO_FACTOR_REQUIRED') {
-        if ((err as any).token) {
-          sessionStorage.setItem('catalyst-session-token', (err as any).token);
-          localStorage.removeItem('catalyst-auth-token');
-        }
         setTotpError(null);
         setAuthStep('totp');
       }
@@ -105,13 +98,13 @@ function LoginPage() {
         fetchOptions: {
           onError(context) {
             if (context.error?.code === 'AUTH_CANCELLED' || context.error?.name === 'AbortError') {
-              setPasskeyRequired(true);
               return;
             }
             notifyError(context.error?.message || 'Passkey sign-in failed');
           },
           onSuccess(context) {
-            void applyPasskeySession(context.data).then(() => {
+            const token = context.response?.headers?.get?.('set-auth-token') || null;
+            void applyPasskeySession(context.data, token).then(() => {
               setAuthStep(null);
               setTimeout(() => {
                 navigate(from || '/servers');
@@ -121,7 +114,8 @@ function LoginPage() {
         },
       });
       const data = (response as any)?.data;
-      if (await applyPasskeySession(data)) {
+      const token = (response as any)?.response?.headers?.get?.('set-auth-token') || null;
+      if (await applyPasskeySession(data, token)) {
         setAuthStep(null);
         setTimeout(() => {
           navigate(from || '/servers');
@@ -148,19 +142,18 @@ function LoginPage() {
     void PublicKeyCredential.isConditionalMediationAvailable().then((isAvailable) => {
       if (!isAvailable) return;
       passkeyAutoFillAttempted.current = true;
-      setPasskeySubmitting(true);
       return authClient.signIn.passkey({
         autoFill: true,
         fetchOptions: {
           onError(context) {
             if (context.error?.code === 'AUTH_CANCELLED' || context.error?.name === 'AbortError') {
-              setPasskeyRequired(true);
               return;
             }
             notifyError(context.error?.message || 'Passkey sign-in failed');
           },
           onSuccess(context) {
-            void applyPasskeySession(context.data).then(() => {
+            const token = context.response?.headers?.get?.('set-auth-token') || null;
+            void applyPasskeySession(context.data, token).then(() => {
               setAuthStep(null);
               setAllowPasskeyFallback(false);
               setTimeout(() => {
@@ -169,7 +162,7 @@ function LoginPage() {
             });
           },
         },
-      })
+        })
         .catch((err: any) => {
           if (err?.code === 'AUTH_CANCELLED' || err?.name === 'AbortError') {
             return;

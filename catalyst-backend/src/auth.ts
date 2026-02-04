@@ -6,14 +6,14 @@ import { prisma } from "./db";
 
 const baseUrl = process.env.BETTER_AUTH_URL || process.env.BACKEND_EXTERNAL_ADDRESS || "http://localhost:3000";
 const authSecret = process.env.BETTER_AUTH_SECRET;
-if (!authSecret && process.env.NODE_ENV === "production") {
-  throw new Error("BETTER_AUTH_SECRET is required in production");
+if (!authSecret && process.env.NODE_ENV !== "test") {
+  throw new Error("BETTER_AUTH_SECRET is required");
 }
 
 export const auth = betterAuth({
   appName: "Catalyst",
   baseURL: baseUrl,
-  secret: authSecret || "dev-better-auth-secret",
+  secret: authSecret as string,
   user: {
     additionalFields: {
       username: { type: "string", required: true, unique: true },

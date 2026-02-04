@@ -4,10 +4,16 @@ import ServerList from '../../components/servers/ServerList';
 import CreateServerModal from '../../components/servers/CreateServerModal';
 import { useServers } from '../../hooks/useServers';
 import type { Server } from '../../types/server';
+import { useAuthStore } from '../../stores/authStore';
 
 function ServersPage() {
   const [filters, setFilters] = useState({});
   const { data, isLoading } = useServers(filters);
+  const { user } = useAuthStore();
+  const canCreateServer =
+    user?.permissions?.includes('*') ||
+    user?.permissions?.includes('admin.write') ||
+    user?.permissions?.includes('server.create');
 
   const filtered = useMemo(() => {
     if (!data) return [] as Server[];
@@ -66,7 +72,7 @@ function ServersPage() {
             Monitor fleet health, control power states, and launch new servers.
           </p>
         </div>
-        <CreateServerModal />
+        {canCreateServer ? <CreateServerModal /> : null}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

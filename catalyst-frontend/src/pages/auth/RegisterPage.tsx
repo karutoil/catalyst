@@ -2,7 +2,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
-import { registerSchema, RegisterSchema } from '../../validators/auth';
+import type { RegisterSchema } from '../../validators/auth';
+import { registerSchema } from '../../validators/auth';
 
 function RegisterPage() {
   const navigate = useNavigate();

@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import { ServerState } from '../shared-types';
 import { ServerStateMachine } from '../services/state-machine';
@@ -1722,15 +1722,19 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'name must be at least 3 characters' });
       }
 
-      if (port !== undefined && port <= 0) {
-        return reply.status(400).send({ error: 'port must be a positive number' });
+      if (port !== undefined && (port <= 0 || port > 65535)) {
+        return reply.status(400).send({ error: 'port must be between 1 and 65535' });
+      }
+      const trimmedHost = host.trim();
+      if (!/^[a-z0-9.-]+$/i.test(trimmedHost)) {
+        return reply.status(400).send({ error: 'host must be a valid hostname or IP' });
       }
 
       try {
         const created = await prisma.databaseHost.create({
           data: {
             name: name.trim(),
-            host: host.trim(),
+            host: trimmedHost,
             port: port ?? (Number(process.env.DATABASE_HOST_PORT_DEFAULT) || 3306),
             username: username.trim(),
             password,
@@ -1783,8 +1787,14 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'name must be at least 3 characters' });
       }
 
-      if (port !== undefined && port <= 0) {
-        return reply.status(400).send({ error: 'port must be a positive number' });
+      if (port !== undefined && (port <= 0 || port > 65535)) {
+        return reply.status(400).send({ error: 'port must be between 1 and 65535' });
+      }
+      if (host !== undefined) {
+        const trimmedHost = host.trim();
+        if (!/^[a-z0-9.-]+$/i.test(trimmedHost)) {
+          return reply.status(400).send({ error: 'host must be a valid hostname or IP' });
+        }
       }
 
       try {
