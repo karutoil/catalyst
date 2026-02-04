@@ -24,6 +24,7 @@ import { adminRoutes } from "./routes/admin";
 import { taskRoutes } from "./routes/tasks";
 import { TaskScheduler } from "./services/task-scheduler";
 import { alertRoutes } from "./routes/alerts";
+import { apiKeyRoutes } from "./routes/api-keys";
 import { AlertService } from "./services/alert-service";
 import { getSecuritySettings } from "./services/mailer";
 import { startAuditRetention } from "./services/audit-retention";
@@ -179,6 +180,42 @@ taskScheduler.setTaskExecutor({
 // ============================================================================
 
 const authenticate = async (request: any, reply: any) => {
+  const authHeader = request.headers.authorization;
+
+  // Try API key authentication if header matches Bearer pattern
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+
+    // Check if it's an API key (starts with prefix)
+    if (token.startsWith("catalyst")) {
+      try {
+        // Use better-auth's built-in API key verification
+        const verification = await auth.api.verifyApiKey({
+          headers: fromNodeHeaders(request.headers as Record<string, string | string[] | undefined>),
+        });
+
+        if (!verification) {
+          reply.status(401).send({ error: "Invalid API key" });
+          return;
+        }
+
+        // Attach user info from verification
+        request.user = {
+          userId: verification.user.id,
+          email: verification.user.email,
+          username: verification.user.username,
+          apiKeyId: verification.apiKey.id,
+        };
+        return; // API key auth successful
+      } catch (error: any) {
+        logger.error(error, "API key authentication error");
+        reply.status(401).send({ error: "Invalid or expired API key" });
+        return;
+      }
+    }
+  }
+
+  // Fall back to session authentication
   try {
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(request.headers as Record<string, string | string[] | undefined>),
@@ -402,6 +439,7 @@ async function bootstrap() {
     await app.register(adminRoutes, { prefix: "/api/admin" });
     await app.register(taskRoutes, { prefix: "/api/servers" });
     await app.register(alertRoutes, { prefix: "/api" });
+    await app.register(apiKeyRoutes);
 
     // Agent binary download endpoint (public)
     app.get("/api/agent/download", async (_request, reply) => {

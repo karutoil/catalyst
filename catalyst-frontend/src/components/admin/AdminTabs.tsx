@@ -8,6 +8,7 @@ const tabs = [
   { to: '/admin/templates', label: 'Templates' },
   { to: '/admin/database', label: 'Database' },
   { to: '/admin/network', label: 'Network' },
+  { to: '/admin/api-keys', label: 'API Keys' },
   { to: '/admin/system', label: 'System' },
   { to: '/admin/security', label: 'Security' },
   { to: '/admin/alerts', label: 'Alerts' },
