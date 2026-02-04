@@ -33,7 +33,7 @@ export const authApi = {
         },
       );
       const data = (response as any)?.data ?? response;
-      token = token || data?.token || '';
+      token = token || data?.token || data?.session?.token || '';
       if (data?.twoFactorRedirect) {
         const error: any = new Error('Two-factor authentication required');
         error.code = 'TWO_FACTOR_REQUIRED';
@@ -81,7 +81,7 @@ export const authApi = {
       },
     );
     const data = (response as any)?.data ?? response;
-    token = token || data?.token || '';
+    token = token || data?.token || data?.session?.token || '';
     if (!data?.user) {
       throw new Error(data?.error?.message || data?.error || 'Registration failed');
     }
@@ -124,11 +124,12 @@ export const authApi = {
       trustDevice: payload.trustDevice,
     });
     const data = (response as any)?.data ?? response;
-    if (!data?.user || !data?.token) {
+    const token = data?.token || data?.session?.token || '';
+    if (!data?.user || !token) {
       throw new Error('Two-factor verification failed');
     }
     return {
-      token: data.token,
+      token,
       rememberMe: payload.rememberMe,
       user: {
         id: data.user.id,

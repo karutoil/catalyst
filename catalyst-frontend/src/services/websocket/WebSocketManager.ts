@@ -85,8 +85,12 @@ export class WebSocketManager {
 
     this.ws.onopen = () => {
       const token = useAuthStore.getState().token;
+      console.log('[WebSocket] Connection opened, token available:', !!token);
       if (token) {
+        console.log('[WebSocket] Sending client_handshake');
         this.ws?.send(JSON.stringify({ type: 'client_handshake', token }));
+      } else {
+        console.warn('[WebSocket] No token available for authentication');
       }
       opened = true;
       this.reconnectAttempts = 0;
@@ -139,5 +143,19 @@ export class WebSocketManager {
     this.reconnectAttempts += 1;
     const delay = 1000 * this.reconnectAttempts;
     setTimeout(() => this.connect(callbacks), delay);
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  reconnect(callbacks?: Callbacks) {
+    console.log('[WebSocketManager] Reconnecting...');
+    this.disconnect();
+    this.reconnectAttempts = 0;
+    this.connect(callbacks);
   }
 }

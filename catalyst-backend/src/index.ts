@@ -31,6 +31,8 @@ import { startAuditRetention } from "./services/audit-retention";
 import { auth } from "./auth";
 import { fromNodeHeaders } from "better-auth/node";
 import { normalizeHostIp } from "./utils/ipam";
+import { PluginLoader } from "./plugins/loader";
+import { pluginRoutes } from "./routes/plugins";
 
 const logger = pino({
   transport: {
@@ -58,6 +60,14 @@ const wsGateway = new WebSocketGateway(prisma, logger);
 const rbac = new RbacMiddleware(prisma);
 const taskScheduler = new TaskScheduler(prisma, logger);
 const alertService = new AlertService(prisma, logger);
+const pluginLoader = new PluginLoader(
+  process.env.PLUGINS_DIR || path.join(process.cwd(), '..', 'catalyst-plugins'),
+  prisma,
+  logger,
+  wsGateway,
+  app,
+  { hotReload: process.env.PLUGIN_HOT_RELOAD !== 'false' }
+);
 let auditRetentionInterval: ReturnType<typeof setInterval> | null = null;
 
 // Set task executor for the scheduler
@@ -241,6 +251,8 @@ const authenticate = async (request: any, reply: any) => {
 (app as any).alertService = alertService;
 (app as any).auth = auth;
 (app as any).prisma = prisma;
+(app as any).rbac = rbac;
+(app as any).pluginLoader = pluginLoader;
 
 // ============================================================================
 // SETUP
@@ -440,6 +452,7 @@ async function bootstrap() {
     await app.register(taskRoutes, { prefix: "/api/servers" });
     await app.register(alertRoutes, { prefix: "/api" });
     await app.register(apiKeyRoutes);
+    await app.register((app) => pluginRoutes(app, pluginLoader));
 
     // Agent binary download endpoint (public)
     app.get("/api/agent/download", async (_request, reply) => {
@@ -513,6 +526,20 @@ async function bootstrap() {
         },
       });
     });
+
+    // Initialize plugin system BEFORE starting server
+    await pluginLoader.initialize();
+    logger.info('Plugin system initialized');
+
+    // Auto-enable plugins that were previously enabled
+    const enabledPlugins = await prisma.plugin.findMany({ where: { enabled: true } });
+    for (const plugin of enabledPlugins) {
+      try {
+        await pluginLoader.enablePlugin(plugin.name);
+      } catch (error: any) {
+        logger.error({ plugin: plugin.name, error: error.message }, 'Failed to auto-enable plugin');
+      }
+    }
 
     // Start server
     await app.listen({ port: parseInt(process.env.PORT || "3000"), host: "0.0.0.0" });

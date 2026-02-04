@@ -9,6 +9,7 @@ interface WebSocketState {
   subscriptions: Set<string>;
   messageHandlers: Set<MessageHandler>;
   connect: () => void;
+  reconnect: () => void;
   subscribe: (serverId: string) => void;
   unsubscribe: (serverId: string) => void;
   sendCommand: (serverId: string, command: string) => void;
@@ -23,6 +24,16 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
   messageHandlers: new Set<MessageHandler>(),
   connect: () => {
     manager.connect({
+      onOpen: () => set({ isConnected: true }),
+      onClose: () => set({ isConnected: false }),
+      onMessage: (message) => {
+        const handlers = get().messageHandlers;
+        handlers.forEach((handler) => handler(message));
+      },
+    });
+  },
+  reconnect: () => {
+    manager.reconnect({
       onOpen: () => set({ isConnected: true }),
       onClose: () => set({ isConnected: false }),
       onMessage: (message) => {

@@ -670,3 +670,35 @@ model AlertDelivery {
   @@index([alertId, status])
   @@index([channel, status])
 }
+
+// ============================================================================
+// PLUGINS
+// ============================================================================
+
+model Plugin {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  version     String
+  enabled     Boolean  @default(false)
+  config      Json     @default("{}")
+  installedAt DateTime @default(now())
+  enabledAt   DateTime?
+  updatedAt   DateTime @updatedAt
+  storage     PluginStorage[]
+  
+  @@index([enabled])
+  @@index([name, enabled])
+}
+
+model PluginStorage {
+  id         String   @id @default(cuid())
+  pluginName String
+  plugin     Plugin   @relation(fields: [pluginName], references: [name], onDelete: Cascade)
+  key        String
+  value      Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  @@unique([pluginName, key])
+  @@index([pluginName])
+}

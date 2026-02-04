@@ -41,20 +41,44 @@ function LoginPage() {
   };
 
   const applyPasskeySession = async (data?: any, tokenOverride?: string | null) => {
-    if (tokenOverride) {
+    // Extract token from session if not provided as override
+    const token = tokenOverride || data?.session?.token || null;
+    
+    console.log('[LoginPage] applyPasskeySession called', {
+      hasData: !!data,
+      hasTokenOverride: !!tokenOverride,
+      hasSessionToken: !!data?.session?.token,
+      extractedToken: token ? 'yes' : 'no',
+      dataKeys: data ? Object.keys(data) : [],
+      hasUser: !!data?.user,
+      fullData: data,
+    });
+    
+    if (token) {
       const rememberMe = localStorage.getItem('catalyst-remember-me') === 'true';
       if (rememberMe) {
-        localStorage.setItem('catalyst-auth-token', tokenOverride);
+        localStorage.setItem('catalyst-auth-token', token);
         sessionStorage.removeItem('catalyst-session-token');
       } else {
-        sessionStorage.setItem('catalyst-session-token', tokenOverride);
+        sessionStorage.setItem('catalyst-session-token', token);
         localStorage.removeItem('catalyst-auth-token');
       }
+      console.log('[LoginPage] Token saved to storage', { rememberMe, tokenLength: token.length });
+      
+      // CRITICAL: Set token in Zustand store immediately so WebSocket can use it
+      useAuthStore.setState({ token });
+      console.log('[LoginPage] Token set in Zustand store');
     }
+    
     if (data?.user) {
+      // Now set the session with user and authenticated status
       setSession({ user: data.user });
+      useAuthStore.setState({ isAuthenticated: true });
+      console.log('[LoginPage] User session and authentication status set');
       return true;
     }
+    
+    console.log('[LoginPage] No user in data, calling syncPasskeySession');
     return syncPasskeySession();
   };
 
@@ -94,7 +118,7 @@ function LoginPage() {
   const handlePasskeySignIn = async () => {
     try {
       setPasskeySubmitting(true);
-      const response = await authClient.signIn.passkey({
+      await authClient.signIn.passkey({
         fetchOptions: {
           onError(context) {
             if (context.error?.code === 'AUTH_CANCELLED' || context.error?.name === 'AbortError') {
@@ -104,6 +128,11 @@ function LoginPage() {
           },
           onSuccess(context) {
             const token = context.response?.headers?.get?.('set-auth-token') || null;
+            console.log('[LoginPage] Passkey onSuccess', {
+              hasData: !!context.data,
+              hasToken: !!token,
+              contextData: context.data,
+            });
             void applyPasskeySession(context.data, token).then(() => {
               setAuthStep(null);
               setTimeout(() => {
@@ -113,14 +142,6 @@ function LoginPage() {
           },
         },
       });
-      const data = (response as any)?.data;
-      const token = (response as any)?.response?.headers?.get?.('set-auth-token') || null;
-      if (await applyPasskeySession(data, token)) {
-        setAuthStep(null);
-        setTimeout(() => {
-          navigate(from || '/servers');
-        }, 100);
-      }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         setAuthStep('passkey');

@@ -30,10 +30,13 @@ import SystemPage from './pages/admin/SystemPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
 import SecurityPage from './pages/admin/SecurityPage';
 import ThemeSettingsPage from './pages/admin/ThemeSettingsPage';
+import PluginsPage from './pages/admin/PluginsPage';
 import InvitesPage from './pages/InvitesPage';
 import ProfilePage from './pages/ProfilePage';
 import NotFoundPage from './pages/NotFoundPage';
 import { ApiKeysPage } from './pages/ApiKeysPage';
+import PluginTabPage from './pages/PluginTabPage';
+import { PluginProvider } from './plugins/PluginProvider';
 
 function App() {
   useAuthInit();
@@ -86,8 +89,9 @@ function App() {
   return (
     <ErrorBoundary>
       <ToastProvider />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
+      <PluginProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/two-factor" element={<TwoFactorPage />} />
         <Route path="/invites/:token" element={<InvitesPage />} />
@@ -224,9 +228,26 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="admin/plugins"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <PluginsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/plugin/:pluginTabId"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <PluginTabPage location="admin" />
+                </ProtectedRoute>
+              }
+            />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </PluginProvider>
     </ErrorBoundary>
   );
 }

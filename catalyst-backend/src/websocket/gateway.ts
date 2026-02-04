@@ -341,17 +341,19 @@ export class WebSocketGateway {
         return;
       }
       if (message.type === "node_handshake") {
+        this.logger.info({ nodeId, hasToken: Boolean(message.token) }, "Received node_handshake from agent");
         const node = await this.prisma.node.findUnique({
           where: { id: nodeId },
         });
         const tokenValue = typeof message.token === "string" ? message.token : "";
+        this.logger.debug({ nodeId, nodeFound: Boolean(node), tokenProvided: Boolean(tokenValue) }, "Agent auth check");
         if (
           !agent ||
           !node ||
           !tokenValue ||
           !crypto.timingSafeEqual(Buffer.from(node.secret), Buffer.from(tokenValue))
         ) {
-          this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
+          this.logger.warn({ nodeId, agent: Boolean(agent), node: Boolean(node), token: Boolean(tokenValue) }, `Agent authentication failed for node: ${nodeId}`);
           agent?.socket.end();
           this.agents.delete(nodeId);
           return;
@@ -1223,8 +1225,10 @@ export class WebSocketGateway {
       }
 
       if (message.type === "client_handshake") {
+        this.logger.info({ clientId, hasToken: Boolean(message.token) }, "Received client_handshake");
         const token = typeof message.token === "string" ? message.token : "";
         if (!token) {
+          this.logger.warn({ clientId }, "client_handshake missing token");
           client.socket.end();
           this.clients.delete(clientId);
           return;
@@ -1233,6 +1237,7 @@ export class WebSocketGateway {
           headers: new Headers({ authorization: `Bearer ${token}` }),
         });
         if (!session) {
+          this.logger.warn({ clientId }, "client_handshake invalid session");
           client.socket.end();
           this.clients.delete(clientId);
           return;
@@ -1240,6 +1245,7 @@ export class WebSocketGateway {
         client.userId = session.user.id;
         client.authenticated = true;
         client.lastAuthAt = Date.now();
+        this.logger.info({ clientId, userId: session.user.id }, "Client authenticated successfully");
         return;
       }
 
@@ -1363,7 +1369,7 @@ export class WebSocketGateway {
             })
           );
         }
-        } else if (message.type === "console_input") {
+      } else if (message.type === "console_input") {
           const event: WsEvent.ConsoleInput = message;
           if (!event.serverId || typeof event.data !== "string") {
             return;

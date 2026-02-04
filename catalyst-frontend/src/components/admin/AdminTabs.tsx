@@ -1,6 +1,8 @@
+import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { usePluginTabs } from '../../plugins/hooks';
 
-const tabs = [
+const baseTabs = [
   { to: '/admin', label: 'Overview', end: true },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/servers', label: 'Servers' },
@@ -12,14 +14,32 @@ const tabs = [
   { to: '/admin/system', label: 'System' },
   { to: '/admin/security', label: 'Security' },
   { to: '/admin/theme-settings', label: 'Theme' },
+  { to: '/admin/plugins', label: 'Plugins' },
   { to: '/admin/alerts', label: 'Alerts' },
   { to: '/admin/audit-logs', label: 'Audit Logs' },
 ];
 
 function AdminTabs() {
+  const pluginTabs = usePluginTabs('admin');
+  
+  // Convert plugin tabs to route format
+  const pluginRoutes = React.useMemo(() => 
+    pluginTabs.map((tab) => ({
+      to: `/admin/plugin/${tab.id}`,
+      label: tab.label,
+      end: false,
+    })),
+    [pluginTabs]
+  );
+  
+  const allTabs = React.useMemo(() => 
+    [...baseTabs, ...pluginRoutes],
+    [pluginRoutes]
+  );
+  
   return (
     <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-      {tabs.map((tab) => (
+      {allTabs.map((tab) => (
         <NavLink
           key={tab.to}
           to={tab.to}
