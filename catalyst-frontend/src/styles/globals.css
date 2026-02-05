@@ -151,3 +151,131 @@ body {
   padding-left: 1rem;
   padding-right: 1rem;
 }
+
+/* Custom scrollbar styling */
+html,
+body,
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--slate-400)) hsl(var(--slate-100));
+}
+
+.dark,
+.dark html,
+.dark body,
+.dark * {
+  scrollbar-color: hsl(var(--slate-700)) hsl(var(--slate-900));
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: hsl(var(--slate-100));
+  border-radius: 4px;
+}
+
+.dark html::-webkit-scrollbar-track,
+.dark body::-webkit-scrollbar-track,
+.dark *::-webkit-scrollbar-track {
+  background: hsl(var(--slate-900));
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--slate-400));
+  border-radius: 4px;
+  border: 2px solid hsl(var(--slate-100));
+}
+
+.dark html::-webkit-scrollbar-thumb,
+.dark body::-webkit-scrollbar-thumb,
+.dark *::-webkit-scrollbar-thumb {
+  background: hsl(var(--slate-700));
+  border: 2px solid hsl(var(--slate-900));
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--slate-500));
+}
+
+.dark html::-webkit-scrollbar-thumb:hover,
+.dark body::-webkit-scrollbar-thumb:hover,
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--slate-600));
+}
+
+html::-webkit-scrollbar-thumb:active,
+body::-webkit-scrollbar-thumb:active,
+*::-webkit-scrollbar-thumb:active {
+  background: hsl(var(--primary));
+}
+
+.dark html::-webkit-scrollbar-thumb:active,
+.dark body::-webkit-scrollbar-thumb:active,
+.dark *::-webkit-scrollbar-thumb:active {
+  background: hsl(var(--primary));
+}
+
+/* Custom select dropdown styling */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+  cursor: pointer;
+}
+
+.dark select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+select:hover {
+  cursor: pointer;
+}
+
+select:focus {
+  outline: none;
+}
+
+/* Style option elements */
+select option {
+  background-color: hsl(var(--card));
+  color: hsl(var(--foreground));
+  padding: 0.5rem;
+}
+
+.dark select option {
+  background-color: hsl(var(--slate-900));
+  color: hsl(var(--foreground));
+}
+
+/* Firefox-specific option styling */
+@-moz-document url-prefix() {
+  select option {
+    background-color: white;
+    color: hsl(var(--slate-900));
+  }
+  
+  .dark select option {
+    background-color: hsl(var(--slate-900));
+    color: hsl(var(--slate-100));
+  }
+  
+  select option:checked {
+    background-color: hsl(var(--primary));
+    color: white;
+  }
+}

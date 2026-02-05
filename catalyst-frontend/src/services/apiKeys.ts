@@ -17,6 +17,11 @@ export interface ApiKey {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  user?: {
+    id: string;
+    username: string;
+    email: string;
+  };
 }
 
 export interface CreateApiKeyRequest {

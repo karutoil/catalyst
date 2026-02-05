@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Plus, Key, Trash2, Copy, Server } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Plus, Key, Trash2, Copy, Server, Filter } from 'lucide-react';
 import { useApiKeys, useDeleteApiKey } from '../hooks/useApiKeys';
 import { ApiKey } from '../services/apiKeys';
 import { CreateApiKeyDialog } from '../components/apikeys/CreateApiKeyDialog';
 import EmptyState from '../components/shared/EmptyState';
 import AdminTabs from '../components/admin/AdminTabs';
+import Input from '../components/ui/input';
 
 // Helper to parse metadata which may be double-stringified
 const parseMetadata = (metadata: Record<string, any> | string | null): Record<string, any> | null => {
@@ -37,6 +38,9 @@ export function ApiKeysPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null);
   const [confirmAgentDelete, setConfirmAgentDelete] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showAgentKeys, setShowAgentKeys] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled' | 'expired'>('all');
 
   const handleDelete = () => {
     if (deleteKey) {
@@ -66,6 +70,45 @@ export function ApiKeysPage() {
     return new Date(expiresAt) < new Date();
   };
 
+  const filteredApiKeys = useMemo(() => {
+    if (!apiKeys) return [];
+    
+    return apiKeys.filter((apiKey) => {
+      // Filter by agent keys
+      if (!showAgentKeys && isAgentKey(apiKey)) return false;
+      
+      // Filter by search
+      if (search.trim()) {
+        const searchLower = search.toLowerCase();
+        const name = (apiKey.name || '').toLowerCase();
+        const nodeId = getNodeId(apiKey)?.toLowerCase() || '';
+        const keyStart = (apiKey.start || '').toLowerCase();
+        
+        if (!name.includes(searchLower) && !nodeId.includes(searchLower) && !keyStart.includes(searchLower)) {
+          return false;
+        }
+      }
+      
+      // Filter by status
+      if (statusFilter === 'active' && !apiKey.enabled) return false;
+      if (statusFilter === 'disabled' && apiKey.enabled) return false;
+      if (statusFilter === 'expired' && !isExpired(apiKey.expiresAt)) return false;
+      
+      return true;
+    });
+  }, [apiKeys, showAgentKeys, search, statusFilter]);
+
+  const stats = useMemo(() => {
+    if (!apiKeys) return { total: 0, active: 0, agent: 0, expired: 0 };
+    
+    return {
+      total: apiKeys.length,
+      active: apiKeys.filter(k => k.enabled).length,
+      agent: apiKeys.filter(isAgentKey).length,
+      expired: apiKeys.filter(k => isExpired(k.expiresAt)).length,
+    };
+  }, [apiKeys]);
+
   return (
     <div className="space-y-6">
       <AdminTabs />
@@ -86,14 +129,121 @@ export function ApiKeysPage() {
           </button>
         </div>
 
+        {/* Stats */}
+        <div className="flex flex-wrap gap-2 text-xs text-slate-600 dark:text-slate-400 mb-6">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {stats.total} total
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {stats.active} active
+          </span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-slate-800 dark:bg-slate-950/60">
+            {stats.agent} agent keys
+          </span>
+          {stats.expired > 0 && (
+            <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 dark:border-red-500/30 dark:bg-red-900/20 text-red-600 dark:text-red-400">
+              {stats.expired} expired
+            </span>
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/60 p-4 mb-6 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+            <Filter className="w-4 h-4" />
+            Filters
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Search */}
+            <div>
+              <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                Search
+              </label>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Name, node ID, or key..."
+                className="w-full"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                Status
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
+              >
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+                <option value="expired">Expired</option>
+              </select>
+            </div>
+
+            {/* Show Agent Keys Toggle */}
+            <div>
+              <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                Agent Keys
+              </label>
+              <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 cursor-pointer hover:border-primary-500 dark:hover:border-primary-500/30 transition-all">
+                <input
+                  type="checkbox"
+                  checked={showAgentKeys}
+                  onChange={(e) => setShowAgentKeys(e.target.checked)}
+                  className="rounded border-slate-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-slate-900 dark:text-slate-200">
+                  Show agent keys ({stats.agent})
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {/* Active Filters Display */}
+          {(search || !showAgentKeys || statusFilter !== 'all') && (
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <span className="text-xs text-slate-500 dark:text-slate-400">Active filters:</span>
+              {!showAgentKeys && (
+                <span className="text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                  Hiding {stats.agent} agent keys
+                </span>
+              )}
+              {statusFilter !== 'all' && (
+                <span className="text-xs px-2 py-1 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">
+                  Status: {statusFilter}
+                </span>
+              )}
+              {search && (
+                <span className="text-xs px-2 py-1 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">
+                  Search: {search}
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  setSearch('');
+                  setStatusFilter('all');
+                }}
+                className="ml-auto text-xs text-slate-600 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* API Keys List */}
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
           </div>
-        ) : apiKeys && apiKeys.length > 0 ? (
+        ) : filteredApiKeys && filteredApiKeys.length > 0 ? (
           <div className="space-y-4">
-            {apiKeys.map((apiKey) => (
+            {filteredApiKeys.map((apiKey) => (
               <div
                 key={apiKey.id}
                 className={`rounded-xl border p-5 ${
@@ -139,6 +289,13 @@ export function ApiKeysPage() {
                     {isAgentKey(apiKey) && getNodeId(apiKey) && (
                       <div className="text-sm text-amber-700 dark:text-amber-400">
                         Node: <code className="bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">{getNodeId(apiKey)}</code>
+                      </div>
+                    )}
+
+                    {/* Created By */}
+                    {apiKey.user && (
+                      <div className="text-sm text-slate-600 dark:text-slate-400">
+                        Created by: <span className="font-medium text-slate-900 dark:text-slate-100">{apiKey.user.username || apiKey.user.email}</span>
                       </div>
                     )}
 
@@ -205,16 +362,22 @@ export function ApiKeysPage() {
           </div>
         ) : (
           <EmptyState
-            title="No API Keys"
-            description="Create your first API key to enable automated access"
+            title={search || statusFilter !== 'all' ? 'No API Keys Found' : 'No API Keys'}
+            description={
+              search || statusFilter !== 'all'
+                ? 'Try adjusting your filters to see more results'
+                : 'Create your first API key to enable automated access'
+            }
             action={
-              <button
-                onClick={() => setCreateDialogOpen(true)}
-                className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all hover:bg-primary-500"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create API Key
-              </button>
+              !search && statusFilter === 'all' ? (
+                <button
+                  onClick={() => setCreateDialogOpen(true)}
+                  className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition-all hover:bg-primary-500"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create API Key
+                </button>
+              ) : undefined
             }
           />
         )}

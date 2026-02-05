@@ -124,6 +124,13 @@ export async function apiKeyRoutes(app: FastifyInstance) {
           createdAt: true,
           updatedAt: true,
           userId: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
+          },
         },
         orderBy: {
           createdAt: "desc",

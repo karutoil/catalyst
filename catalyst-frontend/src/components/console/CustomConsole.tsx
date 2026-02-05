@@ -55,6 +55,7 @@ function CustomConsole({
 }: CustomConsoleProps) {
   const outputRef = useRef<HTMLDivElement | null>(null);
   const [expandedIds, setExpandedIds] = useState(() => new Set<string>());
+  const programmaticScrollRef = useRef(false);
 
   const normalizedEntries = useMemo(() => {
     const trimmed = entries.slice(-scrollback);
@@ -65,11 +66,15 @@ function CustomConsole({
 
   useEffect(() => {
     if (!outputRef.current || !autoScroll) return;
+    programmaticScrollRef.current = true;
     outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 100);
   }, [autoScroll, normalizedEntries]);
 
   const handleScroll = () => {
-    if (!outputRef.current) return;
+    if (!outputRef.current || programmaticScrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = outputRef.current;
     const nearBottom = scrollHeight - scrollTop - clientHeight < 24;
     if (!nearBottom && onUserScroll) {

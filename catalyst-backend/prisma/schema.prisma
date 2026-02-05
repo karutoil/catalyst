@@ -37,6 +37,7 @@ model User {
   invitesSent ServerAccessInvite[] @relation("ServerInviteSender")
   alertRules AlertRule[]
   alerts     Alert[]
+  apiKeys    apikey[] @relation("UserApiKeys")
 }
 
 model session {
@@ -131,6 +132,7 @@ model apikey {
   prefix              String?
   key                 String    @unique
   userId              String
+  user                User      @relation("UserApiKeys", fields: [userId], references: [id], onDelete: Cascade)
   refillInterval      Int?
   refillAmount        Int?
   lastRefillAt        DateTime?
