@@ -3,25 +3,21 @@ import { useWebSocketStore } from '../stores/websocketStore';
 import { useAuthStore } from '../stores/authStore';
 
 export function useWebSocketConnection() {
-  const { connect, reconnect } = useWebSocketStore();
-  const { isAuthenticated, token } = useAuthStore();
-  const previousToken = useRef<string | null>(null);
+  const { connect, isConnected } = useWebSocketStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hasConnected = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated && token) {
-      // If token just appeared (wasn't there before), reconnect
-      if (previousToken.current === null && token) {
-        console.log('[useWebSocketConnection] Token now available, reconnecting...');
-        reconnect();
-      } else if (!previousToken.current) {
-        // First connection with token
-        console.log('[useWebSocketConnection] Connecting with token available');
-        connect();
-      }
-      previousToken.current = token;
-    } else if (isAuthenticated && !token) {
-      console.log('[useWebSocketConnection] Authenticated but no token yet, waiting...');
-      previousToken.current = null;
+    // Only connect once when authenticated and not yet connected
+    if (isAuthenticated && !isConnected && !hasConnected.current) {
+      console.log('[useWebSocketConnection] Authenticated, connecting WebSocket...');
+      hasConnected.current = true;
+      connect();
     }
-  }, [isAuthenticated, token, connect, reconnect]);
+    
+    // Reset flag when logged out
+    if (!isAuthenticated) {
+      hasConnected.current = false;
+    }
+  }, [isAuthenticated, isConnected, connect]);
 }

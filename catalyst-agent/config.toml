@@ -11,6 +11,9 @@ node_id = "cml0ai9k000027yto58m2n3oh"
 # Node secret key (obtain from backend when creating node)
 secret = "dev-secret-key-12345"
 
+# Optional agent API key (preferred for better-auth)
+api_key = "catalystIneLDtFwjwAjTMcpGkEUVzqaeZwBFYvNsdGrFWlIzjvovgGDzQuSREdDuNEvekJU"
+
 # Hostname of this server
 hostname = "game-server-1.example.com"
 

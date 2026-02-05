@@ -101,17 +101,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
         refresh: async () => {
-          if (!get().token) {
-            set({
-              isRefreshing: false,
-              isReady: true,
-              isAuthenticated: false,
-              user: null,
-              error: null,
-              rememberMe: false,
-            });
-            return;
-          }
+          // With cookie-based auth, always try to refresh - cookies are sent automatically
           set({ isRefreshing: true, error: null, isReady: true });
           try {
             const { user } = await authApi.refresh();
@@ -143,9 +133,7 @@ export const useAuthStore = create<AuthState>()(
         },
         init: () => {
           set({ isReady: true });
-          if (!get().token) {
-            return;
-          }
+          // Always try to refresh - cookie-based auth doesn't need stored token
           void get().refresh();
         },
       logout: () => {

@@ -76,6 +76,48 @@ export class WebSocketGateway {
     }
   }
 
+  private async verifyAgentApiKey(nodeId: string, tokenValue: string) {
+    try {
+      const verification = await auth.api.verifyApiKey({
+        body: {
+          key: tokenValue,
+        },
+      } as any);
+      const verificationData = (verification as any)?.response ?? verification;
+      if (!verificationData || typeof verificationData !== "object") {
+        return false;
+      }
+      if (!verificationData?.valid || !verificationData?.key) {
+        return false;
+      }
+      const metadata = verificationData.key?.metadata;
+      if (!metadata || typeof metadata !== "object") {
+        return false;
+      }
+      const metaNodeId = (metadata as Record<string, unknown>).nodeId;
+      return typeof metaNodeId === "string" && metaNodeId === nodeId;
+    } catch (err) {
+      this.logger.warn({ err, nodeId }, "Agent API key verification failed");
+      return false;
+    }
+  }
+
+  private async authenticateAgentToken(nodeId: string, tokenValue: string) {
+    if (!tokenValue) return null;
+    const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
+    if (!node) return null;
+    const secretMatches =
+      tokenValue.length === node.secret.length &&
+      crypto.timingSafeEqual(Buffer.from(node.secret), Buffer.from(tokenValue));
+    if (secretMatches) {
+      return { node, authType: "secret" as const };
+    }
+    if (await this.verifyAgentApiKey(nodeId, tokenValue)) {
+      return { node, authType: "api_key" as const };
+    }
+    return null;
+  }
+
   async handleConnection(socket: any, request: FastifyRequest) {
     const query = (request.query as any) || {};
     const token = typeof query.token === "string" ? query.token : null;
@@ -112,21 +154,27 @@ export class WebSocketGateway {
       };
 
       if (token) {
-        const node = await this.prisma.node.findUnique({
-          where: { id: nodeId },
-        });
-        if (node && crypto.timingSafeEqual(Buffer.from(node.secret), Buffer.from(token))) {
+        const authResult = await this.authenticateAgentToken(nodeId, token);
+        if (authResult) {
           this.agents.set(nodeId, agent);
           socket.socket.on("message", onMessage);
           socket.socket.on("close", onClose);
-          await this.finalizeAgentConnection(node, agent);
+          this.logger.info(
+            { nodeId, authType: authResult.authType },
+            "Agent authenticated during connection",
+          );
+          await this.finalizeAgentConnection(authResult.node, agent);
         } else {
           this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
           agent.socket.end();
         }
       } else {
+        // No token in URL - agent will send handshake with token
+        // Add to agents map so handleAgentMessage can find it
+        this.agents.set(nodeId, agent);
         socket.socket.on("message", onMessage);
         socket.socket.on("close", onClose);
+        this.logger.info({ nodeId }, "Agent connected, awaiting handshake");
       }
     } catch (err) {
       this.logger.error(err, "Error in agent connection");
@@ -199,7 +247,29 @@ export class WebSocketGateway {
       this.clients.set(clientId, client);
       this.logger.info(`Client connected (pending auth): ${clientId}`);
 
-      socket.socket.on("message", (data: any) => this.handleClientMessage(clientId, data));
+      // Try to authenticate immediately via cookies from upgrade request
+      try {
+        const cookieHeader = request.headers.cookie || "";
+        this.logger.debug({ clientId, hasCookie: !!cookieHeader, cookieLength: cookieHeader.length }, "Attempting cookie auth");
+        const session = await auth.api.getSession({
+          headers: new Headers({ cookie: cookieHeader }),
+        });
+        if (session?.user?.id) {
+          client.userId = session.user.id;
+          client.authenticated = true;
+          client.lastAuthAt = Date.now();
+          this.logger.info({ clientId, userId: session.user.id }, "Client authenticated via cookie");
+        } else {
+          this.logger.debug({ clientId, hasSession: !!session }, "Cookie auth returned no user");
+        }
+      } catch (cookieErr) {
+        this.logger.debug({ clientId, err: cookieErr }, "Cookie auth failed, waiting for handshake");
+      }
+
+      socket.socket.on("message", (data: any) => {
+        this.logger.info({ clientId, dataType: typeof data, dataLength: data?.length }, "Raw message received");
+        this.handleClientMessage(clientId, data);
+      });
       socket.socket.on("close", () => {
         this.clients.delete(clientId);
         this.clientCommandCounters.delete(clientId);
@@ -342,23 +412,22 @@ export class WebSocketGateway {
       }
       if (message.type === "node_handshake") {
         this.logger.info({ nodeId, hasToken: Boolean(message.token) }, "Received node_handshake from agent");
-        const node = await this.prisma.node.findUnique({
-          where: { id: nodeId },
-        });
         const tokenValue = typeof message.token === "string" ? message.token : "";
-        this.logger.debug({ nodeId, nodeFound: Boolean(node), tokenProvided: Boolean(tokenValue) }, "Agent auth check");
-        if (
-          !agent ||
-          !node ||
-          !tokenValue ||
-          !crypto.timingSafeEqual(Buffer.from(node.secret), Buffer.from(tokenValue))
-        ) {
-          this.logger.warn({ nodeId, agent: Boolean(agent), node: Boolean(node), token: Boolean(tokenValue) }, `Agent authentication failed for node: ${nodeId}`);
+        const authResult = await this.authenticateAgentToken(nodeId, tokenValue);
+        this.logger.debug(
+          { nodeId, tokenProvided: Boolean(tokenValue), authType: authResult?.authType },
+          "Agent auth check",
+        );
+        if (!agent || !authResult) {
+          this.logger.warn(
+            { nodeId, agent: Boolean(agent), token: Boolean(tokenValue) },
+            `Agent authentication failed for node: ${nodeId}`,
+          );
           agent?.socket.end();
           this.agents.delete(nodeId);
           return;
         }
-        await this.finalizeAgentConnection(node, agent);
+        await this.finalizeAgentConnection(authResult.node, agent);
         return;
       }
 
@@ -973,7 +1042,6 @@ export class WebSocketGateway {
           this.logger.warn({ nodeId, messageNodeId: message.nodeId }, "server_state_sync_complete node mismatch");
           return;
         }
-        const nodeId = message.nodeId;
         const foundContainers = Array.isArray(message.foundContainers) 
           ? new Set(message.foundContainers) 
           : new Set();
@@ -1221,14 +1289,23 @@ export class WebSocketGateway {
       const client = this.clients.get(clientId);
 
       if (!client) {
+        this.logger.warn({ clientId }, "Received message for unknown client");
         return;
       }
 
+      this.logger.info({ clientId, type: message.type, authenticated: client.authenticated }, "Received client message");
+
       if (message.type === "client_handshake") {
+        // If already authenticated via cookies, just acknowledge
+        if (client.authenticated) {
+          this.logger.info({ clientId, userId: client.userId }, "Client already authenticated via cookie");
+          return;
+        }
+        
         this.logger.info({ clientId, hasToken: Boolean(message.token) }, "Received client_handshake");
         const token = typeof message.token === "string" ? message.token : "";
         if (!token) {
-          this.logger.warn({ clientId }, "client_handshake missing token");
+          this.logger.warn({ clientId }, "client_handshake missing token and no cookie auth");
           client.socket.end();
           this.clients.delete(clientId);
           return;
@@ -1448,11 +1525,19 @@ export class WebSocketGateway {
 
         // Route to agent
         const agent = this.agents.get(server.nodeId);
+        this.logger.info({ 
+          serverId: server.id, 
+          nodeId: server.nodeId, 
+          hasAgent: !!agent, 
+          agentState: agent?.socket?.socket?.readyState 
+        }, "Routing console_input to agent");
         if (agent && agent.socket.socket.readyState === 1) {
           agent.socket.socket.send(
             JSON.stringify({ ...event, serverUuid: server.uuid })
           );
+          this.logger.info({ nodeId: server.nodeId }, "Console input sent to agent");
         } else if (client.socket.socket.readyState === 1) {
+          this.logger.warn({ nodeId: server.nodeId, hasAgent: !!agent }, "Agent not available for console_input");
           client.socket.socket.send(
             JSON.stringify({
               type: "error",

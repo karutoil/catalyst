@@ -10,6 +10,9 @@ node_id = "cmkt6h7wd0002ephrk1e9dq1t"
 # Node secret key from database
 secret = "dev-secret-key-12345"
 
+# Optional agent API key (preferred for better-auth)
+api_key = ""
+
 # Hostname of this server
 hostname = "node1.example.com"
 

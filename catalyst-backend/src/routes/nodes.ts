@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
 import { listAvailableIps } from "../utils/ipam";
 import { Prisma } from "@prisma/client";
+import { auth } from "../auth";
 
 const ensureAdmin = async (
   prisma: PrismaClient,
@@ -268,16 +269,171 @@ export async function nodeRoutes(app: FastifyInstance) {
       });
 
       const deployUrl = `${process.env.BACKEND_URL || "http://localhost:3000"}/api/deploy/${token}`;
+      let apiKey: string | null = null;
+      try {
+        const apiKeyResponse = await auth.api.createApiKey({
+          body: {
+            name: `agent-${nodeId.slice(0, 8)}`,
+            userId: request.user.userId,
+            prefix: "catalyst",
+            // No expiresIn = never expires
+            metadata: {
+              nodeId,
+              purpose: "agent",
+            },
+          },
+        } as any);
+        apiKey = (apiKeyResponse as any)?.key ?? null;
+        if (!apiKey) {
+          request.log.warn({ nodeId }, "Failed to create agent API key for deployment");
+        }
+      } catch (error) {
+        request.log.error({ error, nodeId }, "Failed to create agent API key for deployment");
+      }
 
       reply.send({
         success: true,
         data: {
           deploymentToken: deploymentToken.token,
           secret: deploymentToken.secret,
+          apiKey: apiKey ?? null,
           deployUrl,
           expiresAt,
         },
       });
+    }
+  );
+
+  // Check if API key exists for agent
+  app.get(
+    "/:nodeId/api-key",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
+      const { nodeId } = request.params as { nodeId: string };
+
+      const node = await prisma.node.findUnique({
+        where: { id: nodeId },
+      });
+
+      if (!node) {
+        return reply.status(404).send({ error: "Node not found" });
+      }
+
+      // Find existing API key for this node
+      // Metadata is stored as stringified JSON, so use string_contains
+      const existingKey = await prisma.apikey.findFirst({
+        where: {
+          metadata: {
+            string_contains: `"nodeId":"${nodeId}"`,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          start: true,
+          prefix: true,
+          createdAt: true,
+          enabled: true,
+        },
+      });
+
+      reply.send({
+        success: true,
+        data: {
+          exists: !!existingKey,
+          apiKey: existingKey ? {
+            id: existingKey.id,
+            name: existingKey.name,
+            preview: existingKey.start ? `${existingKey.start}${'*'.repeat(40)}` : null,
+            createdAt: existingKey.createdAt,
+            enabled: existingKey.enabled,
+          } : null,
+        },
+      });
+    }
+  );
+
+  // Generate API key for agent
+  app.post(
+    "/:nodeId/api-key",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
+      if (!isAdmin) return;
+      const { nodeId } = request.params as { nodeId: string };
+      const { regenerate } = (request.body as { regenerate?: boolean }) || {};
+
+      const node = await prisma.node.findUnique({
+        where: { id: nodeId },
+      });
+
+      if (!node) {
+        return reply.status(404).send({ error: "Node not found" });
+      }
+
+      // Check for existing API key
+      // Metadata is stored as stringified JSON, so use string_contains
+      const existingKey = await prisma.apikey.findFirst({
+        where: {
+          metadata: {
+            string_contains: `"nodeId":"${nodeId}"`,
+          },
+        },
+      });
+
+      if (existingKey && !regenerate) {
+        return reply.status(409).send({ 
+          error: "API key already exists for this node",
+          existingKeyId: existingKey.id,
+          existingKeyPreview: existingKey.start ? `${existingKey.start}${'*'.repeat(40)}` : null,
+        });
+      }
+
+      // If regenerating, delete the old key first
+      if (existingKey && regenerate) {
+        try {
+          await auth.api.deleteApiKey({
+            body: { keyId: existingKey.id },
+          } as any);
+          request.log.info({ keyId: existingKey.id, nodeId }, "Deleted old API key for regeneration");
+        } catch (error) {
+          request.log.error({ error, keyId: existingKey.id }, "Failed to delete old API key");
+          return reply.status(500).send({ error: "Failed to delete old API key" });
+        }
+      }
+
+      try {
+        const apiKeyResponse = await auth.api.createApiKey({
+          body: {
+            name: `agent-${nodeId.slice(0, 8)}`,
+            userId: request.user.userId,
+            prefix: "catalyst",
+            metadata: {
+              nodeId,
+              purpose: "agent",
+            },
+          },
+        } as any);
+        request.log.info({ apiKeyResponse }, "API key creation response");
+        const apiKey = (apiKeyResponse as any)?.key ?? null;
+        if (!apiKey) {
+          return reply.status(500).send({ error: "Failed to create API key" });
+        }
+
+        reply.send({
+          success: true,
+          data: {
+            apiKey,
+            nodeId,
+            regenerated: !!regenerate,
+          },
+        });
+      } catch (error) {
+        request.log.error({ error, nodeId }, "Failed to create agent API key");
+        return reply.status(500).send({ error: "Failed to create API key" });
+      }
     }
   );
 

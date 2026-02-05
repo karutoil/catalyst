@@ -15,6 +15,7 @@ pub struct ServerConfig {
     pub backend_url: String,
     pub node_id: String,
     pub secret: String,
+    pub api_key: Option<String>,
     pub hostname: String,
     pub data_dir: PathBuf,
     pub max_connections: usize,
@@ -63,6 +64,7 @@ impl AgentConfig {
                 node_id: std::env::var("NODE_ID").map_err(|_| "NODE_ID not set".to_string())?,
                 secret: std::env::var("NODE_SECRET")
                     .map_err(|_| "NODE_SECRET not set".to_string())?,
+                api_key: std::env::var("NODE_API_KEY").ok(),
                 hostname: hostname().map_err(|e| format!("Failed to get hostname: {}", e))?,
                 data_dir: PathBuf::from(
                     std::env::var("DATA_DIR").unwrap_or_else(|_| "/var/lib/catalyst".to_string()),

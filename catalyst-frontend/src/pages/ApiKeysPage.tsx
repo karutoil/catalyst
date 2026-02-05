@@ -1,22 +1,59 @@
 import { useState } from 'react';
-import { Plus, Key, Trash2, Copy } from 'lucide-react';
+import { Plus, Key, Trash2, Copy, Server } from 'lucide-react';
 import { useApiKeys, useDeleteApiKey } from '../hooks/useApiKeys';
 import { ApiKey } from '../services/apiKeys';
 import { CreateApiKeyDialog } from '../components/apikeys/CreateApiKeyDialog';
 import EmptyState from '../components/shared/EmptyState';
 import AdminTabs from '../components/admin/AdminTabs';
 
+// Helper to parse metadata which may be double-stringified
+const parseMetadata = (metadata: Record<string, any> | string | null): Record<string, any> | null => {
+  if (!metadata) return null;
+  if (typeof metadata === 'string') {
+    try {
+      return JSON.parse(metadata);
+    } catch {
+      return null;
+    }
+  }
+  return metadata;
+};
+
+// Helper to check if an API key is for an agent
+const isAgentKey = (apiKey: ApiKey) => {
+  const meta = parseMetadata(apiKey.metadata);
+  return meta?.purpose === 'agent';
+};
+
+// Helper to get nodeId from metadata
+const getNodeId = (apiKey: ApiKey): string | null => {
+  const meta = parseMetadata(apiKey.metadata);
+  return meta?.nodeId || null;
+};
+
 export function ApiKeysPage() {
   const { data: apiKeys, isLoading } = useApiKeys();
   const deleteApiKey = useDeleteApiKey();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null);
+  const [confirmAgentDelete, setConfirmAgentDelete] = useState(false);
 
   const handleDelete = () => {
     if (deleteKey) {
+      // For agent keys, require extra confirmation
+      if (isAgentKey(deleteKey) && !confirmAgentDelete) {
+        setConfirmAgentDelete(true);
+        return;
+      }
       deleteApiKey.mutate(deleteKey.id);
       setDeleteKey(null);
+      setConfirmAgentDelete(false);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteKey(null);
+    setConfirmAgentDelete(false);
   };
 
   const formatDate = (dateString: string | null) => {
@@ -59,16 +96,29 @@ export function ApiKeysPage() {
             {apiKeys.map((apiKey) => (
               <div
                 key={apiKey.id}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900/50"
+                className={`rounded-xl border p-5 ${
+                  isAgentKey(apiKey)
+                    ? 'border-amber-300 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-900/10'
+                    : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50'
+                }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 space-y-3">
                     {/* Name and Status */}
                     <div className="flex items-center gap-3">
-                      <Key className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                      {isAgentKey(apiKey) ? (
+                        <Server className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                      ) : (
+                        <Key className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                      )}
                       <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                         {apiKey.name || 'Unnamed Key'}
                       </h3>
+                      {isAgentKey(apiKey) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-amber-700 bg-amber-100 rounded-full dark:bg-amber-900/30 dark:text-amber-400">
+                          Agent
+                        </span>
+                      )}
                       {apiKey.enabled ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-green-700 bg-green-100 rounded-full dark:bg-green-900/30 dark:text-green-400">
                           Active
@@ -84,6 +134,13 @@ export function ApiKeysPage() {
                         </span>
                       )}
                     </div>
+
+                    {/* Node ID for agent keys */}
+                    {isAgentKey(apiKey) && getNodeId(apiKey) && (
+                      <div className="text-sm text-amber-700 dark:text-amber-400">
+                        Node: <code className="bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">{getNodeId(apiKey)}</code>
+                      </div>
+                    )}
 
                     {/* Key Preview */}
                     {apiKey.prefix && apiKey.start && (
@@ -169,17 +226,53 @@ export function ApiKeysPage() {
       {/* Delete Confirmation Dialog */}
       {deleteKey && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
+          <div className={`bg-white dark:bg-slate-900 rounded-xl p-6 max-w-md w-full mx-4 shadow-xl ${
+            isAgentKey(deleteKey) ? 'border-2 border-red-500' : ''
+          }`}>
             <h3 className="text-lg font-semibold mb-2 text-slate-900 dark:text-slate-100">
-              Revoke API Key
+              {confirmAgentDelete ? '⚠️ Final Warning' : 'Revoke API Key'}
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-              Are you sure you want to revoke "{deleteKey.name}"? This action cannot be undone
-              and any applications using this key will immediately lose access.
-            </p>
+            
+            {isAgentKey(deleteKey) && !confirmAgentDelete ? (
+              <>
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 mb-4 dark:border-red-500/30 dark:bg-red-900/20">
+                  <p className="text-sm font-semibold text-red-800 dark:text-red-300 mb-2">
+                    ⚠️ This is an Agent API Key
+                  </p>
+                  <p className="text-sm text-red-700 dark:text-red-400">
+                    Revoking this key will <strong>immediately disconnect the agent</strong> and 
+                    prevent it from communicating with Catalyst. The node will become unmanageable 
+                    until a new API key is generated and configured.
+                  </p>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                  Are you sure you want to revoke "{deleteKey.name}"?
+                </p>
+              </>
+            ) : confirmAgentDelete ? (
+              <>
+                <div className="rounded-lg border border-red-300 bg-red-100 p-4 mb-4 dark:border-red-500/50 dark:bg-red-900/40">
+                  <p className="text-sm font-bold text-red-900 dark:text-red-200">
+                    This will render the node's agent USELESS!
+                  </p>
+                  <p className="text-sm text-red-800 dark:text-red-300 mt-2">
+                    You will need physical or remote access to the node to reconfigure it with a new API key.
+                  </p>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                  Type the node ID to confirm: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs">{getNodeId(deleteKey)?.slice(0, 8)}...</code>
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                Are you sure you want to revoke "{deleteKey.name}"? This action cannot be undone
+                and any applications using this key will immediately lose access.
+              </p>
+            )}
+            
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setDeleteKey(null)}
+                onClick={handleCancelDelete}
                 className="px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
               >
                 Cancel
@@ -188,7 +281,7 @@ export function ApiKeysPage() {
                 onClick={handleDelete}
                 className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
               >
-                Revoke
+                {confirmAgentDelete ? 'Yes, Revoke Agent Key' : isAgentKey(deleteKey) ? 'Continue' : 'Revoke'}
               </button>
             </div>
           </div>

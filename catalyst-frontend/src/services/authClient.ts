@@ -6,7 +6,6 @@ import {
   usernameClient,
 } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
-import { useAuthStore } from '../stores/authStore';
 
 const envBaseURL = import.meta.env.VITE_BETTER_AUTH_URL || import.meta.env.VITE_API_URL || '';
 const baseURL = import.meta.env.DEV ? '' : envBaseURL || (typeof window !== 'undefined' ? window.location.origin : '');
@@ -14,7 +13,7 @@ const baseURL = import.meta.env.DEV ? '' : envBaseURL || (typeof window !== 'und
 export const authClient = createAuthClient({
   baseURL,
   basePath: '/api/auth',
-  credentials: 'include',
+  credentials: 'include', // Session auth via cookies
   plugins: [
     twoFactorClient(),
     passkeyClient(),
@@ -28,11 +27,5 @@ export const authClient = createAuthClient({
       },
     }),
   ],
-  fetchOptions: {
-    auth: {
-      type: 'Bearer',
-      token: () => useAuthStore.getState().token || undefined,
-    },
-    onResponse: () => {},
-  },
+  // No Bearer token - session auth uses cookies automatically via credentials: 'include'
 });

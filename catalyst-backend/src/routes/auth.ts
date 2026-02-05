@@ -3,7 +3,6 @@ import { PrismaClient } from "@prisma/client";
 import { auth } from "../auth";
 import { logAuthAttempt } from "../middleware/audit";
 import { getSecuritySettings } from "../services/mailer";
-import { signJWT } from "better-auth/crypto";
 
 export async function authRoutes(app: FastifyInstance) {
   const prisma = (app as any).prisma || new PrismaClient();
@@ -264,37 +263,13 @@ export async function authRoutes(app: FastifyInstance) {
 
         const permissions = await loadUserPermissions(user.id);
         
-        // Generate JWT token for WebSocket authentication
-        let jwtToken = tokenHeader;
-        if (!jwtToken) {
-          try {
-            // Generate custom JWT for WebSocket auth using better-auth crypto
-            const secret = process.env.BETTER_AUTH_SECRET || process.env.JWT_SECRET || "";
-            if (!secret) {
-              app.log.warn("No JWT secret configured for WebSocket token generation");
-            } else {
-              jwtToken = await signJWT(
-                {
-                  userId: user.id,
-                  email: user.email,
-                  type: "websocket",
-                },
-                secret,
-                24 * 60 * 60 // 24 hours in seconds
-              );
-              app.log.info({ userId: user.id, tokenLength: jwtToken?.length }, "Generated JWT token for WebSocket");
-            }
-          } catch (error) {
-            app.log.error({ error, userId: user.id }, "Failed to generate JWT token for WebSocket");
-          }
-        }
-        
-        if (jwtToken) {
-          reply.header("set-auth-token", jwtToken);
+        const sessionToken = tokenHeader ?? null;
+        if (sessionToken) {
+          reply.header("set-auth-token", sessionToken);
           reply.header("Access-Control-Expose-Headers", "set-auth-token");
-          app.log.info({ userId: user.id }, "Sending JWT token in headers and response");
+          app.log.info({ userId: user.id }, "Sending session token in headers and response");
         } else {
-          app.log.warn({ userId: user.id }, "No JWT token available to send");
+          app.log.warn({ userId: user.id }, "No session token available to send");
         }
         reply.send({
           success: true,
@@ -303,7 +278,7 @@ export async function authRoutes(app: FastifyInstance) {
             email: user.email,
             username: user.username ?? userRecord.username,
             permissions,
-            token: jwtToken ?? null,
+            token: sessionToken,
           },
         });
       } catch {

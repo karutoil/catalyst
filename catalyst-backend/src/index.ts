@@ -201,20 +201,23 @@ const authenticate = async (request: any, reply: any) => {
       try {
         // Use better-auth's built-in API key verification
         const verification = await auth.api.verifyApiKey({
-          headers: fromNodeHeaders(request.headers as Record<string, string | string[] | undefined>),
-        });
+          body: {
+            key: token,
+          },
+        } as any);
+        const verificationData = (verification as any)?.response ?? verification;
 
-        if (!verification) {
+        if (!verificationData?.valid || !verificationData?.key || !verificationData?.user) {
           reply.status(401).send({ error: "Invalid API key" });
           return;
         }
 
         // Attach user info from verification
         request.user = {
-          userId: verification.user.id,
-          email: verification.user.email,
-          username: verification.user.username,
-          apiKeyId: verification.apiKey.id,
+          userId: verificationData.user.id,
+          email: verificationData.user.email,
+          username: verificationData.user.username,
+          apiKeyId: verificationData.key.id,
         };
         return; // API key auth successful
       } catch (error: any) {
@@ -424,17 +427,35 @@ async function bootstrap() {
           ...(body ? { body: Buffer.isBuffer(body) ? body.toString() : body } : {}),
         });
         const response = await auth.handler(req);
-        if (url.pathname === "/api/auth/sign-out") {
-          const passkeyCookie = "better-auth-passkey=; Max-Age=0; Path=/; SameSite=Lax; HttpOnly";
-          const existing = response.headers.get("set-cookie");
-          if (existing) {
-            response.headers.append("set-cookie", passkeyCookie);
+        reply.status(response.status);
+
+        const rawSetCookie =
+          typeof (response.headers as any).getSetCookie === "function"
+            ? (response.headers as any).getSetCookie()
+            : response.headers.get("set-cookie");
+        const setCookies: string[] = [];
+        if (rawSetCookie) {
+          if (Array.isArray(rawSetCookie)) {
+            setCookies.push(...rawSetCookie);
           } else {
-            response.headers.set("set-cookie", passkeyCookie);
+            setCookies.push(
+              ...rawSetCookie
+                .split(/,(?=[^;]+=[^;]+)/)
+                .map((cookie) => cookie.trim())
+                .filter(Boolean)
+            );
           }
         }
-        reply.status(response.status);
+        if (url.pathname === "/api/auth/sign-out") {
+          setCookies.push("better-auth-passkey=; Max-Age=0; Path=/; SameSite=Lax; HttpOnly");
+        }
+        if (setCookies.length > 0) {
+          setCookies.forEach((cookie) => reply.header("set-cookie", cookie));
+        }
         response.headers.forEach((value, key) => {
+          if (key.toLowerCase() === "set-cookie") {
+            return;
+          }
           reply.header(key, value);
         });
         const text = await response.text();
@@ -477,6 +498,7 @@ async function bootstrap() {
     // Node deployment script endpoint (public)
     app.get("/api/deploy/:token", async (request, reply) => {
       const { token } = request.params as { token: string };
+      const { apiKey } = (request.query as { apiKey?: string }) || {};
 
       const deployToken = await prisma.deploymentToken.findUnique({
         where: { token },
@@ -493,7 +515,8 @@ async function bootstrap() {
         baseUrl,
         deployToken.node.id,
         deployToken.node.secret,
-        deployToken.node.hostname
+        deployToken.node.hostname,
+        typeof apiKey === "string" ? apiKey : null,
       );
 
       reply.type("text/plain").send(script);
@@ -576,8 +599,10 @@ function generateDeploymentScript(
   backendUrl: string,
   nodeId: string,
   secret: string,
-  hostName: string
+  hostName: string,
+  apiKey: string | null,
 ): string {
+  const safeApiKey = apiKey ? apiKey.replace(/'/g, "'\"'\"'") : "";
   return `#!/bin/bash
 set -e
 
@@ -671,6 +696,7 @@ cat > /opt/catalyst-agent/config.toml << EOF
 backend_url = "$BACKEND_WS_URL"
 node_id = "${nodeId}"
 secret = "${secret}"
+api_key = "${safeApiKey}"
 hostname = "${hostName}"
 data_dir = "/var/lib/catalyst"
 max_connections = 100

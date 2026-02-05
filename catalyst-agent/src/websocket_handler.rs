@@ -144,10 +144,22 @@ impl WebSocketHandler {
         }
 
         // Send handshake
+        let (auth_token, token_type) = if let Some(api_key) = self
+            .config
+            .server
+            .api_key
+            .as_ref()
+            .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+        {
+            (api_key.as_str(), "api_key")
+        } else {
+            (self.config.server.secret.as_str(), "secret")
+        };
         let handshake = json!({
             "type": "node_handshake",
-            "token": self.config.server.secret,
+            "token": auth_token,
             "nodeId": self.config.server.node_id,
+            "tokenType": token_type,
         });
 
         {

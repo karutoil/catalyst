@@ -215,7 +215,7 @@ export function CreateApiKeyDialog({ open, onOpenChange }: CreateApiKeyDialogPro
                   Usage Example
                 </h4>
                 <pre className="text-xs overflow-x-auto text-slate-700 dark:text-slate-300">
-                  <code>{`curl -H "Authorization: Bearer ${createdKey}" \\
+                  <code>{`curl -H "x-api-key: ${createdKey}" \\
   ${window.location.origin}/api/servers`}</code>
                 </pre>
               </div>

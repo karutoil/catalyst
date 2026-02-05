@@ -1,4 +1,3 @@
-import { useAuthStore } from '../../stores/authStore';
 import type { WebSocketMessage } from './types';
 
 type Callbacks = {
@@ -17,34 +16,34 @@ export class WebSocketManager {
   private candidateIndex = 0;
 
   private buildWsUrl() {
-    const normalizeScheme = (url: string) => {
-      if (url.startsWith('http://')) return `ws://${url.slice('http://'.length)}`;
-      if (url.startsWith('https://')) return `wss://${url.slice('https://'.length)}`;
-      return url;
-    };
-
     const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
+    
+    // Build URL from env or use same origin as page
     let wsUrl: URL;
-
     if (envUrl) {
-      wsUrl = new URL(normalizeScheme(envUrl), window.location.origin);
-      if (!wsUrl.pathname || wsUrl.pathname === '/') {
-        wsUrl.pathname = '/ws';
+      // Handle absolute URLs with scheme normalization
+      if (envUrl.startsWith('http://') || envUrl.startsWith('https://') || 
+          envUrl.startsWith('ws://') || envUrl.startsWith('wss://')) {
+        const normalized = envUrl
+          .replace(/^http:\/\//, 'ws://')
+          .replace(/^https:\/\//, 'wss://');
+        wsUrl = new URL(normalized);
+      } else {
+        // Relative path like "/ws" - use same origin
+        wsUrl = new URL(envUrl, window.location.origin);
       }
     } else {
       wsUrl = new URL('/ws', window.location.origin);
-      wsUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     }
-
-    if (import.meta.env.DEV) {
-      if (wsUrl.hostname === 'localhost' || wsUrl.hostname === '::1') {
-        wsUrl.hostname = '127.0.0.1';
-      }
+    
+    // Ensure WebSocket protocol
+    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    
+    // Ensure path is set
+    if (!wsUrl.pathname || wsUrl.pathname === '/') {
+      wsUrl.pathname = '/ws';
     }
-    if (wsUrl.hostname === '0.0.0.0') {
-      wsUrl.hostname = window.location.hostname || '127.0.0.1';
-    }
-
+    
     return wsUrl.toString();
   }
 
@@ -80,18 +79,14 @@ export class WebSocketManager {
 
   private openWithCandidate(callbacks?: Callbacks) {
     const url = this.candidateUrls[this.candidateIndex];
+    console.log('[WebSocket] Connecting to:', url);
     this.ws = new WebSocket(url);
     let opened = false;
 
     this.ws.onopen = () => {
-      const token = useAuthStore.getState().token;
-      console.log('[WebSocket] Connection opened, token available:', !!token);
-      if (token) {
-        console.log('[WebSocket] Sending client_handshake');
-        this.ws?.send(JSON.stringify({ type: 'client_handshake', token }));
-      } else {
-        console.warn('[WebSocket] No token available for authentication');
-      }
+      console.log('[WebSocket] Connection opened to:', url);
+      // Send handshake without token - auth is done via cookies on the upgrade request
+      this.ws?.send(JSON.stringify({ type: 'client_handshake' }));
       opened = true;
       this.reconnectAttempts = 0;
       callbacks?.onOpen?.();
@@ -129,12 +124,17 @@ export class WebSocketManager {
   }
 
   sendCommand(serverId: string, command: string) {
+    console.log('[WebSocketManager] sendCommand', { serverId, command, wsState: this.ws?.readyState });
     this.send({ type: 'console_input', serverId, data: command });
   }
 
   private send(data: unknown) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
+      const payload = JSON.stringify(data);
+      console.log('[WebSocketManager] Sending:', payload);
+      this.ws.send(payload);
+    } else {
+      console.warn('[WebSocketManager] Cannot send - WebSocket not open', { readyState: this.ws?.readyState });
     }
   }
 

@@ -24,10 +24,11 @@ try {
     }
 }
 
-const ws = new WebSocket(`ws://localhost:3000/ws?token=${token}`);
+const ws = new WebSocket(`ws://localhost:3000/ws`);
 
 ws.on('open', () => {
     console.log('✓ WebSocket connected');
+    ws.send(JSON.stringify({ type: 'client_handshake', token }));
     
     const startCmd = {
         type: 'server_control',

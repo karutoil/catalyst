@@ -410,17 +410,29 @@ stop_backend_test_mode() {
 start_agent_test_mode() {
     local node_id="$1"
     local node_secret="$2"
+    local node_api_key="${3:-}"
     
     log_info "Starting agent in test mode..."
     cd /root/catalyst3/catalyst-agent
     
     # Create test config
     cat > /tmp/catalyst-agent-test.toml <<EOF
-node_id = "$node_id"
-node_secret = "$node_secret"
+[server]
 backend_url = "${BACKEND_WS_URL}"
-health_port = 8080
-log_level = "info"
+node_id = "$node_id"
+secret = "$node_secret"
+api_key = "$node_api_key"
+hostname = "test-node"
+data_dir = "/var/lib/catalyst"
+max_connections = 100
+
+[containerd]
+socket_path = "/run/containerd/containerd.sock"
+namespace = "catalyst"
+
+[logging]
+level = "info"
+format = "json"
 EOF
     
     sudo RUST_LOG=info ./target/release/catalyst-agent --config /tmp/catalyst-agent-test.toml > /tmp/catalyst-agent-test.log 2>&1 &

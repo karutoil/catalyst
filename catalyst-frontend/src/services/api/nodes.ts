@@ -60,7 +60,13 @@ export const nodesApi = {
   },
   deploymentToken: async (nodeId: string) => {
     const { data } = await apiClient.post<
-      ApiResponse<{ deploymentToken: string; secret: string; deployUrl: string; expiresAt: string }>
+      ApiResponse<{
+        deploymentToken: string;
+        secret: string;
+        apiKey: string | null;
+        deployUrl: string;
+        expiresAt: string;
+      }>
     >(`/api/nodes/${nodeId}/deployment-token`);
     return data.data;
   },
@@ -104,5 +110,30 @@ export const nodesApi = {
       `/api/nodes/${nodeId}/allocations/${allocationId}`,
     );
     return data;
+  },
+  checkApiKey: async (nodeId: string) => {
+    const { data } = await apiClient.get<
+      ApiResponse<{
+        exists: boolean;
+        apiKey: {
+          id: string;
+          name: string;
+          preview: string | null;
+          createdAt: string;
+          enabled: boolean;
+        } | null;
+      }>
+    >(`/api/nodes/${nodeId}/api-key`);
+    return data.data;
+  },
+  generateApiKey: async (nodeId: string, regenerate?: boolean) => {
+    const { data } = await apiClient.post<
+      ApiResponse<{
+        apiKey: string;
+        nodeId: string;
+        regenerated?: boolean;
+      }>
+    >(`/api/nodes/${nodeId}/api-key`, { regenerate });
+    return data.data;
   },
 };

@@ -17,8 +17,10 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
+  // Session auth is handled via cookies (withCredentials: true)
+  // Only add Authorization header for API keys (catalyst_ prefix)
   const token = useAuthStore.getState().token;
-  if (token) {
+  if (token && token.startsWith('catalyst_')) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;

@@ -54,6 +54,7 @@ export const auth = betterAuth({
       defaultPrefix: "catalyst_",
       enableSessionForAPIKeys: true, // Auto-create session from API key
       apiKeyHeaders: ["x-api-key", "authorization"], // Support both headers
+      enableMetadata: true, // Allow storing nodeId in metadata
       rateLimit: {
         enabled: true,
         maxRequests: 100,

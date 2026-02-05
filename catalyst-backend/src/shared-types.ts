@@ -222,6 +222,7 @@ export namespace WsEvent {
     type: "node_handshake";
     token: string;
     nodeId: string;
+    tokenType?: "secret" | "api_key";
   }
 
   export interface NodeHandshakeResponse {
@@ -266,6 +267,7 @@ export interface JwtPayload {
 export interface DeploymentTokenPayload {
   nodeId: string;
   secret: string;
+  apiKey?: string;
   exp: number;
 }
 

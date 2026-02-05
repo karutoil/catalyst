@@ -218,6 +218,7 @@ export namespace WsEvent {
     type: "node_handshake";
     token: string;
     nodeId: string;
+    tokenType?: "secret" | "api_key";
   }
 
   export interface NodeHandshakeResponse {
