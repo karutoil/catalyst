@@ -380,7 +380,6 @@ impl WebSocketHandler {
             return Ok(());
         }
 
-        let _ = self.runtime.send_input(&container_id, "\n").await;
         self.spawn_log_stream(server_id, &container_id);
 
         Ok(())
