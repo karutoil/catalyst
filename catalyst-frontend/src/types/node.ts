@@ -7,6 +7,7 @@ export interface NodeInfo {
   description?: string | null;
   hostname?: string;
   publicAddress?: string;
+  serverDataDir?: string;
   maxMemoryMb?: number;
   maxCpuCores?: number;
   createdAt?: string;

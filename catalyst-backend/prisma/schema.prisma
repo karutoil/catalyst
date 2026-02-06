@@ -273,6 +273,7 @@ model Node {
   id             String   @id @default(cuid())
   name           String   @unique
   description    String?
+  serverDataDir  String   @default("/var/lib/catalyst/servers")
   locationId     String
   location       Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
   hostname       String
