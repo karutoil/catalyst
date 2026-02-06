@@ -149,11 +149,38 @@ impl FileManager {
 
         debug!("Deleting file: {:?}", full_path);
 
-        fs::remove_file(&full_path)
-            .await
-            .map_err(|e| AgentError::FileSystemError(format!("Failed to delete file: {}", e)))?;
+        if full_path.is_dir() {
+            fs::remove_dir_all(&full_path)
+                .await
+                .map_err(|e| AgentError::FileSystemError(format!("Failed to delete: {}", e)))?;
+        } else {
+            fs::remove_file(&full_path)
+                .await
+                .map_err(|e| AgentError::FileSystemError(format!("Failed to delete file: {}", e)))?;
+        }
 
-        info!("File deleted successfully: {:?}", full_path);
+        info!("Deleted successfully: {:?}", full_path);
+
+        Ok(())
+    }
+
+    pub async fn rename_file(&self, server_id: &str, from: &str, to: &str) -> AgentResult<()> {
+        let from_path = self.resolve_path(server_id, from)?;
+        let to_path = self.resolve_path(server_id, to)?;
+
+        debug!("Renaming {:?} -> {:?}", from_path, to_path);
+
+        if let Some(parent) = to_path.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| AgentError::FileSystemError(format!("Failed to create dir: {}", e)))?;
+        }
+
+        fs::rename(&from_path, &to_path)
+            .await
+            .map_err(|e| AgentError::FileSystemError(format!("Failed to rename: {}", e)))?;
+
+        info!("Renamed successfully: {:?} -> {:?}", from_path, to_path);
 
         Ok(())
     }

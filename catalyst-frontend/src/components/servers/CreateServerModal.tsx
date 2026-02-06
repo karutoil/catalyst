@@ -773,13 +773,16 @@ function CreateServerModal() {
                                 <input
                                   type="checkbox"
                                   className="rounded border-slate-200 bg-white text-primary-600 focus:ring-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-primary-400"
-                                  checked={environment[variable.name] === 'true'}
-                                  onChange={(e) =>
+                                  checked={environment[variable.name] === 'true' || environment[variable.name] === '1'}
+                                  onChange={(e) => {
+                                    const useNumeric = variable.default === '1' || variable.default === '0';
                                     setEnvironment((prev) => ({
                                       ...prev,
-                                      [variable.name]: e.target.checked ? 'true' : 'false',
-                                    }))
-                                  }
+                                      [variable.name]: e.target.checked
+                                        ? (useNumeric ? '1' : 'true')
+                                        : (useNumeric ? '0' : 'false'),
+                                    }));
+                                  }}
                                 />
                               ) : (
                                 <input

@@ -278,3 +278,73 @@ select option {
     color: white;
   }
 }
+
+/* Console styles */
+.console-output {
+  background: hsl(224 71% 4%);
+  scrollbar-color: hsl(var(--slate-700)) hsl(224 71% 4%);
+}
+
+.console-output::-webkit-scrollbar-track {
+  background: hsl(224 71% 4%);
+}
+
+.console-output::-webkit-scrollbar-thumb {
+  background: hsl(var(--slate-700));
+  border-color: hsl(224 71% 4%);
+}
+
+.console-line {
+  padding: 1px 0;
+  transition: background-color 0.1s ease;
+}
+
+.console-line:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.console-search-match {
+  background: rgba(250, 204, 21, 0.25);
+  color: #fde68a;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Console syntax highlighting */
+.console-output .chl-error {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.console-output .chl-warn {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.console-output .chl-info {
+  color: #60a5fa;
+}
+
+.console-output .chl-time {
+  color: #818cf8;
+}
+
+.console-output .chl-uuid {
+  color: #a78bfa;
+  opacity: 0.7;
+}
+
+.console-output .chl-ip {
+  color: #34d399;
+}
+
+.console-output .chl-url {
+  color: #38bdf8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(56, 189, 248, 0.3);
+}
+
+.console-output .chl-num {
+  color: #fb923c;
+}

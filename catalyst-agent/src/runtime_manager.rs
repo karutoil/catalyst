@@ -149,7 +149,7 @@ impl ContainerdRuntime {
         let entrypoint_arg = if !startup_command.is_empty() {
             let exec_path = format!("{}/catalyst-entrypoint", console_fifo.dir);
             let entrypoint = format!(
-                "#!/bin/sh\nset -e\nFIFO=\"{}\"\nexec 3<> \"$FIFO\"\nexec < \"$FIFO\"\nexec {}\n",
+                "#!/bin/bash\nset -e\nFIFO=\"{}\"\nexec 3<> \"$FIFO\"\nexec < \"$FIFO\"\nexec {}\n",
                 console_fifo.path, startup_command
             );
             self.create_entrypoint_script(&console_fifo.dir, &entrypoint)

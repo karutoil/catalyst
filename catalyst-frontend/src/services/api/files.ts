@@ -201,4 +201,13 @@ export const filesApi = {
     );
     return data;
   },
+  rename: async (serverId: string, from: string, to: string) => {
+    const normalizedFrom = normalizePath(from);
+    const normalizedTo = normalizePath(to);
+    const { data } = await apiClient.post<ApiResponse<void>>(
+      `/api/servers/${serverId}/files/rename`,
+      { from: normalizedFrom, to: normalizedTo },
+    );
+    return data;
+  },
 };
