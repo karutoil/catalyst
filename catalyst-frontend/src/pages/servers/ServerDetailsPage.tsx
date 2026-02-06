@@ -1,5 +1,6 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowDown, Check, Copy, Search, Trash2, X } from 'lucide-react';
 import { useServer } from '../../hooks/useServer';
 import { useServerMetrics } from '../../hooks/useServerMetrics';
 import { useServerMetricsHistory, type MetricsTimeRange } from '../../hooks/useServerMetricsHistory';
@@ -124,6 +125,13 @@ function ServerDetailsPage() {
     return Number.isFinite(parsed) ? parsed : 2000;
   });
   const [consoleAutoScroll, setConsoleAutoScroll] = useState(true);
+  const [consoleActiveStreams, setConsoleActiveStreams] = useState<Set<string>>(() => new Set(['stdout', 'stderr', 'system', 'stdin']));
+  const [consoleCommandHistory, setConsoleCommandHistory] = useState<string[]>([]);
+  const [consoleHistoryIndex, setConsoleHistoryIndex] = useState(-1);
+  const [consoleCopied, setConsoleCopied] = useState(false);
+  const consoleInputRef = useRef<HTMLInputElement>(null);
+  const consoleSearchRef = useRef<HTMLInputElement>(null);
+  const [consoleSearchOpen, setConsoleSearchOpen] = useState(false);
   const [configSearch, setConfigSearch] = useState('');
   const [databaseHostId, setDatabaseHostId] = useState('');
   const [databaseName, setDatabaseName] = useState('');
@@ -1092,7 +1100,10 @@ function ServerDetailsPage() {
     const trimmed = command.trim();
     if (!trimmed) return;
     send(trimmed);
+    setConsoleCommandHistory((prev) => [...prev.slice(-49), trimmed]);
     setCommand('');
+    setConsoleHistoryIndex(-1);
+    setConsoleAutoScroll(true);
   }, [canSend, command, send]);
 
   const handleReinstall = useCallback(async () => {
@@ -1234,112 +1245,197 @@ function ServerDetailsPage() {
       </div>
 
       {activeTab === 'console' ? (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-primary-500/30">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs text-slate-500 dark:text-slate-400 dark:border-slate-800 dark:text-slate-500">
-            <span>Console output</span>
-            <div className="flex items-center gap-2">
-              <span
-                className={`flex items-center gap-2 rounded-full border px-2.5 py-1 ${
-                  isConnected
-                    ? 'border-emerald-200 text-emerald-600 dark:border-emerald-500/30 dark:text-emerald-300'
-                    : 'border-amber-200 text-amber-600 dark:border-amber-500/30 dark:text-amber-300'
-                }`}
-              >
-                <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                {isConnected ? 'Live' : 'Connecting'}
-              </span>
+        <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 shadow-surface-light dark:shadow-surface-dark dark:border-slate-800">
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+            <span
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                isConnected
+                  ? 'border-emerald-200 text-emerald-600 dark:border-emerald-500/30 dark:text-emerald-400'
+                  : 'border-amber-200 text-amber-600 dark:border-amber-500/30 dark:text-amber-400'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'}`} />
+              {isConnected ? 'Live' : 'Connecting'}
+            </span>
+
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+
+            {/* Stream Filters */}
+            <div className="flex items-center gap-1">
+              {(['stdout', 'stderr', 'system', 'stdin'] as const).map((stream) => {
+                const isActive = consoleActiveStreams.has(stream);
+                const dotColors: Record<string, string> = { stdout: 'bg-emerald-400', stderr: 'bg-rose-400', system: 'bg-sky-400', stdin: 'bg-amber-400' };
+                const activeColors: Record<string, string> = { stdout: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400', stderr: 'border-rose-500/50 bg-rose-500/10 text-rose-400', system: 'border-sky-500/50 bg-sky-500/10 text-sky-400', stdin: 'border-amber-500/50 bg-amber-500/10 text-amber-400' };
+                return (
+                  <button
+                    key={stream}
+                    type="button"
+                    onClick={() => setConsoleActiveStreams((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(stream)) { if (next.size > 1) next.delete(stream); }
+                      else next.add(stream);
+                      return next;
+                    })}
+                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-all ${
+                      isActive ? activeColors[stream] : 'border-slate-700 text-slate-500 hover:border-slate-600'
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${isActive ? dotColors[stream] : 'bg-slate-600'}`} />
+                    {stream}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+
+            {/* Search */}
+            {consoleSearchOpen ? (
+              <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 dark:border-slate-700 dark:bg-slate-800">
+                <Search className="h-3 w-3 text-slate-400" />
+                <input
+                  ref={consoleSearchRef}
+                  className="w-40 bg-transparent text-xs text-slate-900 outline-none placeholder:text-slate-400 dark:text-slate-200"
+                  value={consoleSearch}
+                  onChange={(e) => setConsoleSearch(e.target.value)}
+                  placeholder="Filter output…"
+                />
+                {consoleSearch ? (
+                  <span className="text-[10px] tabular-nums text-slate-500">
+                    {entries.filter((e) => consoleActiveStreams.has(e.stream) && e.data.toLowerCase().includes(consoleSearch.toLowerCase())).length}
+                  </span>
+                ) : null}
+                <button type="button" onClick={() => { setConsoleSearchOpen(false); setConsoleSearch(''); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => {
-                  clearConsole();
+                onClick={() => { setConsoleSearchOpen(true); setTimeout(() => consoleSearchRef.current?.focus(), 50); }}
+                className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
+              >
+                <Search className="h-3 w-3" />
+                Search
+              </button>
+            )}
+
+            {/* Scrollback selector */}
+            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 dark:border-slate-700">
+              <span>Buffer</span>
+              <select
+                className="bg-transparent text-[11px] text-slate-600 outline-none dark:text-slate-400"
+                value={consoleScrollback}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setConsoleScrollback(nextValue);
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('console.scrollback', String(nextValue));
+                  }
                 }}
               >
-                Clear
-              </button>
+                <option value={500}>500</option>
+                <option value={1000}>1K</option>
+                <option value={2000}>2K</option>
+                <option value={5000}>5K</option>
+              </select>
             </div>
+
+            <div className="flex-1" />
+
+            <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-600">{entries.length} lines</span>
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+
+            <button
+              type="button"
+              onClick={() => setConsoleAutoScroll(!consoleAutoScroll)}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-all ${
+                consoleAutoScroll
+                  ? 'border-primary-500/30 bg-primary-500/10 text-primary-500 dark:text-primary-400'
+                  : 'border-slate-200 text-slate-500 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+              }`}
+            >
+              <ArrowDown className="h-3 w-3" />
+              Auto-scroll
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                const text = entries.filter((e) => consoleActiveStreams.has(e.stream)).map((e) => e.data).join('');
+                await navigator.clipboard.writeText(text);
+                setConsoleCopied(true);
+                setTimeout(() => setConsoleCopied(false), 2000);
+              }}
+              className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
+            >
+              {consoleCopied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              {consoleCopied ? 'Copied' : 'Copy'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { clearConsole(); setConsoleAutoScroll(true); }}
+              className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all hover:border-rose-300 hover:text-rose-500 dark:border-slate-700 dark:hover:border-rose-500/30 dark:hover:text-rose-400"
+            >
+              <Trash2 className="h-3 w-3" />
+              Clear
+            </button>
           </div>
-          <div className="px-4 py-3">
-            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
-                <span>Search</span>
-                <input
-                  className="w-48 bg-transparent text-xs text-slate-900 outline-none dark:text-slate-200"
-                  value={consoleSearch}
-                  onChange={(event) => setConsoleSearch(event.target.value)}
-                  placeholder="Filter output"
-                />
-              </div>
-              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900">
-                <span>Scrollback</span>
-                <select
-                  className="bg-transparent text-xs text-slate-900 outline-none dark:text-slate-200"
-                  value={consoleScrollback}
-                  onChange={(event) => {
-                    const nextValue = Number(event.target.value);
-                    setConsoleScrollback(nextValue);
-                    if (typeof window !== 'undefined') {
-                      window.localStorage.setItem('console.scrollback', String(nextValue));
-                    }
-                  }}
-                >
-                  <option value={500}>500</option>
-                  <option value={1000}>1000</option>
-                  <option value={2000}>2000</option>
-                  <option value={5000}>5000</option>
-                </select>
-              </div>
-              <button
-                type="button"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setConsoleAutoScroll(true)}
-                disabled={consoleAutoScroll}
-              >
-                {consoleAutoScroll ? 'Auto-scroll on' : 'Resume auto-scroll'}
-              </button>
-            </div>
-            {consoleLoading ? (
-              <div className="mb-2 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Loading recent logs...</div>
-            ) : null}
-            {consoleError ? (
-              <div className="mb-2 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-                <div className="flex items-center justify-between gap-3">
-                  <span>Unable to load historical logs.</span>
-                  <button
-                    type="button"
-                    className="rounded-md border border-rose-200 px-2 py-1 text-[11px] text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
-                    onClick={() => refetchConsole()}
-                  >
-                    Retry
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <CustomConsole
-              entries={entries}
-              searchQuery={consoleSearch}
-              scrollback={consoleScrollback}
-              autoScroll={consoleAutoScroll}
-              onUserScroll={() => setConsoleAutoScroll(false)}
+
+          {/* Console Output */}
+          <CustomConsole
+            entries={entries}
+            searchQuery={consoleSearch}
+            scrollback={consoleScrollback}
+            autoScroll={consoleAutoScroll}
+            streamFilter={consoleActiveStreams}
+            isLoading={consoleLoading}
+            isError={consoleError}
+            onRetry={refetchConsole}
+            onUserScroll={() => setConsoleAutoScroll(false)}
+            onAutoScrollResume={() => setConsoleAutoScroll(true)}
+            className="h-[50vh]"
+          />
+
+          {/* Command Input */}
+          <form
+            onSubmit={handleSend}
+            className="flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900"
+          >
+            <span className="select-none text-sm font-bold text-primary-500">$</span>
+            <input
+              ref={consoleInputRef}
+              className="w-full bg-transparent font-mono text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200"
+              value={command}
+              onChange={(event) => { setCommand(event.target.value); setConsoleHistoryIndex(-1); }}
+              onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  if (consoleCommandHistory.length === 0) return;
+                  const next = consoleHistoryIndex === -1 ? consoleCommandHistory.length - 1 : Math.max(0, consoleHistoryIndex - 1);
+                  setConsoleHistoryIndex(next);
+                  setCommand(consoleCommandHistory[next]);
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  if (consoleHistoryIndex === -1) return;
+                  const next = consoleHistoryIndex + 1;
+                  if (next >= consoleCommandHistory.length) { setConsoleHistoryIndex(-1); setCommand(''); }
+                  else { setConsoleHistoryIndex(next); setCommand(consoleCommandHistory[next]); }
+                }
+              }}
+              placeholder={canSend ? 'Type a command… (↑↓ for history)' : 'Connect to send commands'}
+              disabled={!canSend}
             />
-            <form onSubmit={handleSend} className="mt-3 flex items-center gap-3">
-              <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">&gt;</span>
-              <input
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400"
-                value={command}
-                onChange={(event) => setCommand(event.target.value)}
-                placeholder={canSend ? 'Type here' : 'Connect to send commands'}
-                disabled={!canSend}
-              />
-              <button
-                type="submit"
-                className="rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!canSend}
-              >
-                Send
-              </button>
-            </form>
-          </div>
+            <button
+              type="submit"
+              className="rounded-lg bg-primary-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!canSend || !command.trim()}
+            >
+              Send
+            </button>
+          </form>
         </div>
       ) : null}
 

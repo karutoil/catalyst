@@ -937,6 +937,12 @@ impl WebSocketHandler {
                 }
             }
 
+            // Clean up any existing container with this name before creating a new one
+            if self.runtime.container_exists(server_id).await {
+                info!("Removing existing container {} before starting", server_id);
+                let _ = self.runtime.remove_container(server_id).await;
+            }
+
             // Create and start container
             self.runtime.create_container(
                 server_id,
@@ -1179,6 +1185,15 @@ impl WebSocketHandler {
                 .delete_file(server_id, path)
                 .await
                 .map(|_| None),
+            "rename" => {
+                let to = msg["to"].as_str().ok_or_else(|| {
+                    AgentError::InvalidRequest("Missing 'to' path".to_string())
+                })?;
+                self.file_manager
+                    .rename_file(server_id, path, to)
+                    .await
+                    .map(|_| None)
+            }
             "list" => self
                 .file_manager
                 .list_dir(server_id, path)

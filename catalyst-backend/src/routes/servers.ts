@@ -2795,6 +2795,75 @@ export async function serverRoutes(app: FastifyInstance) {
     }
   );
 
+  // Rename / move file or directory
+  app.post(
+    "/:serverId/files/rename",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: '1 minute' } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+      const { from: fromPath, to: toPath } = request.body as { from: string; to: string };
+
+      if (!fromPath || !toPath) {
+        return reply.status(400).send({ error: "Missing from or to path" });
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      if (!ensureNotSuspended(server, reply)) {
+        return;
+      }
+
+      const access = await prisma.serverAccess.findFirst({
+        where: {
+          serverId,
+          userId,
+          permissions: { has: "file.write" },
+        },
+      });
+
+      if (!access && server.ownerId !== userId) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      const normalizedFrom = normalizeRequestPath(fromPath);
+      const normalizedTo = normalizeRequestPath(toPath);
+      if (normalizedFrom === "/" || normalizedTo === "/") {
+        return reply.status(400).send({ error: "Invalid path" });
+      }
+
+      try {
+        const { targetPath: sourcePath } = await resolveServerPath(server.uuid, normalizedFrom);
+        const { targetPath: destPath } = await resolveServerPath(server.uuid, normalizedTo);
+        await fs.mkdir(path.dirname(destPath), { recursive: true });
+        await fs.rename(sourcePath, destPath);
+      } catch (error) {
+        return reply.status(400).send({ error: "Failed to rename" });
+      }
+
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: "file.rename",
+          resource: "server",
+          resourceId: serverId,
+          details: { from: normalizedFrom, to: normalizedTo },
+        },
+      });
+
+      reply.send({ success: true, message: "Renamed successfully" });
+    }
+  );
+
   // Delete server (must be stopped)
   app.delete(
     "/:serverId",
