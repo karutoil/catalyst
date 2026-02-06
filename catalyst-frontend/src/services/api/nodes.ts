@@ -36,6 +36,7 @@ export const nodesApi = {
     publicAddress: string;
     maxMemoryMb: number;
     maxCpuCores: number;
+    serverDataDir?: string;
   }) => {
     const { data } = await apiClient.post<ApiResponse<NodeInfo>>('/api/nodes', payload);
     return data.data;
@@ -49,6 +50,7 @@ export const nodesApi = {
       publicAddress?: string;
       maxMemoryMb?: number;
       maxCpuCores?: number;
+      serverDataDir?: string;
     },
   ) => {
     const { data } = await apiClient.put<ApiResponse<NodeInfo>>(`/api/nodes/${nodeId}`, payload);

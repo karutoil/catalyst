@@ -259,7 +259,7 @@ export async function serverRoutes(app: FastifyInstance) {
   const __dirname = path.dirname(__filename);
   // Using shared prisma instance from db.ts
   const execFileAsync = promisify(execFile);
-  const serverDataRoot = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
+  const serverDataRoot = process.env.SERVER_DATA_PATH || "/var/lib/catalyst/servers";
   let fileRateLimitMax = 30;
   const modManagerProviders = new Map<string, string>(
     [
@@ -452,8 +452,8 @@ export async function serverRoutes(app: FastifyInstance) {
   };
   const sanitizeFilename = (value: string) => value.replace(/[^a-z0-9._-]/gi, "_");
 
-  const resolveServerPath = async (serverUuid: string, requestedPath: string) => {
-    const baseDir = path.resolve(serverDataRoot, serverUuid);
+  const resolveServerPath = async (serverUuid: string, requestedPath: string, nodeServerDataDir?: string) => {
+    const baseDir = path.resolve(nodeServerDataDir || serverDataRoot, serverUuid);
     await fs.mkdir(baseDir, { recursive: true });
     const safePath = path.resolve(baseDir, requestedPath.replace(/\\/g, "/").replace(/^\/+/, ""));
     const basePrefix = baseDir.endsWith(path.sep) ? baseDir : `${baseDir}${path.sep}`;
@@ -2823,9 +2823,10 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: "Forbidden" });
       }
 
-      if (server.status !== "stopped") {
+      const deletableStates = ["stopped", "error", "crashed", "installing"];
+      if (!deletableStates.includes(server.status)) {
         return reply.status(409).send({
-          error: "Server must be stopped before deletion",
+          error: `Server must be stopped before deletion (current state: ${server.status})`,
         });
       }
 
@@ -3742,8 +3743,8 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(500).send({ error: "WebSocket gateway not available" });
       }
 
-      // Automatically add SERVER_DIR to environment (uses /tmp/catalyst-servers/{uuid} by default)
-      const serverDir = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
+      // Automatically add SERVER_DIR to environment (uses node's configured server data directory)
+      const serverDir = server.node.serverDataDir || "/var/lib/catalyst/servers";
       const fullServerDir = `${serverDir}/${server.uuid}`;
       
       const templateVariables = (server.template.variables as any[]) || [];
@@ -3867,7 +3868,7 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       // Automatically add SERVER_DIR to environment
-      const serverDir = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
+      const serverDir = server.node.serverDataDir || "/var/lib/catalyst/servers";
       const fullServerDir = `${serverDir}/${server.uuid}`;
       
       const templateVariables = (server.template.variables as any[]) || [];
@@ -4075,7 +4076,7 @@ export async function serverRoutes(app: FastifyInstance) {
       }
 
       // Start after a delay (agent will handle the actual timing)
-      const serverDir = process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers";
+      const serverDir = server.node.serverDataDir || "/var/lib/catalyst/servers";
       const fullServerDir = `${serverDir}/${server.uuid}`;
       
       const environment: Record<string, string> = {
@@ -4845,7 +4846,7 @@ export async function serverRoutes(app: FastifyInstance) {
           serverUuid: server.uuid,
           backupPath: backupPath,
           backupId: backupRecord.id,
-          serverDir: `${process.env.SERVER_DATA_PATH || "/tmp/catalyst-servers"}/${server.uuid}`,
+          serverDir: `${targetNode.serverDataDir || "/var/lib/catalyst/servers"}/${server.uuid}`,
         });
 
         // Step 5: Update server's nodeId and reassign IP if using IPAM

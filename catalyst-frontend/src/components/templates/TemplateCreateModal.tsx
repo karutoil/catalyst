@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { TemplateImageOption, TemplateVariable } from '../../types/template';
 import { templatesApi } from '../../services/api/templates';
 import { notifyError, notifySuccess } from '../../utils/notify';
+import { normalizeTemplateImport } from '../../utils/pterodactylImport';
 
 type VariableDraft = {
   name: string;
@@ -73,7 +74,8 @@ function TemplateCreateModal() {
           .filter(Boolean),
         }));
 
-  const buildTemplatePayload = (payload: any) => {
+  const buildTemplatePayload = (raw: any) => {
+    const payload = normalizeTemplateImport(raw) as any;
     const toNumber = (value: unknown, fallback: number) => {
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -192,11 +194,12 @@ function TemplateCreateModal() {
     },
   });
 
-  const applyTemplateImport = (payload: any) => {
-    if (!payload || typeof payload !== 'object') {
+  const applyTemplateImport = (raw: any) => {
+    if (!raw || typeof raw !== 'object') {
       setImportError('Invalid template JSON');
       return;
     }
+    const payload: any = normalizeTemplateImport(raw);
     setImportError('');
     setName(String(payload.name ?? ''));
     setDescription(String(payload.description ?? ''));

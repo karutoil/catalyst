@@ -15,6 +15,7 @@ function NodeCreateModal({ locationId }: Props) {
   const [publicAddress, setPublicAddress] = useState('');
   const [memory, setMemory] = useState('16384');
   const [cpu, setCpu] = useState('8');
+  const [serverDataDir, setServerDataDir] = useState('/var/lib/catalyst/servers');
   const [deployInfo, setDeployInfo] = useState<{
     deployUrl: string;
     deploymentToken: string;
@@ -34,6 +35,7 @@ function NodeCreateModal({ locationId }: Props) {
         publicAddress,
         maxMemoryMb: Number(memory),
         maxCpuCores: Number(cpu),
+        serverDataDir: serverDataDir || undefined,
       });
       const info = created?.id ? await nodesApi.deploymentToken(created.id) : null;
       return info;
@@ -49,6 +51,7 @@ function NodeCreateModal({ locationId }: Props) {
       setPublicAddress('');
       setMemory('16384');
       setCpu('8');
+      setServerDataDir('/var/lib/catalyst/servers');
     },
     onError: (error: any) => {
       const message = error?.response?.data?.error || 'Failed to register node';
@@ -114,6 +117,18 @@ function NodeCreateModal({ locationId }: Props) {
                   onChange={(event) => setDescription(event.target.value)}
                   placeholder="Primary node"
                 />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-500 dark:text-slate-400">Server data directory</span>
+                <input
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                  value={serverDataDir}
+                  onChange={(event) => setServerDataDir(event.target.value)}
+                  placeholder="/var/lib/catalyst/servers"
+                />
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Directory on the node where server files will be stored
+                </p>
               </label>
               <label className="block space-y-1">
                 <span className="text-slate-500 dark:text-slate-400">Hostname</span>

@@ -12,6 +12,7 @@ function NodeUpdateModal({ node }: { node: NodeInfo }) {
   const [publicAddress, setPublicAddress] = useState(node.publicAddress ?? '');
   const [memory, setMemory] = useState(String(node.maxMemoryMb ?? 0));
   const [cpu, setCpu] = useState(String(node.maxCpuCores ?? 0));
+  const [serverDataDir, setServerDataDir] = useState(node.serverDataDir ?? '/var/lib/catalyst/servers');
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
@@ -23,6 +24,7 @@ function NodeUpdateModal({ node }: { node: NodeInfo }) {
         publicAddress: publicAddress || undefined,
         maxMemoryMb: Number(memory) || undefined,
         maxCpuCores: Number(cpu) || undefined,
+        serverDataDir: serverDataDir || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] });
@@ -72,6 +74,18 @@ function NodeUpdateModal({ node }: { node: NodeInfo }) {
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                 />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-slate-500 dark:text-slate-400">Server data directory</span>
+                <input
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                  value={serverDataDir}
+                  onChange={(event) => setServerDataDir(event.target.value)}
+                  placeholder="/var/lib/catalyst/servers"
+                />
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Directory on the node where server files will be stored
+                </p>
               </label>
               <label className="block space-y-1">
                 <span className="text-slate-500 dark:text-slate-400">Hostname</span>

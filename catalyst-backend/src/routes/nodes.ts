@@ -129,7 +129,7 @@ export async function nodeRoutes(app: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
-      const { name, description, locationId, hostname, publicAddress, maxMemoryMb, maxCpuCores } =
+      const { name, description, locationId, hostname, publicAddress, maxMemoryMb, maxCpuCores, serverDataDir } =
         request.body as {
           name: string;
           description?: string;
@@ -138,6 +138,7 @@ export async function nodeRoutes(app: FastifyInstance) {
           publicAddress: string;
           maxMemoryMb: number;
           maxCpuCores: number;
+          serverDataDir?: string;
         };
 
       // Validate required fields
@@ -183,6 +184,7 @@ export async function nodeRoutes(app: FastifyInstance) {
           secret,
           maxMemoryMb,
           maxCpuCores,
+          serverDataDir: serverDataDir || undefined,
         },
       });
 
@@ -447,7 +449,7 @@ export async function nodeRoutes(app: FastifyInstance) {
       const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.write");
       if (!isAdmin) return;
       const { nodeId } = request.params as { nodeId: string };
-      const { name, description, hostname, publicAddress, maxMemoryMb, maxCpuCores } =
+      const { name, description, hostname, publicAddress, maxMemoryMb, maxCpuCores, serverDataDir } =
         request.body as {
           name?: string;
           description?: string;
@@ -455,6 +457,7 @@ export async function nodeRoutes(app: FastifyInstance) {
           publicAddress?: string;
           maxMemoryMb?: number;
           maxCpuCores?: number;
+          serverDataDir?: string;
         };
 
       const node = await prisma.node.findUnique({
@@ -493,6 +496,7 @@ export async function nodeRoutes(app: FastifyInstance) {
           publicAddress,
           maxMemoryMb,
           maxCpuCores,
+          serverDataDir,
         },
       });
 

@@ -532,6 +532,23 @@ impl WebSocketHandler {
 
         info!("Installing server: {} (UUID: {})", server_id, server_uuid);
 
+        // Destroy any existing container for this server before reinstalling
+        let existing_container_id = self.resolve_container_id(server_id, server_uuid).await;
+        if !existing_container_id.is_empty() {
+            info!("Found existing container {} for server {}, destroying before reinstall", existing_container_id, server_id);
+            self.stop_monitor_task(server_id).await;
+            if self.runtime.is_container_running(&existing_container_id).await.unwrap_or(false) {
+                if let Err(e) = self.runtime.stop_container(&existing_container_id, 10).await {
+                    warn!("Failed to stop existing container {}: {}, attempting kill", existing_container_id, e);
+                    let _ = self.runtime.kill_container(&existing_container_id, "SIGKILL").await;
+                }
+            }
+            if self.runtime.container_exists(&existing_container_id).await {
+                self.runtime.remove_container(&existing_container_id).await?;
+            }
+            self.emit_console_output(server_id, "system", "[Catalyst] Removed existing container.\n").await?;
+        }
+
         // Backend should provide SERVER_DIR automatically
         let server_dir = environment.get("SERVER_DIR")
             .and_then(|v| v.as_str())
@@ -557,6 +574,8 @@ impl WebSocketHandler {
 
         // Replace variables in install script
         let mut final_script = install_script.to_string();
+        // Strip carriage returns to avoid $'\r': command not found errors
+        final_script = final_script.replace("\r\n", "\n").replace('\r', "\n");
         for (key, value) in environment {
             let placeholder = format!("{{{{{}}}}}", key);
             let replacement = value.as_str().unwrap_or("");
@@ -566,6 +585,31 @@ impl WebSocketHandler {
         info!("Executing installation script");
         self.emit_console_output(server_id, "system", "[Catalyst] Starting installation...\n")
             .await?;
+
+        // Pterodactyl eggs use /mnt/server as the install target directory.
+        // Create a symlink so those scripts write into our actual server dir.
+        let mnt_server = std::path::Path::new("/mnt/server");
+        let created_mnt_symlink = if final_script.contains("/mnt/server") {
+            if let Err(e) = tokio::fs::create_dir_all("/mnt").await {
+                warn!("Failed to create /mnt: {}", e);
+            }
+            // Remove existing /mnt/server if present (stale symlink or dir)
+            // remove_file handles symlinks; remove_dir_all handles real directories
+            let _ = tokio::fs::remove_file(mnt_server).await;
+            let _ = tokio::fs::remove_dir_all(mnt_server).await;
+            match tokio::fs::symlink(&server_dir, mnt_server).await {
+                Ok(_) => {
+                    info!("Created /mnt/server -> {} symlink for Pterodactyl compatibility", server_dir);
+                    true
+                }
+                Err(e) => {
+                    warn!("Failed to create /mnt/server symlink: {}", e);
+                    false
+                }
+            }
+        } else {
+            false
+        };
 
         // Execute the install script on the host
         // NOTE: Script handles its own directory with cd {{SERVER_DIR}}
@@ -634,6 +678,10 @@ impl WebSocketHandler {
             .map_err(|e| AgentError::IoError(format!("Failed to wait for install script: {}", e)))?;
 
         if !status.success() {
+            // Clean up /mnt/server symlink on failure too
+            if created_mnt_symlink {
+                let _ = tokio::fs::remove_file(mnt_server).await;
+            }
             let stderr_trimmed = stderr_buffer.trim();
             let stdout_trimmed = stdout_buffer.trim();
             let reason = if !stderr_trimmed.is_empty() {
@@ -653,6 +701,12 @@ impl WebSocketHandler {
                 "Install script failed: {}",
                 reason
             )));
+        }
+
+        // Clean up /mnt/server symlink
+        if created_mnt_symlink {
+            let _ = tokio::fs::remove_file(mnt_server).await;
+            info!("Removed /mnt/server symlink");
         }
 
         if stdout_buffer.trim().is_empty() && stderr_buffer.trim().is_empty() {

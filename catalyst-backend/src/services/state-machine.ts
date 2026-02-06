@@ -26,12 +26,12 @@ export class ServerStateMachine {
     ],
     [
       ServerState.RUNNING,
-      [ServerState.STOPPING, ServerState.CRASHED, ServerState.ERROR, ServerState.SUSPENDED],
+      [ServerState.STOPPING, ServerState.CRASHED, ServerState.ERROR, ServerState.SUSPENDED, ServerState.INSTALLING],
     ],
     [ServerState.STOPPING, [ServerState.STOPPED, ServerState.ERROR]],
-    [ServerState.CRASHED, [ServerState.STARTING, ServerState.STOPPED]],
+    [ServerState.CRASHED, [ServerState.STARTING, ServerState.STOPPED, ServerState.INSTALLING]],
     [ServerState.SUSPENDED, [ServerState.STOPPED, ServerState.STARTING, ServerState.ERROR]],
-    [ServerState.ERROR, [ServerState.STOPPED]],
+    [ServerState.ERROR, [ServerState.STOPPED, ServerState.INSTALLING, ServerState.STARTING, ServerState.STOPPING]],
   ]);
 
   /**
@@ -66,21 +66,21 @@ export class ServerStateMachine {
    * Check if server can be started
    */
   static canStart(currentState: ServerState): boolean {
-    return [ServerState.STOPPED, ServerState.CRASHED, ServerState.SUSPENDED].includes(currentState);
+    return [ServerState.STOPPED, ServerState.CRASHED, ServerState.SUSPENDED, ServerState.ERROR].includes(currentState);
   }
 
   /**
    * Check if server can be stopped
    */
   static canStop(currentState: ServerState): boolean {
-    return [ServerState.RUNNING, ServerState.STARTING].includes(currentState);
+    return [ServerState.RUNNING, ServerState.STARTING, ServerState.ERROR].includes(currentState);
   }
 
   /**
    * Check if server can be restarted
    */
   static canRestart(currentState: ServerState): boolean {
-    return [ServerState.RUNNING, ServerState.STOPPED].includes(currentState);
+    return [ServerState.RUNNING, ServerState.STOPPED, ServerState.ERROR, ServerState.CRASHED].includes(currentState);
   }
 
   /**
