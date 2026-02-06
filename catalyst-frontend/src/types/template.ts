@@ -13,6 +13,23 @@ export interface TemplateImageOption {
   image: string;
 }
 
+type ModManagerTarget = 'mods' | 'datapacks' | 'modpacks';
+type ModManagerProvider =
+  | string
+  | {
+      id: string;
+      label?: string;
+      game?: string;
+      targets?: ModManagerTarget[];
+      curseforge?: {
+        gameId?: string | number;
+        gameSlug?: string;
+        classIds?: Partial<Record<ModManagerTarget, string | number>>;
+        classSlugs?: Partial<Record<ModManagerTarget, string>>;
+        modLoaderMap?: Record<string, string | number>;
+      };
+    };
+
 export interface Template {
   id: string;
   name: string;
@@ -36,7 +53,8 @@ export interface Template {
     configFile?: string;
     configFiles?: string[];
     modManager?: {
-      providers: string[];
+      providers: ModManagerProvider[];
+      targets?: ModManagerTarget[];
       paths?: {
         mods?: string;
         datapacks?: string;

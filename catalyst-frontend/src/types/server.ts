@@ -10,6 +10,22 @@ export type ServerStatus =
 
 export type RestartPolicy = 'always' | 'on-failure' | 'never';
 export type BackupStorageMode = 'local' | 's3' | 'sftp' | 'stream';
+type ModManagerTarget = 'mods' | 'datapacks' | 'modpacks';
+type ModManagerProvider =
+  | string
+  | {
+      id: string;
+      label?: string;
+      game?: string;
+      targets?: ModManagerTarget[];
+      curseforge?: {
+        gameId?: string | number;
+        gameSlug?: string;
+        classIds?: Partial<Record<ModManagerTarget, string | number>>;
+        classSlugs?: Partial<Record<ModManagerTarget, string>>;
+        modLoaderMap?: Record<string, string | number>;
+      };
+    };
 
 export interface Server {
   id: string;
@@ -24,6 +40,7 @@ export interface Server {
   portBindings?: Record<number, number>;
   networkMode?: string;
   environment?: Record<string, string>;
+  startupCommand?: string | null;
   node?: {
     name?: string;
     hostname?: string;
@@ -32,6 +49,7 @@ export interface Server {
   template?: {
     name?: string;
     image?: string;
+    startup?: string;
     images?: Array<{
       name: string;
       label?: string;
@@ -42,7 +60,8 @@ export interface Server {
       configFile?: string;
       configFiles?: string[];
       modManager?: {
-        providers: string[];
+        providers: ModManagerProvider[];
+        targets?: ModManagerTarget[];
         paths?: {
           mods?: string;
           datapacks?: string;
@@ -128,6 +147,8 @@ export interface CreateServerPayload {
 
 export interface UpdateServerPayload {
   name?: string;
+  startupCommand?: string | null;
+  environment?: Record<string, string>;
   allocatedMemoryMb?: number;
   allocatedCpuCores?: number;
   allocatedDiskMb?: number;

@@ -106,5 +106,31 @@
     40000
   ],
   "allocatedMemoryMb": 2048,
-  "allocatedCpuCores": 2
+  "allocatedCpuCores": 2,
+  "features": {
+    "modManager": {
+      "targets": [
+        "mods"
+      ],
+      "providers": [
+        {
+          "id": "curseforge",
+          "label": "CurseForge (Hytale)",
+          "game": "hytale",
+          "targets": [
+            "mods"
+          ],
+          "curseforge": {
+            "gameSlug": "hytale",
+            "classSlugs": {
+              "mods": "mods"
+            }
+          }
+        }
+      ],
+      "paths": {
+        "mods": "/mods"
+      }
+    }
+  }
 }

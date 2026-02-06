@@ -6,6 +6,8 @@
     "x-api-key": "{{CURSEFORGE_API_KEY}}"
   },
   "endpoints": {
+    "games": "/v1/games",
+    "categories": "/v1/categories",
     "search": "/v1/mods/search",
     "mod": "/v1/mods/{projectId}",
     "files": "/v1/mods/{projectId}/files",

@@ -1,9 +1,20 @@
-import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowDown, Check, Copy, Search, Trash2, X } from 'lucide-react';
 import { useServer } from '../../hooks/useServer';
 import { useServerMetrics } from '../../hooks/useServerMetrics';
-import { useServerMetricsHistory, type MetricsTimeRange } from '../../hooks/useServerMetricsHistory';
+import {
+  useServerMetricsHistory,
+  type MetricsTimeRange,
+} from '../../hooks/useServerMetricsHistory';
 import { formatBytes } from '../../utils/formatters';
 import { useWebSocketStore } from '../../stores/websocketStore';
 import ServerControls from '../../components/servers/ServerControls';
@@ -41,7 +52,11 @@ import {
 } from '../../utils/configFormats';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { tasksApi } from '../../services/api/tasks';
-import type { ServerAccessEntry, ServerInvite, ServerPermissionsResponse } from '../../types/server';
+import type {
+  ServerAccessEntry,
+  ServerInvite,
+  ServerPermissionsResponse,
+} from '../../types/server';
 
 type ConfigEntry = {
   key: string;
@@ -62,6 +77,169 @@ type ConfigFileState = {
   loaded: boolean;
   viewMode: 'form' | 'raw';
   rawContent: string;
+};
+type ModManagerTarget = 'mods' | 'datapacks' | 'modpacks';
+type ModManagerProviderOption = {
+  key: string;
+  providerId: string;
+  game?: string;
+  label: string;
+  targets: ModManagerTarget[];
+};
+const defaultModManagerTargets: ModManagerTarget[] = ['mods', 'datapacks', 'modpacks'];
+const normalizeModManagerTarget = (value: unknown): ModManagerTarget | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'mods' || normalized === 'datapacks' || normalized === 'modpacks') {
+    return normalized;
+  }
+  return null;
+};
+const normalizeModManagerTargets = (value: unknown): ModManagerTarget[] => {
+  if (!Array.isArray(value)) return [];
+  const targets = value
+    .map((entry) => normalizeModManagerTarget(entry))
+    .filter((entry): entry is ModManagerTarget => Boolean(entry));
+  return Array.from(new Set(targets));
+};
+const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+const displayProviderName = (providerId: string) => {
+  if (providerId === 'modrinth') return 'Modrinth';
+  if (providerId === 'curseforge') return 'CurseForge';
+  return titleCase(providerId);
+};
+
+const unstableReleasePattern = /\b(alpha|beta|snapshot|pre[-\s]?release|pre\b|rc)\b/i;
+
+const normalizeVersionToken = (value: string) => value.trim().toLowerCase().replace(/^v(?=\d)/, '');
+
+const normalizeVersionId = (version: any): string => {
+  const id = version?.id ?? version?.versionId ?? version?.fileId ?? version?.fileID ?? version?.file?.id;
+  if (id === undefined || id === null) return '';
+  return String(id);
+};
+
+const normalizeVersionLabel = (version: any): string => {
+  return (
+    version?.name ||
+    version?.version ||
+    version?.version_number ||
+    version?.displayName ||
+    version?.fileName ||
+    normalizeVersionId(version)
+  );
+};
+
+const collectVersionStrings = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+};
+
+const extractGameVersions = (version: any): string[] => {
+  const values = [
+    ...collectVersionStrings(version?.game_versions),
+    ...collectVersionStrings(version?.gameVersions),
+    ...collectVersionStrings(version?.versions),
+    ...collectVersionStrings(version?.supportedVersions),
+    ...collectVersionStrings(version?.supported_versions),
+    ...collectVersionStrings(version?.minecraftVersions),
+    ...collectVersionStrings(version?.minecraft_versions),
+  ];
+  return Array.from(new Set(values.map((entry) => normalizeVersionToken(entry))));
+};
+
+const isGameVersionMatch = (candidate: string, requested: string) => {
+  const normalizedCandidate = normalizeVersionToken(candidate);
+  const normalizedRequested = normalizeVersionToken(requested);
+  if (!normalizedCandidate || !normalizedRequested) return false;
+  if (normalizedCandidate === normalizedRequested) return true;
+  if (normalizedCandidate.startsWith(`${normalizedRequested}.`)) return true;
+  if (normalizedRequested.startsWith(`${normalizedCandidate}.`)) return true;
+  return false;
+};
+
+const matchesRequestedGameVersion = (version: any, requestedVersion?: string) => {
+  const requested = requestedVersion?.trim();
+  if (!requested) return true;
+  const versions = extractGameVersions(version);
+  if (!versions.length) return true;
+  return versions.some((entry) => isGameVersionMatch(entry, requested));
+};
+
+const resolveVersionTimestamp = (version: any): number => {
+  const candidates = [
+    version?.date_published,
+    version?.datePublished,
+    version?.publishedAt,
+    version?.published,
+    version?.fileDate,
+    version?.createdAt,
+    version?.created,
+    version?.updatedAt,
+    version?.releaseDate,
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'string' || typeof value === 'number') {
+      const ts = new Date(value).getTime();
+      if (Number.isFinite(ts)) return ts;
+    }
+  }
+  return 0;
+};
+
+const isStableRelease = (version: any): boolean => {
+  const releaseType = version?.releaseType;
+  if (typeof releaseType === 'number') {
+    if (releaseType === 1) return true;
+    if (releaseType === 2 || releaseType === 3) return false;
+  }
+
+  const explicitType =
+    typeof version?.version_type === 'string'
+      ? version.version_type
+      : typeof version?.releaseChannel === 'string'
+        ? version.releaseChannel
+        : typeof version?.channel === 'string'
+          ? version.channel
+          : typeof version?.stability === 'string'
+            ? version.stability
+            : '';
+  if (explicitType) {
+    const normalized = explicitType.toLowerCase();
+    if (normalized.includes('release') || normalized.includes('stable')) return true;
+    if (unstableReleasePattern.test(normalized)) return false;
+  }
+
+  if (typeof version?.isStable === 'boolean') return version.isStable;
+  if (typeof version?.stable === 'boolean') return version.stable;
+
+  const label = normalizeVersionLabel(version);
+  return !unstableReleasePattern.test(label.toLowerCase());
+};
+
+const filterAndSortVersions = (versions: any[], requestedGameVersion?: string) => {
+  const matching = versions.filter((entry) => matchesRequestedGameVersion(entry, requestedGameVersion));
+  const pool = matching.length ? matching : versions;
+  return [...pool].sort((a, b) => {
+    const stableDelta = Number(isStableRelease(b)) - Number(isStableRelease(a));
+    if (stableDelta !== 0) return stableDelta;
+    const timeDelta = resolveVersionTimestamp(b) - resolveVersionTimestamp(a);
+    if (timeDelta !== 0) return timeDelta;
+    const aId = Number(normalizeVersionId(a));
+    const bId = Number(normalizeVersionId(b));
+    if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) {
+      return bId - aId;
+    }
+    return normalizeVersionLabel(b).localeCompare(normalizeVersionLabel(a));
+  });
 };
 
 const tabLabels = {
@@ -87,16 +265,26 @@ function ServerDetailsPage() {
   const navigate = useNavigate();
   const { data: server, isLoading, isError } = useServer(serverId);
   const liveMetrics = useServerMetrics(serverId, server?.allocatedMemoryMb);
-  const [metricsTimeRange, setMetricsTimeRange] = useState<MetricsTimeRange>({ hours: 1, limit: 60, label: '1 hour' });
+  const [metricsTimeRange, setMetricsTimeRange] = useState<MetricsTimeRange>({
+    hours: 1,
+    limit: 60,
+    label: '1 hour',
+  });
   const { data: metricsHistory } = useServerMetricsHistory(serverId, metricsTimeRange);
   const { data: tasks = [], isLoading: tasksLoading } = useTasks(serverId);
-  const { data: databases = [], isLoading: databasesLoading, isError: databasesError } =
-    useServerDatabases(serverId);
+  const {
+    data: databases = [],
+    isLoading: databasesLoading,
+    isError: databasesError,
+  } = useServerDatabases(serverId);
   const { data: databaseHosts = [] } = useDatabaseHosts();
   const { isConnected } = useWebSocketStore();
   const { user } = useAuthStore();
   const isAdmin = useMemo(
-    () => user?.permissions?.includes('*') || user?.permissions?.includes('admin.read') || user?.permissions?.includes('admin.write'),
+    () =>
+      user?.permissions?.includes('*') ||
+      user?.permissions?.includes('admin.read') ||
+      user?.permissions?.includes('admin.write'),
     [user?.permissions],
   );
   const canAdminWrite = useMemo(
@@ -125,7 +313,9 @@ function ServerDetailsPage() {
     return Number.isFinite(parsed) ? parsed : 2000;
   });
   const [consoleAutoScroll, setConsoleAutoScroll] = useState(true);
-  const [consoleActiveStreams, setConsoleActiveStreams] = useState<Set<string>>(() => new Set(['stdout', 'stderr', 'system', 'stdin']));
+  const [consoleActiveStreams, setConsoleActiveStreams] = useState<Set<string>>(
+    () => new Set(['stdout', 'stderr', 'system', 'stdin']),
+  );
   const [consoleCommandHistory, setConsoleCommandHistory] = useState<string[]>([]);
   const [consoleHistoryIndex, setConsoleHistoryIndex] = useState(-1);
   const [consoleCopied, setConsoleCopied] = useState(false);
@@ -135,29 +325,95 @@ function ServerDetailsPage() {
   const [configSearch, setConfigSearch] = useState('');
   const [databaseHostId, setDatabaseHostId] = useState('');
   const [databaseName, setDatabaseName] = useState('');
-  const [allocations, setAllocations] = useState<{ containerPort: number; hostPort: number; isPrimary: boolean }[]>([]);
+  const [allocations, setAllocations] = useState<
+    { containerPort: number; hostPort: number; isPrimary: boolean }[]
+  >([]);
   const [allocationsError, setAllocationsError] = useState<string | null>(null);
   const [newContainerPort, setNewContainerPort] = useState('');
   const [newHostPort, setNewHostPort] = useState('');
-  const [restartPolicy, setRestartPolicy] = useState<'always' | 'on-failure' | 'never'>('on-failure');
+  const [restartPolicy, setRestartPolicy] = useState<'always' | 'on-failure' | 'never'>(
+    'on-failure',
+  );
   const [maxCrashCount, setMaxCrashCount] = useState('5');
   const [serverName, setServerName] = useState('');
+  const [startupCommand, setStartupCommand] = useState('');
+  const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([]);
+  const [envDirty, setEnvDirty] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [suspendReason, setSuspendReason] = useState('');
-  const [invitePreset, setInvitePreset] = useState<'readOnly' | 'power' | 'full' | 'custom'>('readOnly');
+  const [invitePreset, setInvitePreset] = useState<'readOnly' | 'power' | 'full' | 'custom'>(
+    'readOnly',
+  );
   const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
   const [accessPermissions, setAccessPermissions] = useState<Record<string, string[]>>({});
   const modManagerConfig = server?.template?.features?.modManager;
-  const modManagerProviders = modManagerConfig?.providers ?? [];
+  const modProviderOptions = useMemo<ModManagerProviderOption[]>(() => {
+    const providers = Array.isArray(modManagerConfig?.providers) ? modManagerConfig.providers : [];
+    const rootTargets = normalizeModManagerTargets((modManagerConfig as any)?.targets);
+    const fallbackTargets = rootTargets.length ? rootTargets : defaultModManagerTargets;
+    return providers
+      .map((entry, index) => {
+        if (typeof entry === 'string') {
+          const providerId = entry.trim().toLowerCase();
+          if (!providerId) return null;
+          const label = displayProviderName(providerId);
+          return {
+            key: `${providerId}::default::${index}`,
+            providerId,
+            label,
+            targets: fallbackTargets,
+          };
+        }
+        if (!entry || typeof entry !== 'object') return null;
+        const providerIdRaw =
+          typeof (entry as any).id === 'string'
+            ? (entry as any).id
+            : typeof (entry as any).provider === 'string'
+              ? (entry as any).provider
+              : '';
+        const providerId = providerIdRaw.trim().toLowerCase();
+        if (!providerId) return null;
+        const game =
+          typeof (entry as any).game === 'string' && (entry as any).game.trim()
+            ? (entry as any).game.trim().toLowerCase()
+            : undefined;
+        const providerTargets = normalizeModManagerTargets((entry as any).targets);
+        const label =
+          typeof (entry as any).label === 'string' && (entry as any).label.trim()
+            ? (entry as any).label.trim()
+            : `${displayProviderName(providerId)}${game ? ` (${titleCase(game)})` : ''}`;
+        return {
+          key: `${providerId}::${game || 'default'}::${index}`,
+          providerId,
+          game,
+          label,
+          targets: providerTargets.length ? providerTargets : fallbackTargets,
+        };
+      })
+      .filter((entry): entry is ModManagerProviderOption => Boolean(entry));
+  }, [modManagerConfig]);
+  const [modProviderKey, setModProviderKey] = useState('');
+  const selectedModProvider = useMemo(
+    () =>
+      modProviderOptions.find((entry) => entry.key === modProviderKey) ??
+      modProviderOptions[0] ??
+      null,
+    [modProviderKey, modProviderOptions],
+  );
+  const modProvider = selectedModProvider?.providerId ?? '';
+  const modProviderGame = selectedModProvider?.game;
+  const modTargetOptions = selectedModProvider?.targets ?? defaultModManagerTargets;
+  const supportsModLoaderFilter = !modProviderGame || modProviderGame === 'minecraft';
   const pluginManagerConfig = server?.template?.features?.pluginManager;
   const pluginManagerProviders = pluginManagerConfig?.providers ?? [];
-  const [modProvider, setModProvider] = useState('modrinth');
   const [modQuery, setModQuery] = useState('');
-  const [modTarget, setModTarget] = useState<'mods' | 'datapacks' | 'modpacks'>('mods');
+  const [modTarget, setModTarget] = useState<ModManagerTarget>('mods');
   const [modLoader, setModLoader] = useState('forge');
+  const [modGameVersion, setModGameVersion] = useState('');
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<string>('');
   const [pluginProvider, setPluginProvider] = useState('modrinth');
+  const [pluginGameVersion, setPluginGameVersion] = useState('');
   const {
     entries,
     send,
@@ -193,8 +449,7 @@ function ServerDetailsPage() {
     user?.permissions?.includes('database.delete') ||
     Boolean(server && user?.id && server.ownerId === user.id);
   const databaseAllocation = server?.databaseAllocation ?? 0;
-  const databaseLimitReached =
-    databaseAllocation > 0 && databases.length >= databaseAllocation;
+  const databaseLimitReached = databaseAllocation > 0 && databases.length >= databaseAllocation;
   const [pluginQuery, setPluginQuery] = useState('');
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
   const [selectedPluginVersion, setSelectedPluginVersion] = useState<string>('');
@@ -215,18 +470,20 @@ function ServerDetailsPage() {
       'mod-manager-search',
       serverId,
       modProvider,
+      modProviderGame,
       modQuery,
       modTarget,
       modLoader,
-      serverGameVersion,
+      modGameVersion,
     ],
     queryFn: () =>
       modManagerApi.search(serverId ?? '', {
         provider: modProvider,
+        game: modProviderGame,
         target: modTarget,
         query: modQuery.trim() || undefined,
-        loader: modLoader,
-        gameVersion: serverGameVersion,
+        loader: supportsModLoaderFilter ? modLoader : undefined,
+        gameVersion: modGameVersion.trim() || undefined,
       }),
     enabled: Boolean(serverId && modProvider),
   });
@@ -236,10 +493,11 @@ function ServerDetailsPage() {
     isLoading: modVersionsLoading,
     isError: modVersionsError,
   } = useQuery({
-    queryKey: ['mod-manager-versions', serverId, modProvider, selectedProject],
+    queryKey: ['mod-manager-versions', serverId, modProvider, modProviderGame, selectedProject],
     queryFn: () =>
       modManagerApi.versions(serverId ?? '', {
         provider: modProvider,
+        game: modProviderGame,
         projectId: selectedProject ?? '',
       }),
     enabled: Boolean(serverId && modProvider && selectedProject),
@@ -251,12 +509,12 @@ function ServerDetailsPage() {
     isError: pluginSearchError,
     refetch: refetchPluginSearch,
   } = useQuery({
-    queryKey: ['plugin-manager-search', serverId, pluginProvider, pluginQuery, serverGameVersion],
+    queryKey: ['plugin-manager-search', serverId, pluginProvider, pluginQuery, pluginGameVersion],
     queryFn: () =>
       pluginManagerApi.search(serverId ?? '', {
         provider: pluginProvider,
         query: pluginQuery.trim() || undefined,
-        gameVersion: serverGameVersion,
+        gameVersion: pluginGameVersion.trim() || undefined,
       }),
     enabled: Boolean(serverId && pluginProvider),
   });
@@ -274,7 +532,6 @@ function ServerDetailsPage() {
       }),
     enabled: Boolean(serverId && pluginProvider && selectedPlugin),
   });
-
 
   const createDatabaseMutation = useMutation({
     mutationFn: () => {
@@ -390,6 +647,7 @@ function ServerDetailsPage() {
       }
       return modManagerApi.install(server.id, {
         provider: modProvider,
+        game: modProviderGame,
         projectId: selectedProject,
         versionId: selectedVersion,
         target: modTarget,
@@ -559,7 +817,8 @@ function ServerDetailsPage() {
       queryClient.invalidateQueries({ queryKey: ['servers'] });
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to update restart policy';
+      const message =
+        error?.response?.data?.error || error?.message || 'Failed to update restart policy';
       notifyError(message);
     },
   });
@@ -575,7 +834,8 @@ function ServerDetailsPage() {
       queryClient.invalidateQueries({ queryKey: ['servers'] });
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to reset crash count';
+      const message =
+        error?.response?.data?.error || error?.message || 'Failed to reset crash count';
       notifyError(message);
     },
   });
@@ -598,6 +858,48 @@ function ServerDetailsPage() {
     },
   });
 
+  const startupCommandMutation = useMutation({
+    mutationFn: () => {
+      if (!serverId) throw new Error('Missing server id');
+      const trimmed = startupCommand.trim();
+      const templateDefault = server?.template?.startup ?? '';
+      return serversApi.update(serverId, {
+        startupCommand: trimmed === templateDefault ? null : trimmed || null,
+      });
+    },
+    onSuccess: () => {
+      notifySuccess('Startup command updated');
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+    },
+    onError: (error: any) => {
+      const message =
+        error?.response?.data?.error || error?.message || 'Failed to update startup command';
+      notifyError(message);
+    },
+  });
+
+  const envMutation = useMutation({
+    mutationFn: () => {
+      if (!serverId) throw new Error('Missing server id');
+      const env: Record<string, string> = {};
+      for (const row of envVars) {
+        const k = row.key.trim();
+        if (k) env[k] = row.value;
+      }
+      return serversApi.update(serverId, { environment: env });
+    },
+    onSuccess: () => {
+      notifySuccess('Environment variables updated');
+      setEnvDirty(false);
+      queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+    },
+    onError: (error: any) => {
+      const message =
+        error?.response?.data?.error || error?.message || 'Failed to update environment';
+      notifyError(message);
+    },
+  });
+
   useEffect(() => {
     if (!server) return;
     setRestartPolicy(server.restartPolicy ?? 'on-failure');
@@ -612,6 +914,20 @@ function ServerDetailsPage() {
     if (!server?.name) return;
     setServerName(server.name);
   }, [server?.name]);
+
+  useEffect(() => {
+    if (!server) return;
+    setStartupCommand(server.startupCommand ?? server.template?.startup ?? '');
+  }, [server?.id, server?.startupCommand, server?.template?.startup]);
+
+  useEffect(() => {
+    if (!server?.environment) return;
+    const entries = Object.entries(server.environment as Record<string, string>).map(
+      ([key, value]) => ({ key, value: String(value) }),
+    );
+    setEnvVars(entries.length ? entries : [{ key: '', value: '' }]);
+    setEnvDirty(false);
+  }, [server?.id, server?.environment]);
 
   useEffect(() => {
     if (!permissionsData?.data) return;
@@ -634,7 +950,10 @@ function ServerDetailsPage() {
       if (!serverId) throw new Error('Missing server id');
       return serversApi.createInvite(serverId, {
         email: inviteEmail.trim(),
-        permissions: invitePreset === 'custom' ? invitePermissions : permissionsData?.presets[invitePreset] ?? [],
+        permissions:
+          invitePreset === 'custom'
+            ? invitePermissions
+            : (permissionsData?.presets[invitePreset] ?? []),
       });
     },
     onSuccess: () => {
@@ -717,17 +1036,33 @@ function ServerDetailsPage() {
     ];
     const all = new Set<string>(base);
     permissionsData?.data?.forEach((entry) => entry.permissions.forEach((perm) => all.add(perm)));
-    permissionsData?.presets &&
-      Object.values(permissionsData.presets).forEach((list) => list.forEach((perm) => all.add(perm)));
+    if (permissionsData?.presets) {
+      Object.values(permissionsData.presets).forEach((list) =>
+        list.forEach((perm) => all.add(perm)),
+      );
+    }
     return Array.from(all).sort();
   }, [permissionsData?.data, permissionsData?.presets]);
 
   useEffect(() => {
-    if (!modManagerProviders.length) return;
-    if (!modManagerProviders.includes(modProvider)) {
-      setModProvider(modManagerProviders[0]);
+    if (!modProviderOptions.length) {
+      if (modProviderKey) {
+        setModProviderKey('');
+      }
+      return;
     }
-  }, [modManagerProviders, modProvider]);
+    const hasSelected = modProviderOptions.some((entry) => entry.key === modProviderKey);
+    if (!hasSelected) {
+      setModProviderKey(modProviderOptions[0].key);
+    }
+  }, [modProviderKey, modProviderOptions]);
+
+  useEffect(() => {
+    if (!modTargetOptions.length) return;
+    if (!modTargetOptions.includes(modTarget)) {
+      setModTarget(modTargetOptions[0]);
+    }
+  }, [modTarget, modTargetOptions]);
 
   useEffect(() => {
     if (!pluginManagerProviders.length) return;
@@ -737,14 +1072,26 @@ function ServerDetailsPage() {
   }, [pluginManagerProviders, pluginProvider]);
 
   useEffect(() => {
+    setModGameVersion('');
+    setPluginGameVersion('');
+  }, [serverId]);
+
+  useEffect(() => {
+    const detectedVersion = serverGameVersion?.trim();
+    if (!detectedVersion) return;
+    setModGameVersion((current) => (current ? current : detectedVersion));
+    setPluginGameVersion((current) => (current ? current : detectedVersion));
+  }, [serverGameVersion]);
+
+  useEffect(() => {
     setSelectedProject(null);
     setSelectedVersion('');
-  }, [modProvider, modQuery, modTarget, modLoader]);
+  }, [modProvider, modProviderGame, modQuery, modTarget, modLoader, modGameVersion]);
 
   useEffect(() => {
     setSelectedPlugin(null);
     setSelectedPluginVersion('');
-  }, [pluginProvider, pluginQuery]);
+  }, [pluginProvider, pluginQuery, pluginGameVersion]);
 
   useEffect(() => {
     setSelectedVersion('');
@@ -767,14 +1114,14 @@ function ServerDetailsPage() {
 
   const modVersionOptions = useMemo(() => {
     if (!modVersions) return [];
-    if (Array.isArray(modVersions.data)) {
-      return modVersions.data;
-    }
-    if (Array.isArray(modVersions)) {
-      return modVersions;
-    }
-    return [];
-  }, [modVersions]);
+    const raw =
+      Array.isArray(modVersions.data)
+        ? modVersions.data
+        : Array.isArray(modVersions)
+          ? modVersions
+          : [];
+    return filterAndSortVersions(raw, modGameVersion);
+  }, [modGameVersion, modVersions]);
 
   const pluginResults = useMemo(() => {
     if (!pluginSearchResults) return [];
@@ -792,17 +1139,52 @@ function ServerDetailsPage() {
 
   const pluginVersionOptions = useMemo(() => {
     if (!pluginVersions) return [];
-    if (Array.isArray(pluginVersions.data)) {
-      return pluginVersions.data;
+    const raw = Array.isArray(pluginVersions.data)
+      ? pluginVersions.data
+      : Array.isArray((pluginVersions as any).result)
+        ? (pluginVersions as any).result
+        : Array.isArray(pluginVersions)
+          ? pluginVersions
+          : [];
+    return filterAndSortVersions(raw, pluginGameVersion);
+  }, [pluginGameVersion, pluginVersions]);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    if (!modVersionOptions.length) {
+      if (selectedVersion) setSelectedVersion('');
+      return;
     }
-    if (Array.isArray((pluginVersions as any).result)) {
-      return (pluginVersions as any).result;
+    if (selectedVersion && modVersionOptions.some((entry: any) => normalizeVersionId(entry) === selectedVersion)) {
+      return;
     }
-    if (Array.isArray(pluginVersions)) {
-      return pluginVersions;
+    const preferred =
+      modVersionOptions.find((entry: any) => isStableRelease(entry)) ?? modVersionOptions[0];
+    const preferredId = normalizeVersionId(preferred);
+    if (preferredId && preferredId !== selectedVersion) {
+      setSelectedVersion(preferredId);
     }
-    return [];
-  }, [pluginVersions]);
+  }, [modVersionOptions, selectedProject, selectedVersion]);
+
+  useEffect(() => {
+    if (!selectedPlugin) return;
+    if (!pluginVersionOptions.length) {
+      if (selectedPluginVersion) setSelectedPluginVersion('');
+      return;
+    }
+    if (
+      selectedPluginVersion &&
+      pluginVersionOptions.some((entry: any) => normalizeVersionId(entry) === selectedPluginVersion)
+    ) {
+      return;
+    }
+    const preferred =
+      pluginVersionOptions.find((entry: any) => isStableRelease(entry)) ?? pluginVersionOptions[0];
+    const preferredId = normalizeVersionId(preferred);
+    if (preferredId && preferredId !== selectedPluginVersion) {
+      setSelectedPluginVersion(preferredId);
+    }
+  }, [pluginVersionOptions, selectedPlugin, selectedPluginVersion]);
 
   const normalizeEntry = (key: string, value: ConfigNode): ConfigEntry => {
     if (isConfigMap(value)) {
@@ -888,44 +1270,47 @@ function ServerDetailsPage() {
     return record;
   };
 
-  const loadConfigFile = useCallback(async (pathValue: string) => {
-    const format = detectConfigFormat(pathValue);
-    if (!format) {
-      return {
-        path: pathValue,
-        sections: [],
-        format: null,
-        error: 'Unsupported config format.',
-        loaded: true,
-        viewMode: 'form',
-        rawContent: '',
-      } as ConfigFileState;
-    }
-    try {
-      const content = await filesApi.readText(serverId ?? '', pathValue);
-      const parsed = parseConfig(format, content);
-      const sections = toSections(parsed);
-      return {
-        path: pathValue,
-        sections,
-        format,
-        error: null,
-        loaded: true,
-        viewMode: 'form',
-        rawContent: content,
-      };
-    } catch (error: any) {
-      return {
-        path: pathValue,
-        sections: [],
-        format,
-        error: error?.message || 'Failed to load config file',
-        loaded: true,
-        viewMode: 'form',
-        rawContent: '',
-      };
-    }
-  }, [serverId]);
+  const loadConfigFile = useCallback(
+    async (pathValue: string) => {
+      const format = detectConfigFormat(pathValue);
+      if (!format) {
+        return {
+          path: pathValue,
+          sections: [],
+          format: null,
+          error: 'Unsupported config format.',
+          loaded: true,
+          viewMode: 'form',
+          rawContent: '',
+        } as ConfigFileState;
+      }
+      try {
+        const content = await filesApi.readText(serverId ?? '', pathValue);
+        const parsed = parseConfig(format, content);
+        const sections = toSections(parsed);
+        return {
+          path: pathValue,
+          sections,
+          format,
+          error: null,
+          loaded: true,
+          viewMode: 'form',
+          rawContent: content,
+        };
+      } catch (error: any) {
+        return {
+          path: pathValue,
+          sections: [],
+          format,
+          error: error?.message || 'Failed to load config file',
+          loaded: true,
+          viewMode: 'form',
+          rawContent: '',
+        };
+      }
+    },
+    [serverId],
+  );
 
   const filteredConfigFiles = useMemo(() => {
     const query = configSearch.trim().toLowerCase();
@@ -1033,34 +1418,43 @@ function ServerDetailsPage() {
     [],
   );
 
-  const addConfigEntry = useCallback((fileIndex: number, sectionIndex: number, parentIndex?: number) => {
-    setConfigFiles((current) =>
-      current.map((file, idx) =>
-        idx === fileIndex
-          ? {
-              ...file,
-              sections: file.sections.map((section, secIdx) => {
-                if (secIdx !== sectionIndex) return section;
-                if (typeof parentIndex === 'number') {
+  const addConfigEntry = useCallback(
+    (fileIndex: number, sectionIndex: number, parentIndex?: number) => {
+      setConfigFiles((current) =>
+        current.map((file, idx) =>
+          idx === fileIndex
+            ? {
+                ...file,
+                sections: file.sections.map((section, secIdx) => {
+                  if (secIdx !== sectionIndex) return section;
+                  if (typeof parentIndex === 'number') {
+                    return {
+                      ...section,
+                      entries: section.entries.map((entry, entryIdx) =>
+                        entryIdx === parentIndex
+                          ? {
+                              ...entry,
+                              children: [
+                                ...(entry.children ?? []),
+                                { key: '', value: '', type: 'string' },
+                              ],
+                            }
+                          : entry,
+                      ),
+                    };
+                  }
                   return {
                     ...section,
-                    entries: section.entries.map((entry, entryIdx) =>
-                      entryIdx === parentIndex
-                        ? {
-                            ...entry,
-                            children: [...(entry.children ?? []), { key: '', value: '', type: 'string' }],
-                          }
-                        : entry,
-                    ),
+                    entries: [...section.entries, { key: '', value: '', type: 'string' }],
                   };
-                }
-                return { ...section, entries: [...section.entries, { key: '', value: '', type: 'string' }] };
-              }),
-            }
-          : file,
-      ),
-    );
-  }, []);
+                }),
+              }
+            : file,
+        ),
+      );
+    },
+    [],
+  );
 
   const removeConfigEntry = useCallback(
     (fileIndex: number, sectionIndex: number, entryIndex: number, childIndex?: number) => {
@@ -1078,13 +1472,18 @@ function ServerDetailsPage() {
                         entryIdx === entryIndex
                           ? {
                               ...entry,
-                              children: (entry.children ?? []).filter((_, childIdx) => childIdx !== childIndex),
+                              children: (entry.children ?? []).filter(
+                                (_, childIdx) => childIdx !== childIndex,
+                              ),
                             }
                           : entry,
                       ),
                     };
                   }
-                  return { ...section, entries: section.entries.filter((_, entryIdx) => entryIdx !== entryIndex) };
+                  return {
+                    ...section,
+                    entries: section.entries.filter((_, entryIdx) => entryIdx !== entryIndex),
+                  };
                 }),
               }
             : file,
@@ -1094,17 +1493,20 @@ function ServerDetailsPage() {
     [],
   );
 
-  const handleSend = useCallback((event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canSend) return;
-    const trimmed = command.trim();
-    if (!trimmed) return;
-    send(trimmed);
-    setConsoleCommandHistory((prev) => [...prev.slice(-49), trimmed]);
-    setCommand('');
-    setConsoleHistoryIndex(-1);
-    setConsoleAutoScroll(true);
-  }, [canSend, command, send]);
+  const handleSend = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!canSend) return;
+      const trimmed = command.trim();
+      if (!trimmed) return;
+      send(trimmed);
+      setConsoleCommandHistory((prev) => [...prev.slice(-49), trimmed]);
+      setCommand('');
+      setConsoleHistoryIndex(-1);
+      setConsoleAutoScroll(true);
+    },
+    [canSend, command, send],
+  );
 
   const handleReinstall = useCallback(async () => {
     if (!serverId) return;
@@ -1128,7 +1530,7 @@ function ServerDetailsPage() {
       ...(configTemplatePath ? [configTemplatePath] : []),
       ...configTemplatePaths,
     ];
-    
+
     if (combinedConfigPaths.length === 0) {
       setConfigFiles([]);
       return;
@@ -1149,7 +1551,12 @@ function ServerDetailsPage() {
     Promise.all(uniquePaths.map((path) => loadConfigFile(path))).then((results) => {
       setConfigFiles(results);
     });
-  }, [serverId, server?.template?.features?.configFile, server?.template?.features?.configFiles?.join('|'), loadConfigFile]);
+  }, [
+    serverId,
+    server?.template?.features?.configFile,
+    server?.template?.features?.configFiles?.join('|'),
+    loadConfigFile,
+  ]);
 
   useEffect(() => {
     loadAllocations();
@@ -1174,8 +1581,8 @@ function ServerDetailsPage() {
   const nodeLabel = server.node?.name ?? server.nodeName ?? server.nodeId;
   const isBridge = server.networkMode === 'bridge';
   const nodeIp = isBridge
-    ? server.node?.publicAddress ?? server.node?.hostname ?? 'n/a'
-    : server.connection?.host ?? server.primaryIp ?? 'n/a';
+    ? (server.node?.publicAddress ?? server.node?.hostname ?? 'n/a')
+    : (server.connection?.host ?? server.primaryIp ?? 'n/a');
   const nodePort = server.primaryPort ?? 'n/a';
   const diskLimitMb = server.allocatedDiskMb ?? 0;
   const liveDiskUsageMb = liveMetrics?.diskUsageMb;
@@ -1198,7 +1605,9 @@ function ServerDetailsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">{server.name}</h1>
+              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+                {server.name}
+              </h1>
               <ServerStatusBadge status={server.status} />
             </div>
             <div className="text-sm text-slate-600 dark:text-slate-400">
@@ -1211,7 +1620,9 @@ function ServerDetailsPage() {
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-3 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
             <div className="font-semibold">Server suspended</div>
             <div className="text-rose-600 dark:text-rose-300">
-              {server?.suspensionReason ? `Reason: ${server.suspensionReason}` : 'No reason provided.'}
+              {server?.suspensionReason
+                ? `Reason: ${server.suspensionReason}`
+                : 'No reason provided.'}
             </div>
           </div>
         ) : null}
@@ -1226,22 +1637,22 @@ function ServerDetailsPage() {
             return true;
           })
           .map(([key, label]) => {
-          const isActive = activeTab === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              className={`rounded-full px-3 py-1.5 font-semibold transition-all duration-300 ${
-                isActive
-                  ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/20'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
-              }`}
-              onClick={() => navigate(`/servers/${server.id}/${key}`)}
-            >
-              {label}
-            </button>
-          );
-        })}
+            const isActive = activeTab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`rounded-full px-3 py-1.5 font-semibold transition-all duration-300 ${
+                  isActive
+                    ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/20'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                }`}
+                onClick={() => navigate(`/servers/${server.id}/${key}`)}
+              >
+                {label}
+              </button>
+            );
+          })}
       </div>
 
       {activeTab === 'console' ? (
@@ -1255,7 +1666,9 @@ function ServerDetailsPage() {
                   : 'border-amber-200 text-amber-600 dark:border-amber-500/30 dark:text-amber-400'
               }`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'}`} />
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'animate-pulse bg-emerald-500' : 'bg-amber-500'}`}
+              />
               {isConnected ? 'Live' : 'Connecting'}
             </span>
 
@@ -1265,23 +1678,40 @@ function ServerDetailsPage() {
             <div className="flex items-center gap-1">
               {(['stdout', 'stderr', 'system', 'stdin'] as const).map((stream) => {
                 const isActive = consoleActiveStreams.has(stream);
-                const dotColors: Record<string, string> = { stdout: 'bg-emerald-400', stderr: 'bg-rose-400', system: 'bg-sky-400', stdin: 'bg-amber-400' };
-                const activeColors: Record<string, string> = { stdout: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400', stderr: 'border-rose-500/50 bg-rose-500/10 text-rose-400', system: 'border-sky-500/50 bg-sky-500/10 text-sky-400', stdin: 'border-amber-500/50 bg-amber-500/10 text-amber-400' };
+                const dotColors: Record<string, string> = {
+                  stdout: 'bg-emerald-400',
+                  stderr: 'bg-rose-400',
+                  system: 'bg-sky-400',
+                  stdin: 'bg-amber-400',
+                };
+                const activeColors: Record<string, string> = {
+                  stdout: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
+                  stderr: 'border-rose-500/50 bg-rose-500/10 text-rose-400',
+                  system: 'border-sky-500/50 bg-sky-500/10 text-sky-400',
+                  stdin: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
+                };
                 return (
                   <button
                     key={stream}
                     type="button"
-                    onClick={() => setConsoleActiveStreams((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(stream)) { if (next.size > 1) next.delete(stream); }
-                      else next.add(stream);
-                      return next;
-                    })}
+                    onClick={() =>
+                      setConsoleActiveStreams((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(stream)) {
+                          if (next.size > 1) next.delete(stream);
+                        } else next.add(stream);
+                        return next;
+                      })
+                    }
                     className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-all ${
-                      isActive ? activeColors[stream] : 'border-slate-700 text-slate-500 hover:border-slate-600'
+                      isActive
+                        ? activeColors[stream]
+                        : 'border-slate-700 text-slate-500 hover:border-slate-600'
                     }`}
                   >
-                    <span className={`h-1.5 w-1.5 rounded-full ${isActive ? dotColors[stream] : 'bg-slate-600'}`} />
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${isActive ? dotColors[stream] : 'bg-slate-600'}`}
+                    />
                     {stream}
                   </button>
                 );
@@ -1303,17 +1733,33 @@ function ServerDetailsPage() {
                 />
                 {consoleSearch ? (
                   <span className="text-[10px] tabular-nums text-slate-500">
-                    {entries.filter((e) => consoleActiveStreams.has(e.stream) && e.data.toLowerCase().includes(consoleSearch.toLowerCase())).length}
+                    {
+                      entries.filter(
+                        (e) =>
+                          consoleActiveStreams.has(e.stream) &&
+                          e.data.toLowerCase().includes(consoleSearch.toLowerCase()),
+                      ).length
+                    }
                   </span>
                 ) : null}
-                <button type="button" onClick={() => { setConsoleSearchOpen(false); setConsoleSearch(''); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConsoleSearchOpen(false);
+                    setConsoleSearch('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
                   <X className="h-3 w-3" />
                 </button>
               </div>
             ) : (
               <button
                 type="button"
-                onClick={() => { setConsoleSearchOpen(true); setTimeout(() => consoleSearchRef.current?.focus(), 50); }}
+                onClick={() => {
+                  setConsoleSearchOpen(true);
+                  setTimeout(() => consoleSearchRef.current?.focus(), 50);
+                }}
                 className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
               >
                 <Search className="h-3 w-3" />
@@ -1344,7 +1790,9 @@ function ServerDetailsPage() {
 
             <div className="flex-1" />
 
-            <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-600">{entries.length} lines</span>
+            <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-600">
+              {entries.length} lines
+            </span>
             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
 
             <button
@@ -1363,20 +1811,30 @@ function ServerDetailsPage() {
             <button
               type="button"
               onClick={async () => {
-                const text = entries.filter((e) => consoleActiveStreams.has(e.stream)).map((e) => e.data).join('');
+                const text = entries
+                  .filter((e) => consoleActiveStreams.has(e.stream))
+                  .map((e) => e.data)
+                  .join('');
                 await navigator.clipboard.writeText(text);
                 setConsoleCopied(true);
                 setTimeout(() => setConsoleCopied(false), 2000);
               }}
               className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
             >
-              {consoleCopied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              {consoleCopied ? (
+                <Check className="h-3 w-3 text-emerald-400" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
               {consoleCopied ? 'Copied' : 'Copy'}
             </button>
 
             <button
               type="button"
-              onClick={() => { clearConsole(); setConsoleAutoScroll(true); }}
+              onClick={() => {
+                clearConsole();
+                setConsoleAutoScroll(true);
+              }}
               className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all hover:border-rose-300 hover:text-rose-500 dark:border-slate-700 dark:hover:border-rose-500/30 dark:hover:text-rose-400"
             >
               <Trash2 className="h-3 w-3" />
@@ -1409,23 +1867,36 @@ function ServerDetailsPage() {
               ref={consoleInputRef}
               className="w-full bg-transparent font-mono text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200"
               value={command}
-              onChange={(event) => { setCommand(event.target.value); setConsoleHistoryIndex(-1); }}
+              onChange={(event) => {
+                setCommand(event.target.value);
+                setConsoleHistoryIndex(-1);
+              }}
               onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
                   if (consoleCommandHistory.length === 0) return;
-                  const next = consoleHistoryIndex === -1 ? consoleCommandHistory.length - 1 : Math.max(0, consoleHistoryIndex - 1);
+                  const next =
+                    consoleHistoryIndex === -1
+                      ? consoleCommandHistory.length - 1
+                      : Math.max(0, consoleHistoryIndex - 1);
                   setConsoleHistoryIndex(next);
                   setCommand(consoleCommandHistory[next]);
                 } else if (e.key === 'ArrowDown') {
                   e.preventDefault();
                   if (consoleHistoryIndex === -1) return;
                   const next = consoleHistoryIndex + 1;
-                  if (next >= consoleCommandHistory.length) { setConsoleHistoryIndex(-1); setCommand(''); }
-                  else { setConsoleHistoryIndex(next); setCommand(consoleCommandHistory[next]); }
+                  if (next >= consoleCommandHistory.length) {
+                    setConsoleHistoryIndex(-1);
+                    setCommand('');
+                  } else {
+                    setConsoleHistoryIndex(next);
+                    setCommand(consoleCommandHistory[next]);
+                  }
                 }
               }}
-              placeholder={canSend ? 'Type a command… (↑↓ for history)' : 'Connect to send commands'}
+              placeholder={
+                canSend ? 'Type a command… (↑↓ for history)' : 'Connect to send commands'
+              }
               disabled={!canSend}
             />
             <button
@@ -1447,7 +1918,11 @@ function ServerDetailsPage() {
 
       {activeTab === 'backups' ? (
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-          <BackupSection serverId={server.id} serverStatus={server.status} isSuspended={isSuspended} />
+          <BackupSection
+            serverId={server.id}
+            serverStatus={server.status}
+            isSuspended={isSuspended}
+          />
         </div>
       ) : null}
 
@@ -1474,7 +1949,10 @@ function ServerDetailsPage() {
             ) : (
               <div className="space-y-3">
                 {tasks.map((task) => (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30" key={task.id}>
+                  <div
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30"
+                    key={task.id}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                         {task.name}
@@ -1492,19 +1970,27 @@ function ServerDetailsPage() {
                     <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-slate-400 sm:grid-cols-4">
                       <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
                         <div className="text-slate-500 dark:text-slate-500">Next run</div>
-                        <div className="text-slate-700 dark:text-slate-200">{formatDateTime(task.nextRunAt)}</div>
+                        <div className="text-slate-700 dark:text-slate-200">
+                          {formatDateTime(task.nextRunAt)}
+                        </div>
                       </div>
                       <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
                         <div className="text-slate-500 dark:text-slate-500">Last run</div>
-                        <div className="text-slate-700 dark:text-slate-200">{formatDateTime(task.lastRunAt)}</div>
+                        <div className="text-slate-700 dark:text-slate-200">
+                          {formatDateTime(task.lastRunAt)}
+                        </div>
                       </div>
                       <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
                         <div className="text-slate-500 dark:text-slate-500">Status</div>
-                        <div className="text-slate-700 dark:text-slate-200">{task.lastStatus ?? '—'}</div>
+                        <div className="text-slate-700 dark:text-slate-200">
+                          {task.lastStatus ?? '—'}
+                        </div>
                       </div>
                       <div className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-800 dark:bg-slate-900">
                         <div className="text-slate-500 dark:text-slate-500">Runs</div>
-                        <div className="text-slate-700 dark:text-slate-200">{task.runCount ?? 0}</div>
+                        <div className="text-slate-700 dark:text-slate-200">
+                          {task.runCount ?? 0}
+                        </div>
                       </div>
                     </div>
                     {task.lastError ? (
@@ -1521,7 +2007,9 @@ function ServerDetailsPage() {
                             ? 'border-emerald-200 text-emerald-700 hover:border-emerald-300 dark:border-emerald-500/40 dark:text-emerald-300'
                             : 'border-amber-200 text-amber-700 hover:border-amber-300 dark:border-amber-500/40 dark:text-amber-300'
                         }`}
-                        onClick={() => pauseMutation.mutate(task as { id: string; enabled: boolean })}
+                        onClick={() =>
+                          pauseMutation.mutate(task as { id: string; enabled: boolean })
+                        }
                         disabled={pauseMutation.isPending || isSuspended}
                       >
                         {task.enabled === false ? 'Resume' : 'Pause'}
@@ -1547,12 +2035,15 @@ function ServerDetailsPage() {
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Databases</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Databases
+              </div>
               <div className="text-xs text-slate-600 dark:text-slate-400">
                 Create and manage per-server database credentials.
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Allocation: {databaseAllocation === 0 ? 'Disabled' : `${databaseAllocation} databases`}
+                Allocation:{' '}
+                {databaseAllocation === 0 ? 'Disabled' : `${databaseAllocation} databases`}
               </div>
             </div>
             {canManageDatabases ? (
@@ -1615,7 +2106,9 @@ function ServerDetailsPage() {
           ) : null}
 
           {databasesLoading ? (
-            <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">Loading databases...</div>
+            <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+              Loading databases...
+            </div>
           ) : databasesError ? (
             <div className="mt-4 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
               Unable to load databases.
@@ -1702,10 +2195,14 @@ function ServerDetailsPage() {
                 </div>
                 <div
                   className={`flex items-center gap-2 text-xs ${
-                    isConnected ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'
+                    isConnected
+                      ? 'text-emerald-600 dark:text-emerald-300'
+                      : 'text-slate-500 dark:text-slate-400'
                   }`}
                 >
-                  <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500'}`} />
+                  <span
+                    className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500'}`}
+                  />
                   {isConnected ? 'Live' : 'Offline'}
                 </div>
               </div>
@@ -1776,7 +2273,9 @@ function ServerDetailsPage() {
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Mod manager</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Mod manager
+              </div>
               <div className="text-xs text-slate-600 dark:text-slate-400">
                 Search and install mods, datapacks, and modpacks.
               </div>
@@ -1784,7 +2283,10 @@ function ServerDetailsPage() {
           </div>
           {!modManagerConfig ? (
             <div className="mt-4">
-              <EmptyState title="Mod manager not enabled" description="This template does not define a mod manager." />
+              <EmptyState
+                title="Mod manager not enabled"
+                description="This template does not define a mod manager."
+              />
             </div>
           ) : (
             <div className="mt-4 space-y-4">
@@ -1793,12 +2295,12 @@ function ServerDetailsPage() {
                   Provider
                   <select
                     className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
-                    value={modProvider}
-                    onChange={(event) => setModProvider(event.target.value)}
+                    value={selectedModProvider?.key ?? ''}
+                    onChange={(event) => setModProviderKey(event.target.value)}
                   >
-                    {modManagerProviders.map((provider) => (
-                      <option key={provider} value={provider}>
-                        {provider}
+                    {modProviderOptions.map((providerEntry) => (
+                      <option key={providerEntry.key} value={providerEntry.key}>
+                        {providerEntry.label}
                       </option>
                     ))}
                   </select>
@@ -1824,19 +2326,28 @@ function ServerDetailsPage() {
                 </label>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <label className="block text-xs text-slate-500 dark:text-slate-300">
-                  Loader
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
-                    value={modLoader}
-                    onChange={(event) => setModLoader(event.target.value)}
-                  >
-                    <option value="forge">Forge</option>
-                    <option value="neoforge">NeoForge</option>
-                    <option value="fabric">Fabric</option>
-                    <option value="quilt">Quilt</option>
-                  </select>
-                </label>
+                {supportsModLoaderFilter ? (
+                  <label className="block text-xs text-slate-500 dark:text-slate-300">
+                    Loader
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                      value={modLoader}
+                      onChange={(event) => setModLoader(event.target.value)}
+                    >
+                      <option value="forge">Forge</option>
+                      <option value="neoforge">NeoForge</option>
+                      <option value="fabric">Fabric</option>
+                      <option value="quilt">Quilt</option>
+                    </select>
+                  </label>
+                ) : (
+                  <div className="block text-xs text-slate-500 dark:text-slate-300">
+                    Loader
+                    <div className="mt-1 rounded-lg border border-dashed border-slate-200 px-3 py-2 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                      Not required for {selectedModProvider?.label ?? 'this provider'}.
+                    </div>
+                  </div>
+                )}
                 <label className="block text-xs text-slate-500 dark:text-slate-300">
                   Target
                   <select
@@ -1844,12 +2355,25 @@ function ServerDetailsPage() {
                     value={modTarget}
                     onChange={(event) => setModTarget(event.target.value as typeof modTarget)}
                   >
-                    <option value="mods">Mods</option>
-                    <option value="datapacks">Datapacks</option>
-                    <option value="modpacks">Modpacks</option>
+                    {modTargetOptions.map((target) => (
+                      <option key={target} value={target}>
+                        {titleCase(target)}
+                      </option>
+                    ))}
                   </select>
                 </label>
-                <label className="block text-xs text-slate-500 dark:text-slate-300 md:col-span-2">
+                <label className="block text-xs text-slate-500 dark:text-slate-300">
+                  Game Version
+                  <input
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={modGameVersion}
+                    onChange={(event) => setModGameVersion(event.target.value)}
+                    placeholder={serverGameVersion || 'e.g. 1.20.1'}
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <label className="block text-xs text-slate-500 dark:text-slate-300">
                   Version
                   <select
                     className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
@@ -1859,13 +2383,9 @@ function ServerDetailsPage() {
                   >
                     <option value="">Select a version</option>
                     {modVersionOptions.map((version: any) => {
-                      const id = version.id ?? version.fileId ?? version.fileID ?? version.file?.id;
-                      const label =
-                        version.name ||
-                        version.version_number ||
-                        version.displayName ||
-                        version.fileName ||
-                        String(id);
+                      const id = normalizeVersionId(version);
+                      const label = normalizeVersionLabel(version);
+                      if (!id) return null;
                       return (
                         <option key={id} value={String(id)}>
                           {label}
@@ -1892,16 +2412,15 @@ function ServerDetailsPage() {
                   Unable to load search results.
                 </div>
               ) : modResults.length === 0 ? (
-                <EmptyState title="No results yet" description="Search for a mod or datapack to begin." />
+                <EmptyState
+                  title="No results yet"
+                  description="Search for a mod or datapack to begin."
+                />
               ) : (
                 <div className="space-y-3">
                   {modResults.map((entry: any) => {
                     const id =
-                      entry.project_id ||
-                      entry.id ||
-                      entry.modId ||
-                      entry.slug ||
-                      entry.name;
+                      entry.project_id || entry.id || entry.modId || entry.slug || entry.name;
                     const title = entry.title || entry.name || entry.slug || 'Untitled';
                     const summary = entry.description || entry.summary || entry.excerpt || '';
                     const isActive = selectedProject === String(id);
@@ -1910,20 +2429,27 @@ function ServerDetailsPage() {
                         ? entry.icon_url
                         : entry.logo?.thumbnailUrl || entry.logo?.url;
                     const providerLabel =
-                      modProvider === 'modrinth' ? 'Modrinth' : 'CurseForge';
+                      selectedModProvider?.label || displayProviderName(modProvider || 'provider');
                     let externalUrl = '';
                     if (modProvider === 'modrinth') {
                       const slug = entry.slug || entry.project_id || entry.id;
                       const projectType = entry.project_type || 'project';
-                      externalUrl = slug
-                        ? `https://modrinth.com/${projectType}/${slug}`
-                        : '';
+                      externalUrl = slug ? `https://modrinth.com/${projectType}/${slug}` : '';
                     } else {
                       externalUrl = entry.links?.websiteUrl || '';
                       if (!externalUrl) {
                         const slug = entry.slug || entry.id;
+                        const gamePath = modProviderGame || 'minecraft';
+                        const classPath =
+                          gamePath === 'hytale'
+                            ? 'mods'
+                            : modTarget === 'modpacks'
+                              ? 'modpacks'
+                              : modTarget === 'datapacks'
+                                ? 'data-packs'
+                                : 'mc-mods';
                         externalUrl = slug
-                          ? `https://www.curseforge.com/minecraft/mc-mods/${slug}`
+                          ? `https://www.curseforge.com/${gamePath}/${classPath}/${slug}`
                           : '';
                       }
                     }
@@ -1998,7 +2524,10 @@ function ServerDetailsPage() {
           </div>
           {!pluginManagerConfig ? (
             <div className="mt-4">
-              <EmptyState title="Plugin manager not enabled" description="This template does not define a plugin manager." />
+              <EmptyState
+                title="Plugin manager not enabled"
+                description="This template does not define a plugin manager."
+              />
             </div>
           ) : (
             <div className="mt-4 space-y-4">
@@ -2038,7 +2567,16 @@ function ServerDetailsPage() {
                 </label>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <label className="block text-xs text-slate-500 dark:text-slate-300 md:col-span-3">
+                <label className="block text-xs text-slate-500 dark:text-slate-300">
+                  Game Version
+                  <input
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    value={pluginGameVersion}
+                    onChange={(event) => setPluginGameVersion(event.target.value)}
+                    placeholder={serverGameVersion || 'e.g. 1.20.1'}
+                  />
+                </label>
+                <label className="block text-xs text-slate-500 dark:text-slate-300 md:col-span-2">
                   Version
                   <select
                     className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
@@ -2048,14 +2586,9 @@ function ServerDetailsPage() {
                   >
                     <option value="">Select a version</option>
                     {pluginVersionOptions.map((version: any) => {
-                      const id = version.id ?? version.versionId ?? version.fileId ?? version.file?.id;
-                      const label =
-                        version.name ||
-                        version.version ||
-                        version.version_number ||
-                        version.displayName ||
-                        version.fileName ||
-                        String(id);
+                      const id = normalizeVersionId(version);
+                      const label = normalizeVersionLabel(version);
+                      if (!id) return null;
                       return (
                         <option key={id} value={String(id)}>
                           {label}
@@ -2070,7 +2603,9 @@ function ServerDetailsPage() {
                   type="button"
                   className="rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                   onClick={() => installPluginMutation.mutate()}
-                  disabled={!selectedPlugin || !selectedPluginVersion || installPluginMutation.isPending}
+                  disabled={
+                    !selectedPlugin || !selectedPluginVersion || installPluginMutation.isPending
+                  }
                 >
                   Install
                 </button>
@@ -2103,7 +2638,8 @@ function ServerDetailsPage() {
                           entry.resourceId ||
                           entry.slug ||
                           entry.name;
-                    const title = entry.name || entry.title || entry.tag || entry.slug || 'Untitled';
+                    const title =
+                      entry.name || entry.title || entry.tag || entry.slug || 'Untitled';
                     const summary = entry.description || entry.summary || entry.tag || '';
                     const isActive = selectedPlugin === String(id);
                     const imageUrl =
@@ -2199,7 +2735,9 @@ function ServerDetailsPage() {
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Invite user</div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Invite user
+                </div>
                 <div className="text-xs text-slate-600 dark:text-slate-400">
                   Send an invite to grant access to this server.
                 </div>
@@ -2261,7 +2799,9 @@ function ServerDetailsPage() {
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Active access</div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Active access
+            </div>
             <div className="mt-4 space-y-3 text-xs text-slate-600 dark:text-slate-300">
               {permissionsData?.data?.length ? (
                 permissionsData.data.map((entry) => (
@@ -2274,7 +2814,9 @@ function ServerDetailsPage() {
                         <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                           {entry.user.username}
                         </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400">{entry.user.email}</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">
+                          {entry.user.email}
+                        </div>
                       </div>
                       {entry.userId !== server.ownerId ? (
                         <button
@@ -2297,7 +2839,9 @@ function ServerDetailsPage() {
                           <input
                             type="checkbox"
                             className="h-4 w-4 rounded border-slate-200 bg-white text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-400"
-                            checked={(accessPermissions[entry.userId] ?? entry.permissions).includes(perm)}
+                            checked={(
+                              accessPermissions[entry.userId] ?? entry.permissions
+                            ).includes(perm)}
                             onChange={(event) => {
                               if (entry.userId === server.ownerId) return;
                               setAccessPermissions((current) => {
@@ -2339,7 +2883,9 @@ function ServerDetailsPage() {
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Pending invites</div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Pending invites
+            </div>
             <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-slate-300">
               {invites.length ? (
                 invites.map((invite) => (
@@ -2348,7 +2894,9 @@ function ServerDetailsPage() {
                     className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-primary-500/30"
                   >
                     <div>
-                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{invite.email}</div>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {invite.email}
+                      </div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400">
                         Expires {new Date(invite.expiresAt).toLocaleString()}
                       </div>
@@ -2374,352 +2922,519 @@ function ServerDetailsPage() {
       ) : null}
 
       {activeTab === 'configuration' ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Server settings</div>
-              <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                <div className="flex items-center justify-between">
-                  <span>Template</span>
-                  <span className="text-slate-900 dark:text-slate-100">
-                    {server.template?.name ?? server.templateId}
-                  </span>
+        <div className="space-y-6">
+          {/* ── Startup & Environment ── */}
+          {isAdmin && (
+            <section>
+              <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+                Startup
+                <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+              </h3>
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Startup command</div>
+                    <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                      Executed when the server starts.{' '}
+                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] dark:bg-slate-800">{'{{MEMORY}}'}</code>,{' '}
+                      <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] dark:bg-slate-800">{'{{PORT}}'}</code>{' '}
+                      and other variables are substituted from the environment below.
+                    </p>
+                  </div>
+                  {server.startupCommand && (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md border border-slate-200 px-2.5 py-1 text-[10px] font-medium text-slate-500 transition-colors hover:border-primary-500 hover:text-primary-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-primary-400 dark:hover:text-primary-400"
+                      onClick={() => {
+                        setStartupCommand(server.template?.startup ?? '');
+                        serversApi.update(serverId!, { startupCommand: null }).then(() => {
+                          notifySuccess('Reset to template default');
+                          queryClient.invalidateQueries({ queryKey: ['server', serverId] });
+                        }).catch(() => notifyError('Failed to reset startup command'));
+                      }}
+                      disabled={isSuspended}
+                    >
+                      Reset to default
+                    </button>
+                  )}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span>Image</span>
-                  <span className="text-slate-900 dark:text-slate-100">
-                    {server.environment?.TEMPLATE_IMAGE || server.template?.defaultImage || server.template?.image || 'n/a'}
-                  </span>
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-900 transition-colors focus:border-primary-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400 dark:focus:bg-slate-900"
+                    value={startupCommand}
+                    onChange={(event) => setStartupCommand(event.target.value)}
+                    placeholder="e.g. java -Xms128M -Xmx{{MEMORY}}M -jar server.jar --port {{PORT}}"
+                    disabled={isSuspended}
+                  />
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-primary-500 disabled:opacity-50"
+                    onClick={() => startupCommandMutation.mutate()}
+                    disabled={
+                      isSuspended ||
+                      startupCommandMutation.isPending ||
+                      !startupCommand.trim() ||
+                      startupCommand.trim() === (server.startupCommand ?? server.template?.startup ?? '')
+                    }
+                  >
+                    Save
+                  </button>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span>Memory</span>
-                  <span className="text-slate-900 dark:text-slate-100">
-                    {server.allocatedMemoryMb} MB
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>CPU cores</span>
-                  <span className="text-slate-900 dark:text-slate-100">
-                    {server.allocatedCpuCores}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Primary port</span>
-                  <span className="text-slate-900 dark:text-slate-100">{server.primaryPort}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Network</span>
-                  <span className="text-slate-900 dark:text-slate-100">{server.networkMode}</span>
+                {server.template?.startup && startupCommand.trim() !== server.template.startup && (
+                  <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+                    Template default:{' '}
+                    <button
+                      type="button"
+                      className="font-mono underline decoration-dotted hover:text-primary-500"
+                      onClick={() => setStartupCommand(server.template?.startup ?? '')}
+                    >
+                      {server.template.startup}
+                    </button>
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* ── Server Overview & Environment ── */}
+          <section>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+              Server
+              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+            </h3>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* Server info */}
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Overview</div>
+                <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+                  {[
+                    ['Template', server.template?.name ?? server.templateId],
+                    ['Image', server.environment?.TEMPLATE_IMAGE || server.template?.defaultImage || server.template?.image || 'n/a'],
+                    ['Memory', `${server.allocatedMemoryMb} MB`],
+                    ['CPU', `${server.allocatedCpuCores} core${server.allocatedCpuCores === 1 ? '' : 's'}`],
+                    ['Port', server.primaryPort],
+                    ['Network', server.networkMode],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{label}</span>
+                      <span className="text-xs font-medium text-slate-900 dark:text-slate-100">{String(value)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Environment</div>
-              <div className="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
-                {server.environment ? (
-                  Object.entries(server.environment).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between gap-4">
-                      <span className="uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        {key}
-                      </span>
-                      <span className="text-slate-900 dark:text-slate-100">{String(value)}</span>
-                    </div>
-                  ))
+
+              {/* Environment variables */}
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Environment</div>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-primary-500/10 dark:hover:text-primary-400"
+                      onClick={() => { setEnvVars((prev) => [...prev, { key: '', value: '' }]); setEnvDirty(true); }}
+                      disabled={isSuspended}
+                    >
+                      + Add variable
+                    </button>
+                  )}
+                </div>
+                {isAdmin ? (
+                  <div className="mt-4 space-y-2">
+                    {envVars.length === 0 && (
+                      <p className="py-4 text-center text-xs text-slate-400 dark:text-slate-500">No environment variables. Click "+ Add variable" to begin.</p>
+                    )}
+                    {envVars.map((row, idx) => (
+                      <div key={idx} className="group flex items-center gap-2">
+                        <input
+                          className="w-[130px] shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] uppercase text-slate-700 transition-colors focus:border-primary-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:focus:border-primary-400 dark:focus:bg-slate-900"
+                          value={row.key}
+                          onChange={(e) => { const next = [...envVars]; next[idx] = { ...next[idx], key: e.target.value }; setEnvVars(next); setEnvDirty(true); }}
+                          placeholder="KEY"
+                          disabled={isSuspended}
+                        />
+                        <span className="text-[10px] text-slate-300 dark:text-slate-600">=</span>
+                        <input
+                          className="min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] text-slate-700 transition-colors focus:border-primary-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:focus:border-primary-400 dark:focus:bg-slate-900"
+                          value={row.value}
+                          onChange={(e) => { const next = [...envVars]; next[idx] = { ...next[idx], value: e.target.value }; setEnvVars(next); setEnvDirty(true); }}
+                          placeholder="value"
+                          disabled={isSuspended}
+                        />
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-md p-1 text-slate-300 opacity-0 transition-all group-hover:opacity-100 hover:text-rose-500 dark:text-slate-600 dark:hover:text-rose-400"
+                          onClick={() => { setEnvVars((prev) => prev.filter((_, i) => i !== idx)); setEnvDirty(true); }}
+                          disabled={isSuspended}
+                          title="Remove"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    ))}
+                    {envDirty && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          className="rounded-lg bg-primary-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-primary-500 disabled:opacity-50"
+                          onClick={() => envMutation.mutate()}
+                          disabled={isSuspended || envMutation.isPending}
+                        >
+                          {envMutation.isPending ? 'Saving…' : 'Save environment'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  <div className="text-slate-500 dark:text-slate-500">No environment variables set.</div>
+                  <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+                    {server.environment && Object.keys(server.environment).length > 0 ? (
+                      Object.entries(server.environment).map(([key, value]) => (
+                        <div key={key} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
+                          <span className="font-mono text-[11px] uppercase text-slate-500 dark:text-slate-400">{key}</span>
+                          <span className="text-xs font-medium text-slate-900 dark:text-slate-100">{String(value)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="py-4 text-center text-xs text-slate-400 dark:text-slate-500">No environment variables set.</p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-primary-500/30">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  Config files
-                </div>
-                <div className="text-xs text-slate-600 dark:text-slate-400">
-                  {combinedConfigPaths.length ? combinedConfigPaths.join(', ') : 'No config files defined in template.'}
-                </div>
+          </section>
+
+          {/* ── Config Files ── */}
+          <section>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+              Config files
+              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700/60" />
+            </h3>
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {combinedConfigPaths.length
+                    ? combinedConfigPaths.join(', ')
+                    : 'No config files defined in template.'}
+                </p>
               </div>
-            </div>
-            <div className="mt-3">
-              <input
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
-                placeholder="Search config keys or values..."
-                value={configSearch}
-                onChange={(event) => setConfigSearch(event.target.value)}
-              />
-            </div>
-            <div className="mt-3 space-y-3">
-              {!combinedConfigPaths.length ? (
-                <div className="text-xs text-slate-500 dark:text-slate-500">
-                  Add features.configFiles to the template to enable dynamic settings.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredConfigFiles.length === 0 ? (
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300">
-                      No matches found.
-                    </div>
-                  ) : (
-                    filteredConfigFiles.map((configFile) => (
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 transition-all duration-300 hover:border-primary-500 dark:border-slate-600 dark:bg-slate-800/90 dark:hover:border-primary-500/30" key={configFile.path}>
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs text-slate-700 transition-all duration-300 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700/80"
-                        onClick={() => {
-                          if (configSearch) return;
-                          const fileIndex = fileIndexByPath.get(configFile.path) ?? -1;
-                          setOpenConfigIndex((current) => (current === fileIndex ? -1 : fileIndex));
-                        }}
-                      >
-                        <span className="font-semibold">{configFile.path}</span>
-                        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-500 dark:bg-slate-700/90 dark:text-slate-100">
-                          {configSearch
-                            ? 'Expanded'
-                            : openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1)
-                              ? 'Collapse'
-                              : 'Expand'}
-                        </span>
-                      </button>
-                      {configSearch || openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1) ? (
-                        <div className="border-t border-slate-200 px-3 py-3 dark:border-slate-600">
-                          {!configFile.loaded ? (
-                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                              Loading config values...
-                            </div>
-                          ) : configFile.error ? (
-                            <div className="rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-                              {configFile.error}
-                            </div>
-                          ) : (
-                            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-200">
-                              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] uppercase tracking-wide text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold">View mode</span>
-                                  {configSearch ? (
-                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:border-slate-500 dark:bg-slate-700/80 dark:text-slate-100">
-                                      Filtered
-                                    </span>
-                                  ) : null}
+              <div className="mt-3">
+                <input
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 transition-colors focus:border-primary-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400 dark:focus:bg-slate-900"
+                  placeholder="Search config keys or values…"
+                  value={configSearch}
+                  onChange={(event) => setConfigSearch(event.target.value)}
+                />
+              </div>
+              <div className="mt-4 space-y-3">
+                {!combinedConfigPaths.length ? (
+                  <p className="py-4 text-center text-xs text-slate-400 dark:text-slate-500">
+                    Add <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] dark:bg-slate-800">features.configFiles</code> to the template to enable dynamic settings.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredConfigFiles.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-slate-200 py-4 text-center text-xs text-slate-400 dark:border-slate-700 dark:text-slate-500">No matches found.</p>
+                    ) : (
+                      filteredConfigFiles.map((configFile) => (
+                        <div
+                          className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50/50 transition-colors dark:border-slate-700 dark:bg-slate-800/40"
+                          key={configFile.path}
+                        >
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-xs transition-colors hover:bg-slate-100/80 dark:hover:bg-slate-800/80"
+                            onClick={() => {
+                              if (configSearch) return;
+                              const fileIndex = fileIndexByPath.get(configFile.path) ?? -1;
+                              setOpenConfigIndex((current) =>
+                                current === fileIndex ? -1 : fileIndex,
+                              );
+                            }}
+                          >
+                            <span className="font-semibold text-slate-700 dark:text-slate-200">{configFile.path}</span>
+                            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide transition-colors ${
+                              configSearch || openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1)
+                                ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-400'
+                                : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                            }`}>
+                              {configSearch
+                                ? 'Filtered'
+                                : openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1)
+                                  ? 'Collapse'
+                                  : 'Expand'}
+                            </span>
+                          </button>
+                          {configSearch ||
+                          openConfigIndex === (fileIndexByPath.get(configFile.path) ?? -1) ? (
+                            <div className="border-t border-slate-200 px-4 py-4 dark:border-slate-700">
+                              {!configFile.loaded ? (
+                                <p className="text-xs text-slate-400 dark:text-slate-500">Loading config values…</p>
+                              ) : configFile.error ? (
+                                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                                  {configFile.error}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide transition-all duration-300 ${
-                                      configFile.viewMode === 'form'
-                                        ? 'border-primary-500/60 bg-primary-500/10 text-primary-600 dark:text-primary-300'
-                                        : 'border-slate-200 text-slate-600 hover:border-primary-500 dark:border-slate-500 dark:text-slate-200'
-                                    }`}
-                                    onClick={() =>
-                                      setConfigFiles((current) =>
-                                        current.map((file, fileIdx) =>
-                                          file.path === configFile.path ? { ...file, viewMode: 'form' } : file,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    Form
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold tracking-wide transition-all duration-300 ${
-                                      configFile.viewMode === 'raw'
-                                        ? 'border-primary-500/60 bg-primary-500/10 text-primary-600 dark:text-primary-300'
-                                        : 'border-slate-200 text-slate-600 hover:border-primary-500 dark:border-slate-500 dark:text-slate-200'
-                                    }`}
-                                    onClick={() =>
-                                      setConfigFiles((current) =>
-                                        current.map((file, fileIdx) =>
-                                          file.path === configFile.path ? { ...file, viewMode: 'raw' } : file,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    Raw
-                                  </button>
-                                </div>
-                              </div>
-                              {configFile.viewMode === 'raw' ? (
-                                <textarea
-                                  className="min-h-[240px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-700 transition-all duration-300 focus:border-primary-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
-                                  value={configFile.rawContent}
-                                  onChange={(event) =>
-                                    setConfigFiles((current) =>
-                                      current.map((file, fileIdx) =>
-                                        file.path === configFile.path ? { ...file, rawContent: event.target.value } : file,
-                                      ),
-                                    )
-                                  }
-                                />
                               ) : (
-                                <div className="space-y-4">
-                                  {configFile.sections.map((section, sectionIndex) => (
-                                    <div
-                                      key={`${configFile.path}-${section.title}`}
-                                      className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-800/90"
-                                    >
+                                <div className="space-y-3 text-xs text-slate-600 dark:text-slate-200">
+                                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold">View</span>
+                                      {configSearch ? (
+                                        <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold text-primary-600 dark:bg-primary-500/10 dark:text-primary-400">
+                                          Filtered
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="flex items-center overflow-hidden rounded-full border border-slate-200 dark:border-slate-600">
                                       <button
                                         type="button"
-                                        className="flex w-full items-center justify-between text-left"
+                                        className={`px-3 py-1 text-[10px] font-semibold tracking-wide transition-colors ${
+                                          configFile.viewMode === 'form'
+                                            ? 'bg-primary-600 text-white dark:bg-primary-500'
+                                            : 'bg-white text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                                        }`}
                                         onClick={() =>
                                           setConfigFiles((current) =>
-                                            current.map((file, fileIdx) => {
-                                              if (file.path !== configFile.path) return file;
-                                              return {
-                                                ...file,
-                                                sections: file.sections.map((sectionItem, secIdx) =>
-                                                  secIdx === sectionIndex
-                                                    ? {
-                                                        ...sectionItem,
-                                                        collapsed: !sectionItem.collapsed,
-                                                      }
-                                                    : sectionItem,
-                                                ),
-                                              };
-                                            }),
+                                            current.map((file) =>
+                                              file.path === configFile.path
+                                                ? { ...file, viewMode: 'form' }
+                                                : file,
+                                            ),
                                           )
                                         }
                                       >
-                                        <div className="flex items-center gap-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                          <span className="h-2 w-2 rounded-full bg-primary-500" />
-                                          <span className="uppercase tracking-wide">{section.title}</span>
-                                        </div>
-                                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-500 dark:bg-slate-700/90 dark:text-slate-100">
-                                          {section.collapsed ? 'Expand' : 'Collapse'}
-                                        </span>
+                                        Form
                                       </button>
-                                      {section.collapsed ? null : (
-                                        <div className="mt-4 space-y-4">
-                                          <div className="space-y-3">
-                                            {section.entries.map((entry, entryIndex) =>
-                                              entry.type === 'object' ? (
-                                                <div key={`${entry.key}-${entryIndex}`} className="p-3">
-                                                  <div className="flex items-center justify-between">
-                                                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
-                                                      {entry.key || 'Object'}
-                                                    </h4>
-                                                    <button
-                                                      type="button"
-                                                      className="text-[10px] font-semibold uppercase tracking-wide text-primary-600 transition-all duration-300 hover:text-primary-500 dark:text-primary-300 dark:hover:text-primary-200"
-                                                      onClick={() =>
-                                                        addConfigEntry(fileIndexByPath.get(configFile.path) ?? 0, sectionIndex, entryIndex)
-                                                      }
-                                                    >
-                                                      Add entry
-                                                    </button>
-                                                  </div>
-                                                  <div className="mt-3">
-                                                    {(entry.children ?? []).map((child, childIndex) => (
-                                                      <div
-                                                        key={`${entry.key}-${child.key}-${childIndex}`}
-                                                        className="space-y-3 border-b border-slate-200 dark:border-slate-700/60 px-3 py-3 last:border-b-0"
+                                      <button
+                                        type="button"
+                                        className={`px-3 py-1 text-[10px] font-semibold tracking-wide transition-colors ${
+                                          configFile.viewMode === 'raw'
+                                            ? 'bg-primary-600 text-white dark:bg-primary-500'
+                                            : 'bg-white text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                                        }`}
+                                        onClick={() =>
+                                          setConfigFiles((current) =>
+                                            current.map((file) =>
+                                              file.path === configFile.path
+                                                ? { ...file, viewMode: 'raw' }
+                                                : file,
+                                            ),
+                                          )
+                                        }
+                                      >
+                                        Raw
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {configFile.viewMode === 'raw' ? (
+                                    <textarea
+                                      className="min-h-[240px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 transition-colors focus:border-primary-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400 dark:focus:bg-slate-900"
+                                      value={configFile.rawContent}
+                                      onChange={(event) =>
+                                        setConfigFiles((current) =>
+                                          current.map((file) =>
+                                            file.path === configFile.path
+                                              ? { ...file, rawContent: event.target.value }
+                                              : file,
+                                          ),
+                                        )
+                                      }
+                                    />
+                                ) : (
+                                  <div className="space-y-4">
+                                    {configFile.sections.map((section, sectionIndex) => (
+                                      <div
+                                        key={`${configFile.path}-${section.title}`}
+                                        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60"
+                                      >
+                                        <button
+                                          type="button"
+                                          className="flex w-full items-center justify-between text-left"
+                                          onClick={() =>
+                                            setConfigFiles((current) =>
+                                              current.map((file, fileIdx) => {
+                                                if (file.path !== configFile.path) return file;
+                                                return {
+                                                  ...file,
+                                                  sections: file.sections.map(
+                                                    (sectionItem, secIdx) =>
+                                                      secIdx === sectionIndex
+                                                        ? {
+                                                            ...sectionItem,
+                                                            collapsed: !sectionItem.collapsed,
+                                                          }
+                                                        : sectionItem,
+                                                  ),
+                                                };
+                                              }),
+                                            )
+                                          }
+                                        >
+                                          <div className="flex items-center gap-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                            <span className="h-2 w-2 rounded-full bg-primary-500" />
+                                            <span className="uppercase tracking-wide">
+                                              {section.title}
+                                            </span>
+                                          </div>
+                                          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide ${section.collapsed ? 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400' : 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-400'}`}>
+                                            {section.collapsed ? 'Expand' : 'Collapse'}
+                                          </span>
+                                        </button>
+                                        {section.collapsed ? null : (
+                                          <div className="mt-4 space-y-4">
+                                            <div className="space-y-3">
+                                              {section.entries.map((entry, entryIndex) =>
+                                                entry.type === 'object' ? (
+                                                  <div
+                                                    key={`${entry.key}-${entryIndex}`}
+                                                    className="p-3"
+                                                  >
+                                                    <div className="flex items-center justify-between">
+                                                      <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
+                                                        {entry.key || 'Object'}
+                                                      </h4>
+                                                      <button
+                                                        type="button"
+                                                        className="text-[10px] font-semibold uppercase tracking-wide text-primary-600 transition-all duration-300 hover:text-primary-500 dark:text-primary-300 dark:hover:text-primary-200"
+                                                        onClick={() =>
+                                                          addConfigEntry(
+                                                            fileIndexByPath.get(configFile.path) ??
+                                                              0,
+                                                            sectionIndex,
+                                                            entryIndex,
+                                                          )
+                                                        }
                                                       >
-                                                        <div className="flex items-start justify-between gap-3">
+                                                        Add entry
+                                                      </button>
+                                                    </div>
+                                                    <div className="mt-3">
+                                                      {(entry.children ?? []).map(
+                                                        (child, childIndex) => (
+                                                          <div
+                                                            key={`${entry.key}-${child.key}-${childIndex}`}
+                                                            className="space-y-3 border-b border-slate-200 dark:border-slate-700/60 px-3 py-3 last:border-b-0"
+                                                          >
+                                                            <div className="flex items-start justify-between gap-3">
+                                                              <div className="text-base font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
+                                                                {child.key || 'Key'}
+                                                              </div>
+                                                              <button
+                                                                type="button"
+                                                                className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-200 bg-rose-100/60 text-[11px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-700/70 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:border-rose-500"
+                                                                onClick={() =>
+                                                                  removeConfigEntry(
+                                                                    fileIndexByPath.get(
+                                                                      configFile.path,
+                                                                    ) ?? 0,
+                                                                    sectionIndex,
+                                                                    entryIndex,
+                                                                    childIndex,
+                                                                  )
+                                                                }
+                                                              >
+                                                                ✕
+                                                              </button>
+                                                            </div>
+                                                            {renderValueInput(child, (value) =>
+                                                              updateConfigEntry(
+                                                                fileIndexByPath.get(
+                                                                  configFile.path,
+                                                                ) ?? 0,
+                                                                sectionIndex,
+                                                                entryIndex,
+                                                                { value },
+                                                                childIndex,
+                                                              ),
+                                                            )}
+                                                          </div>
+                                                        ),
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                ) : (
+                                                  <div
+                                                    key={`${entry.key}-${entryIndex}`}
+                                                    className="space-y-3 border-b border-slate-200 px-3 py-3 last:border-b-0 dark:border-slate-700/60"
+                                                  >
+                                                    <div className="flex items-start justify-between gap-3">
                                                       <div className="text-base font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
-                                                        {child.key || 'Key'}
+                                                        {entry.key || 'Key'}
                                                       </div>
                                                       <button
                                                         type="button"
                                                         className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-200 bg-rose-100/60 text-[11px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-700/70 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:border-rose-500"
                                                         onClick={() =>
                                                           removeConfigEntry(
-                                                            fileIndexByPath.get(configFile.path) ?? 0,
-                                                                sectionIndex,
-                                                                entryIndex,
-                                                                childIndex,
-                                                              )
-                                                            }
-                                                          >
-                                                            ✕
-                                                          </button>
-                                                        </div>
-                                                        {renderValueInput(child, (value) =>
-                                                          updateConfigEntry(
-                                                            fileIndexByPath.get(configFile.path) ?? 0,
+                                                            fileIndexByPath.get(configFile.path) ??
+                                                              0,
                                                             sectionIndex,
                                                             entryIndex,
-                                                            { value },
-                                                            childIndex,
-                                                          ),
-                                                        )}
-                                                      </div>
-                                                    ))}
-                                                  </div>
-                                                </div>
-                                              ) : (
-                                                <div
-                                                  key={`${entry.key}-${entryIndex}`}
-                                                  className="space-y-3 border-b border-slate-200 px-3 py-3 last:border-b-0 dark:border-slate-700/60"
-                                                >
-                                                  <div className="flex items-start justify-between gap-3">
-                                                    <div className="text-base font-semibold text-slate-900 dark:text-slate-900 dark:text-slate-100">
-                                                      {entry.key || 'Key'}
+                                                          )
+                                                        }
+                                                      >
+                                                        ✕
+                                                      </button>
                                                     </div>
-                                                    <button
-                                                      type="button"
-                                                      className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-200 bg-rose-100/60 text-[11px] font-semibold text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-700/70 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:border-rose-500"
-                                                      onClick={() =>
-                                                        removeConfigEntry(
-                                                          fileIndexByPath.get(configFile.path) ?? 0,
-                                                          sectionIndex,
-                                                          entryIndex,
-                                                        )
-                                                      }
-                                                    >
-                                                      ✕
-                                                    </button>
+                                                    {renderValueInput(entry, (value) =>
+                                                      updateConfigEntry(
+                                                        fileIndexByPath.get(configFile.path) ?? 0,
+                                                        sectionIndex,
+                                                        entryIndex,
+                                                        { value },
+                                                      ),
+                                                    )}
                                                   </div>
-                                                  {renderValueInput(entry, (value) =>
-                                                    updateConfigEntry(
-                                                      fileIndexByPath.get(configFile.path) ?? 0,
-                                                      sectionIndex,
-                                                      entryIndex,
-                                                      { value },
-                                                    ),
-                                                  )}
-                                                </div>
-                                              ),
-                                            )}
+                                                ),
+                                              )}
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <button
+                                                type="button"
+                                                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:border-primary-500/30"
+                                                onClick={() =>
+                                                  addConfigEntry(
+                                                    fileIndexByPath.get(configFile.path) ?? 0,
+                                                    sectionIndex,
+                                                  )
+                                                }
+                                              >
+                                                Add entry
+                                              </button>
+                                            </div>
                                           </div>
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <button
-                                              type="button"
-                                              className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:border-primary-500/30"
-                                              onClick={() =>
-                                                addConfigEntry(fileIndexByPath.get(configFile.path) ?? 0, sectionIndex)
-                                              }
-                                            >
-                                              Add entry
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="rounded-md bg-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                                    onClick={() =>
+                                      configMutation.mutate(
+                                        fileIndexByPath.get(configFile.path) ?? 0,
+                                      )
+                                    }
+                                    disabled={configMutation.isPending}
+                                  >
+                                    Save config
+                                  </button>
                                 </div>
-                              )}
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  type="button"
-                                  className="rounded-md bg-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
-                                  onClick={() => configMutation.mutate(fileIndexByPath.get(configFile.path) ?? 0)}
-                                  disabled={configMutation.isPending}
-                                >
-                                  Save config
-                                </button>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                  </div>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+          </section>
         </div>
       ) : null}
 
@@ -2729,7 +3444,9 @@ function ServerDetailsPage() {
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Suspension</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    Suspension
+                  </div>
                   <div className="text-xs text-slate-600 dark:text-slate-400">
                     Suspend or restore access to the server.
                   </div>
@@ -2814,7 +3531,9 @@ function ServerDetailsPage() {
                   type="button"
                   className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
                   onClick={() => addAllocationMutation.mutate()}
-                  disabled={server.status !== 'stopped' || isSuspended || addAllocationMutation.isPending}
+                  disabled={
+                    server.status !== 'stopped' || isSuspended || addAllocationMutation.isPending
+                  }
                 >
                   Add allocation
                 </button>
@@ -2935,7 +3654,9 @@ function ServerDetailsPage() {
                 </button>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   Crashes: {server.crashCount ?? 0} / {server.maxCrashCount ?? 0}
-                  {server.lastCrashAt ? ` · Last crash ${new Date(server.lastCrashAt).toLocaleString()}` : ''}
+                  {server.lastCrashAt
+                    ? ` · Last crash ${new Date(server.lastCrashAt).toLocaleString()}`
+                    : ''}
                   {server.lastExitCode !== null && server.lastExitCode !== undefined
                     ? ` · Exit ${server.lastExitCode}`
                     : ''}
@@ -2957,12 +3678,18 @@ function ServerDetailsPage() {
             </div>
 
             <div className="rounded-xl border border-rose-200 bg-rose-100/60 px-4 py-4 dark:border-rose-500/30 dark:bg-rose-500/10">
-              <div className="text-sm font-semibold text-rose-700 dark:text-rose-200">Danger zone</div>
+              <div className="text-sm font-semibold text-rose-700 dark:text-rose-200">
+                Danger zone
+              </div>
               <p className="mt-2 text-xs text-rose-600 dark:text-rose-200">
                 Deleting the server removes all data and cannot be undone.
               </p>
               <div className="mt-3">
-                <DeleteServerDialog serverId={server.id} serverName={server.name} disabled={isSuspended} />
+                <DeleteServerDialog
+                  serverId={server.id}
+                  serverName={server.name}
+                  disabled={isSuspended}
+                />
               </div>
             </div>
           </div>
@@ -2977,7 +3704,9 @@ function ServerDetailsPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Rename server</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Rename server
+              </div>
               <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
                 Update how this server appears in your list.
               </p>
@@ -3005,7 +3734,9 @@ function ServerDetailsPage() {
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Maintenance</div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Maintenance
+              </div>
               <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
                 Reinstalling will re-run the template install script and may overwrite files.
               </p>
@@ -3023,7 +3754,6 @@ function ServerDetailsPage() {
           </div>
         </div>
       ) : null}
-
     </div>
   );
 }
