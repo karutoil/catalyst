@@ -268,6 +268,26 @@ const patchTemplateForRuntime = (template: any) => {
   }
 
   const patched = { ...template } as any;
+  const defaultHytaleModManager = {
+    targets: ["mods"],
+    providers: [
+      {
+        id: "curseforge",
+        label: "CurseForge (Hytale)",
+        game: "hytale",
+        targets: ["mods"],
+        curseforge: {
+          gameSlug: "hytale",
+          classSlugs: {
+            mods: "mods",
+          },
+        },
+      },
+    ],
+    paths: {
+      mods: "/mods",
+    },
+  };
 
   if (typeof patched.installScript === "string") {
     patched.installScript = patched.installScript
@@ -299,6 +319,21 @@ const patchTemplateForRuntime = (template: any) => {
       .replace(/\s+-XX:SharedArchiveFile(?:=\S+)?/g, "")
       .replace(/\s{2,}/g, " ")
       .trim();
+  }
+
+  const existingFeatures =
+    patched.features && typeof patched.features === "object" ? patched.features : {};
+  const existingModManager = existingFeatures.modManager;
+  const hasModManagerProviders =
+    existingModManager &&
+    typeof existingModManager === "object" &&
+    Array.isArray(existingModManager.providers) &&
+    existingModManager.providers.length > 0;
+  if (!hasModManagerProviders) {
+    patched.features = {
+      ...existingFeatures,
+      modManager: defaultHytaleModManager,
+    };
   }
 
   return patched;
@@ -471,16 +506,346 @@ export async function serverRoutes(app: FastifyInstance) {
     return headers;
   };
 
+  type ModManagerTarget = "mods" | "datapacks" | "modpacks";
+  type NormalizedModManagerProvider = {
+    id: string;
+    label?: string;
+    game?: string;
+    targets?: ModManagerTarget[];
+    curseforge?: {
+      gameId?: string;
+      gameSlug?: string;
+      classIds?: Partial<Record<ModManagerTarget, string>>;
+      classSlugs?: Partial<Record<ModManagerTarget, string>>;
+      modLoaderMap?: Record<string, string>;
+    };
+  };
+  type NormalizedModManager = {
+    providers: NormalizedModManagerProvider[];
+    paths?: { mods?: string; datapacks?: string; modpacks?: string };
+    targets?: ModManagerTarget[];
+  };
+
+  const modManagerDefaultTargets: ModManagerTarget[] = ["mods", "datapacks", "modpacks"];
+  const curseforgeGameIdCache = new Map<string, string>();
+  const curseforgeClassIdCache = new Map<string, string>();
+
+  const normalizeTargetValue = (value: unknown): ModManagerTarget | null => {
+    if (typeof value !== "string") return null;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "mods" || normalized === "datapacks" || normalized === "modpacks") {
+      return normalized;
+    }
+    return null;
+  };
+
+  const normalizeTargetList = (value: unknown): ModManagerTarget[] => {
+    if (!Array.isArray(value)) return [];
+    const normalized = value
+      .map((entry) => normalizeTargetValue(entry))
+      .filter((entry): entry is ModManagerTarget => Boolean(entry));
+    return Array.from(new Set(normalized));
+  };
+
+  const normalizeCurseforgeIdMap = (
+    value: unknown
+  ): Partial<Record<ModManagerTarget, string>> | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+    const next: Partial<Record<ModManagerTarget, string>> = {};
+    for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
+      const key = normalizeTargetValue(rawKey);
+      if (!key) continue;
+      const normalizedValue =
+        typeof rawValue === "number"
+          ? String(rawValue)
+          : typeof rawValue === "string"
+            ? rawValue.trim()
+            : "";
+      if (!normalizedValue) continue;
+      next[key] = normalizedValue;
+    }
+    return Object.keys(next).length ? next : undefined;
+  };
+
+  const normalizeModLoaderMap = (value: unknown): Record<string, string> | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+    const entries = Object.entries(value as Record<string, unknown>)
+      .map(([loader, mapped]) => {
+        const normalizedLoader = loader.trim().toLowerCase();
+        const normalizedMapped =
+          typeof mapped === "number"
+            ? String(mapped)
+            : typeof mapped === "string"
+              ? mapped.trim()
+              : "";
+        if (!normalizedLoader || !normalizedMapped) return null;
+        return [normalizedLoader, normalizedMapped] as const;
+      })
+      .filter((entry): entry is readonly [string, string] => Boolean(entry));
+    if (!entries.length) return undefined;
+    return Object.fromEntries(entries);
+  };
+
+  const normalizeModManagerProvider = (value: unknown): NormalizedModManagerProvider | null => {
+    if (typeof value === "string") {
+      const id = value.trim().toLowerCase();
+      return id ? { id } : null;
+    }
+    if (!value || typeof value !== "object") return null;
+    const source = value as Record<string, unknown>;
+    const idRaw = source.id ?? source.provider;
+    if (typeof idRaw !== "string" || !idRaw.trim()) return null;
+    const id = idRaw.trim().toLowerCase();
+    const game =
+      typeof source.game === "string" && source.game.trim()
+        ? source.game.trim().toLowerCase()
+        : undefined;
+    const label =
+      typeof source.label === "string" && source.label.trim()
+        ? source.label.trim()
+        : undefined;
+
+    const curseforge =
+      source.curseforge && typeof source.curseforge === "object"
+        ? (source.curseforge as Record<string, unknown>)
+        : null;
+    const gameIdRaw = curseforge?.gameId;
+    const gameId =
+      typeof gameIdRaw === "number"
+        ? String(gameIdRaw)
+        : typeof gameIdRaw === "string" && gameIdRaw.trim()
+          ? gameIdRaw.trim()
+          : undefined;
+    const gameSlugRaw = curseforge?.gameSlug ?? game;
+    const gameSlug =
+      typeof gameSlugRaw === "string" && gameSlugRaw.trim()
+        ? gameSlugRaw.trim().toLowerCase()
+        : undefined;
+    const classIds = normalizeCurseforgeIdMap(curseforge?.classIds);
+    const classSlugs = normalizeCurseforgeIdMap(curseforge?.classSlugs);
+    const modLoaderMap = normalizeModLoaderMap(curseforge?.modLoaderMap);
+
+    return {
+      id,
+      label,
+      game,
+      targets: normalizeTargetList(source.targets),
+      ...(gameId || gameSlug || classIds || classSlugs || modLoaderMap
+        ? {
+            curseforge: {
+              ...(gameId ? { gameId } : {}),
+              ...(gameSlug ? { gameSlug } : {}),
+              ...(classIds ? { classIds } : {}),
+              ...(classSlugs ? { classSlugs } : {}),
+              ...(modLoaderMap ? { modLoaderMap } : {}),
+            },
+          }
+        : {}),
+    };
+  };
+
+  const resolveEnabledModManager = (modManager: unknown): NormalizedModManager | null => {
+    if (!modManager || typeof modManager !== "object") {
+      return null;
+    }
+    const source = modManager as Record<string, unknown>;
+    const providers = Array.isArray(source.providers)
+      ? source.providers
+          .map((entry) => normalizeModManagerProvider(entry))
+          .filter((entry): entry is NormalizedModManagerProvider => Boolean(entry))
+      : [];
+    if (!providers.length) {
+      return null;
+    }
+    const paths =
+      source.paths && typeof source.paths === "object"
+        ? (source.paths as { mods?: string; datapacks?: string; modpacks?: string })
+        : undefined;
+    const targets = normalizeTargetList(source.targets);
+    return {
+      providers,
+      ...(paths ? { paths } : {}),
+      ...(targets.length ? { targets } : {}),
+    };
+  };
+
+  const resolveModManagerProvider = (
+    modManager: NormalizedModManager,
+    provider: string,
+    game?: string
+  ) => {
+    const providerId = provider.trim().toLowerCase();
+    const requestedGame = game?.trim().toLowerCase() || undefined;
+    const matches = modManager.providers.filter((entry) => entry.id === providerId);
+    if (!matches.length) return null;
+    if (requestedGame) {
+      return matches.find((entry) => entry.game === requestedGame) ?? null;
+    }
+    return matches.find((entry) => !entry.game) ?? matches[0];
+  };
+
+  const getProviderTargets = (
+    modManager: NormalizedModManager,
+    providerEntry: NormalizedModManagerProvider
+  ) =>
+    providerEntry.targets?.length
+      ? providerEntry.targets
+      : modManager.targets?.length
+        ? modManager.targets
+        : modManagerDefaultTargets;
+
+  const resolveCurseforgeGameId = async (
+    providerConfig: { endpoints: Record<string, string> },
+    providerEntry: NormalizedModManagerProvider,
+    baseUrl: string,
+    headers: Record<string, string>
+  ) => {
+    const explicitGameId = providerEntry.curseforge?.gameId;
+    if (explicitGameId) {
+      return explicitGameId;
+    }
+
+    const gameSlug = providerEntry.curseforge?.gameSlug || providerEntry.game;
+    if (!gameSlug || gameSlug === "minecraft") {
+      return "432";
+    }
+    if (curseforgeGameIdCache.has(gameSlug)) {
+      return curseforgeGameIdCache.get(gameSlug)!;
+    }
+
+    const endpoint = providerConfig.endpoints.games || "/v1/games";
+    const pageSize = 50;
+    for (let index = 0; index <= 5000; index += pageSize) {
+      const params = new URLSearchParams({
+        index: String(index),
+        pageSize: String(pageSize),
+      });
+      const response = await fetch(`${baseUrl}${endpoint}?${params.toString()}`, { headers });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`CurseForge game lookup failed: ${body}`);
+      }
+      const payload = (await response.json()) as any;
+      const games = Array.isArray(payload?.data) ? payload.data : [];
+      if (!games.length) {
+        break;
+      }
+      const match = games.find((entry: any) => {
+        const slug = typeof entry?.slug === "string" ? entry.slug.toLowerCase() : "";
+        const name = typeof entry?.name === "string" ? entry.name.toLowerCase() : "";
+        return slug === gameSlug || name === gameSlug;
+      });
+      const matchId =
+        match?.id !== undefined && match?.id !== null
+          ? String(match.id).trim()
+          : match?.gameId !== undefined && match?.gameId !== null
+            ? String(match.gameId).trim()
+            : "";
+      if (matchId) {
+        curseforgeGameIdCache.set(gameSlug, matchId);
+        return matchId;
+      }
+      if (games.length < pageSize) {
+        break;
+      }
+    }
+
+    throw new Error(
+      `Unable to resolve CurseForge game '${gameSlug}'. Configure providers[].curseforge.gameId explicitly.`
+    );
+  };
+
+  const resolveCurseforgeClassId = async (
+    providerConfig: { endpoints: Record<string, string> },
+    providerEntry: NormalizedModManagerProvider,
+    target: ModManagerTarget,
+    gameId: string,
+    baseUrl: string,
+    headers: Record<string, string>
+  ) => {
+    const explicitClassId = providerEntry.curseforge?.classIds?.[target];
+    if (explicitClassId) {
+      return explicitClassId;
+    }
+
+    if (gameId === "432") {
+      const minecraftDefaults: Record<ModManagerTarget, string> = {
+        mods: "6",
+        datapacks: "512",
+        modpacks: "4471",
+      };
+      return minecraftDefaults[target];
+    }
+
+    const classSlug = providerEntry.curseforge?.classSlugs?.[target];
+    if (!classSlug) {
+      return undefined;
+    }
+
+    const cacheKey = `${gameId}:${classSlug}`;
+    if (curseforgeClassIdCache.has(cacheKey)) {
+      return curseforgeClassIdCache.get(cacheKey);
+    }
+
+    const endpoint = providerConfig.endpoints.categories || "/v1/categories";
+    const params = new URLSearchParams({
+      gameId,
+      classesOnly: "true",
+    });
+    const response = await fetch(`${baseUrl}${endpoint}?${params.toString()}`, { headers });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`CurseForge category lookup failed: ${body}`);
+    }
+    const payload = (await response.json()) as any;
+    const categories = Array.isArray(payload?.data) ? payload.data : [];
+    const match = categories.find((entry: any) => {
+      const slug = typeof entry?.slug === "string" ? entry.slug.toLowerCase() : "";
+      const name = typeof entry?.name === "string" ? entry.name.toLowerCase() : "";
+      return slug === classSlug || name === classSlug;
+    });
+    const matchId =
+      match?.id !== undefined && match?.id !== null
+        ? String(match.id).trim()
+        : match?.classId !== undefined && match?.classId !== null
+          ? String(match.classId).trim()
+          : "";
+    if (!matchId) {
+      throw new Error(`CurseForge class '${classSlug}' not found for game '${gameId}'`);
+    }
+    curseforgeClassIdCache.set(cacheKey, matchId);
+    return matchId;
+  };
+
+  const resolveCurseforgeLoaderType = (
+    providerEntry: NormalizedModManagerProvider,
+    gameId: string,
+    loader: string
+  ) => {
+    const loaderKey = loader.trim().toLowerCase();
+    if (!loaderKey) return undefined;
+    const defaultLoaderMap =
+      gameId === "432"
+        ? {
+            forge: "1",
+            neoforge: "20",
+            fabric: "4",
+            quilt: "5",
+          }
+        : {};
+    const providerMap = providerEntry.curseforge?.modLoaderMap ?? {};
+    return providerMap[loaderKey] ?? defaultLoaderMap[loaderKey as keyof typeof defaultLoaderMap];
+  };
+
   const ensureModManagerEnabled = (server: any, reply: FastifyReply) => {
-    const modManager = server.template?.features?.modManager;
-    if (!modManager || !Array.isArray(modManager.providers) || modManager.providers.length === 0) {
+    // Keep mod manager checks aligned with the runtime template patching used for Hytale.
+    const runtimeTemplate = patchTemplateForRuntime(server.template);
+    const modManager = resolveEnabledModManager(runtimeTemplate?.features?.modManager);
+    if (!modManager) {
       reply.status(409).send({ error: "Mod manager not enabled for this template" });
       return null;
     }
-    return modManager as {
-      providers: string[];
-      paths?: { mods?: string; datapacks?: string; modpacks?: string };
-    };
+    return modManager;
   };
   const ensurePluginManagerEnabled = (server: any, reply: FastifyReply) => {
     const pluginManager = server.template?.features?.pluginManager;
@@ -1254,6 +1619,7 @@ export async function serverRoutes(app: FastifyInstance) {
         name,
         description,
         environment,
+        startupCommand,
         allocatedMemoryMb,
         allocatedCpuCores,
         allocatedDiskMb,
@@ -1266,6 +1632,7 @@ export async function serverRoutes(app: FastifyInstance) {
         name?: string;
         description?: string;
         environment?: Record<string, string>;
+        startupCommand?: string | null;
         allocatedMemoryMb?: number;
         allocatedCpuCores?: number;
         allocatedDiskMb?: number;
@@ -1493,6 +1860,7 @@ export async function serverRoutes(app: FastifyInstance) {
             name: name || server.name,
             description: description !== undefined ? description : server.description,
             environment: nextEnvironment,
+            ...(startupCommand !== undefined ? { startupCommand: startupCommand || null } : {}),
           allocatedMemoryMb: allocatedMemoryMb ?? server.allocatedMemoryMb,
           allocatedCpuCores: allocatedCpuCores ?? server.allocatedCpuCores,
           allocatedDiskMb: allocatedDiskMb ?? server.allocatedDiskMb,
@@ -1673,10 +2041,11 @@ export async function serverRoutes(app: FastifyInstance) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { serverId } = request.params as { serverId: string };
-      const { provider, query, page, gameVersion, loader } = request.query as {
+      const { provider, game, query, page, gameVersion, loader } = request.query as {
         provider?: string;
+        game?: string;
         query?: string;
-        target?: "mods" | "datapacks" | "modpacks";
+        target?: ModManagerTarget;
         gameVersion?: string;
         page?: string | number;
         loader?: string;
@@ -1691,11 +2060,28 @@ export async function serverRoutes(app: FastifyInstance) {
       if (!server) return;
       const modManager = ensureModManagerEnabled(server, reply);
       if (!modManager) return;
-      if (!modManager.providers.includes(provider)) {
-        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      const providerEntry = resolveModManagerProvider(modManager, provider, game);
+      if (!providerEntry) {
+        return reply.status(400).send({ error: "Provider or game not enabled for this template" });
       }
+      const allowedTargets = getProviderTargets(modManager, providerEntry);
+      const rawTarget = (request.query as { target?: string }).target;
+      const requestedTarget = normalizeTargetValue(rawTarget);
+      if (rawTarget && !requestedTarget) {
+        return reply.status(400).send({ error: "Invalid target" });
+      }
+      const targetValue = requestedTarget ?? allowedTargets[0] ?? "mods";
+      if (!allowedTargets.includes(targetValue)) {
+        return reply.status(400).send({
+          error: `Target '${targetValue}' is not enabled for ${providerEntry.id}${
+            providerEntry.game ? ` (${providerEntry.game})` : ""
+          }`,
+          allowedTargets,
+        });
+      }
+      const providerId = providerEntry.id;
 
-      const providerConfig = await loadProviderConfig(provider);
+      const providerConfig = await loadProviderConfig(providerId);
       if (!providerConfig) {
         return reply.status(404).send({ error: "Provider not found" });
       }
@@ -1713,19 +2099,15 @@ export async function serverRoutes(app: FastifyInstance) {
       const resolvedGameVersion = gameVersion?.trim() || extractGameVersion(server.environment);
       const isTrending = !searchQuery;
       let url = "";
-      if (provider === "modrinth") {
-        const targetValue = (request.query as any).target;
+      if (providerId === "modrinth") {
         const facets: string[][] = [];
-        if (targetValue) {
-          facets.push([
-            `project_type:${
-              targetValue === "mods"
-                ? "mod"
-                : targetValue === "datapacks"
-                  ? "datapack"
-                  : "modpack"
-            }`,
-          ]);
+        facets.push([
+          `project_type:${
+            targetValue === "mods" ? "mod" : targetValue === "datapacks" ? "datapack" : "modpack"
+          }`,
+        ]);
+        if (providerEntry.game) {
+          facets.push([`categories:${providerEntry.game}`]);
         }
         if (resolvedGameVersion) {
           facets.push([`versions:${resolvedGameVersion}`]);
@@ -1743,29 +2125,39 @@ export async function serverRoutes(app: FastifyInstance) {
         });
         url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
       } else {
-        const targetValue = (request.query as any).target;
-        const classId =
-          targetValue === "datapacks" ? "512" : targetValue === "modpacks" ? "4471" : "6";
         const loaderValue = typeof loader === "string" ? loader.trim().toLowerCase() : "";
+        let gameId = "432";
+        let classId: string | undefined;
+        try {
+          gameId = await resolveCurseforgeGameId(providerConfig, providerEntry, baseUrl, headers);
+          classId = await resolveCurseforgeClassId(
+            providerConfig,
+            providerEntry,
+            targetValue,
+            gameId,
+            baseUrl,
+            headers
+          );
+        } catch (error: any) {
+          return reply.status(409).send({ error: error?.message || "Failed to resolve game metadata" });
+        }
+        if (!classId && targetValue !== "mods") {
+          return reply.status(409).send({
+            error: `No CurseForge class configured for target '${targetValue}' in game '${providerEntry.game || gameId}'`,
+          });
+        }
+
         const modLoaderType = loaderValue
-          ? loaderValue === "forge"
-            ? "1"
-            : loaderValue === "neoforge"
-              ? "20"
-              : loaderValue === "fabric"
-                ? "4"
-                : loaderValue === "quilt"
-                  ? "5"
-                  : undefined
+          ? resolveCurseforgeLoaderType(providerEntry, gameId, loaderValue)
           : undefined;
         const params = new URLSearchParams({
-          gameId: "432",
-          classId,
+          gameId,
           pageSize: "20",
           index: String(Math.max(0, (Number(pageValue) - 1) * 20)),
           ...(searchQuery ? { searchFilter: searchQuery } : {}),
           ...(resolvedGameVersion ? { gameVersion: resolvedGameVersion } : {}),
           ...(isTrending ? { sortField: "2", sortOrder: "desc" } : {}),
+          ...(classId ? { classId } : {}),
           ...(modLoaderType ? { modLoaderType } : {}),
         });
         url = `${baseUrl}${providerConfig.endpoints.search}?${params.toString()}`;
@@ -1779,7 +2171,7 @@ export async function serverRoutes(app: FastifyInstance) {
           .send({ error: `Provider error: ${body}` });
       }
       const payload = await response.json() as any;
-      if (provider === "paper" && payload && Array.isArray(payload?.result)) {
+      if (providerId === "paper" && payload && Array.isArray(payload?.result)) {
         return reply.send({ success: true, data: payload.result });
       }
       return reply.send({ success: true, data: payload });
@@ -1794,8 +2186,9 @@ export async function serverRoutes(app: FastifyInstance) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { serverId } = request.params as { serverId: string };
-      const { provider, projectId } = request.query as {
+      const { provider, game, projectId } = request.query as {
         provider?: string;
+        game?: string;
         projectId?: string;
       };
       const userId = request.user.userId;
@@ -1808,11 +2201,13 @@ export async function serverRoutes(app: FastifyInstance) {
       if (!server) return;
       const modManager = ensureModManagerEnabled(server, reply);
       if (!modManager) return;
-      if (!modManager.providers.includes(provider)) {
-        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      const providerEntry = resolveModManagerProvider(modManager, provider, game);
+      if (!providerEntry) {
+        return reply.status(400).send({ error: "Provider or game not enabled for this template" });
       }
+      const providerId = providerEntry.id;
 
-      const providerConfig = await loadProviderConfig(provider);
+      const providerConfig = await loadProviderConfig(providerId);
       if (!providerConfig) {
         return reply.status(404).send({ error: "Provider not found" });
       }
@@ -1827,7 +2222,7 @@ export async function serverRoutes(app: FastifyInstance) {
       const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
       const endpoint = providerConfig.endpoints.versions || providerConfig.endpoints.files;
       const encodedProjectId =
-        provider === "paper"
+        providerId === "paper"
           ? String(projectId).split("/").map(encodeURIComponent).join("/")
           : encodeURIComponent(projectId);
       const url = `${baseUrl}${endpoint.replace("{projectId}", encodedProjectId)}`;
@@ -1840,7 +2235,7 @@ export async function serverRoutes(app: FastifyInstance) {
           .send({ error: `Provider error: ${body}` });
       }
       const payload = await response.json() as any;
-      if (provider === "paper" && payload && Array.isArray(payload?.result)) {
+      if (providerId === "paper" && payload && Array.isArray(payload?.result)) {
         return reply.send({ success: true, data: payload.result });
       }
       return reply.send({ success: true, data: payload });
@@ -1855,11 +2250,12 @@ export async function serverRoutes(app: FastifyInstance) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { serverId } = request.params as { serverId: string };
-      const { provider, projectId, versionId, target } = request.body as {
+      const { provider, game, projectId, versionId, target } = request.body as {
         provider?: string;
+        game?: string;
         projectId?: string;
         versionId?: string | number;
-        target?: "mods" | "datapacks" | "modpacks";
+        target?: ModManagerTarget;
       };
       const userId = request.user.userId;
 
@@ -1871,11 +2267,22 @@ export async function serverRoutes(app: FastifyInstance) {
       if (!server) return;
       const modManager = ensureModManagerEnabled(server, reply);
       if (!modManager) return;
-      if (!modManager.providers.includes(provider)) {
-        return reply.status(400).send({ error: "Provider not enabled for this template" });
+      const providerEntry = resolveModManagerProvider(modManager, provider, game);
+      if (!providerEntry) {
+        return reply.status(400).send({ error: "Provider or game not enabled for this template" });
       }
+      const allowedTargets = getProviderTargets(modManager, providerEntry);
+      if (!allowedTargets.includes(target)) {
+        return reply.status(400).send({
+          error: `Target '${target}' is not enabled for ${providerEntry.id}${
+            providerEntry.game ? ` (${providerEntry.game})` : ""
+          }`,
+          allowedTargets,
+        });
+      }
+      const providerId = providerEntry.id;
 
-      const providerConfig = await loadProviderConfig(provider);
+      const providerConfig = await loadProviderConfig(providerId);
       if (!providerConfig) {
         return reply.status(404).send({ error: "Provider not found" });
       }
@@ -1889,7 +2296,7 @@ export async function serverRoutes(app: FastifyInstance) {
 
       const baseUrl = providerConfig.baseUrl.replace(/\/$/, "");
       let metadataUrl = "";
-      if (provider === "modrinth") {
+      if (providerId === "modrinth") {
         metadataUrl = `${baseUrl}${providerConfig.endpoints.version.replace("{versionId}", encodeURIComponent(String(versionId)))}`;
       } else {
         metadataUrl = `${baseUrl}${providerConfig.endpoints.file
@@ -1908,7 +2315,7 @@ export async function serverRoutes(app: FastifyInstance) {
 
       let downloadUrl = "";
       let filename = "";
-      if (provider === "modrinth") {
+      if (providerId === "modrinth") {
         const files = metadata?.files ?? [];
         const file = files.find((entry: any) => entry.primary) ?? files[0];
         downloadUrl = file?.url ?? "";
@@ -1945,7 +2352,13 @@ export async function serverRoutes(app: FastifyInstance) {
             action: "mod_manager.install",
             resource: "server",
             resourceId: serverId,
-            details: { provider, projectId, versionId, target: normalizedFile },
+            details: {
+              provider: providerId,
+              game: providerEntry.game ?? game ?? null,
+              projectId,
+              versionId,
+              target: normalizedFile,
+            },
           },
         });
         reply.send({ success: true, data: { path: normalizedFile } });
@@ -4147,6 +4560,9 @@ export async function serverRoutes(app: FastifyInstance) {
         }
       }
       const runtimeTemplate = patchTemplateForRuntime(server.template);
+      if (server.startupCommand) {
+        runtimeTemplate.startup = server.startupCommand;
+      }
 
       const success = await gateway.sendToAgent(server.nodeId, {
         type: "start_server",

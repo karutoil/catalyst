@@ -424,6 +424,7 @@ model Server {
   
   // Configuration
   environment    Json     @default("{}")
+  startupCommand String?
 
   // Backups
   backupStorageMode   String   @default("local") // local, s3, stream

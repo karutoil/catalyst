@@ -12,6 +12,7 @@ export const modManagerApi = {
     serverId: string,
     params: {
       provider: string;
+      game?: string;
       query?: string;
       target?: 'mods' | 'datapacks' | 'modpacks';
       loader?: string;
@@ -25,19 +26,26 @@ export const modManagerApi = {
     );
     return data.data;
   },
-  versions: async (serverId: string, params: { provider: string; projectId: string }) => {
+  versions: async (
+    serverId: string,
+    params: { provider: string; game?: string; projectId: string },
+  ) => {
     const { data } = await apiClient.get<{ success: boolean; data?: any }>(
       `/api/servers/${serverId}/mod-manager/versions`,
       { params },
     );
     return data.data;
   },
-  install: async (serverId: string, payload: {
-    provider: string;
-    projectId: string;
-    versionId: string | number;
-    target: 'mods' | 'datapacks' | 'modpacks';
-  }) => {
+  install: async (
+    serverId: string,
+    payload: {
+      provider: string;
+      game?: string;
+      projectId: string;
+      versionId: string | number;
+      target: 'mods' | 'datapacks' | 'modpacks';
+    },
+  ) => {
     const { data } = await apiClient.post<{ success: boolean; data?: { path: string } }>(
       `/api/servers/${serverId}/mod-manager/install`,
       payload,
