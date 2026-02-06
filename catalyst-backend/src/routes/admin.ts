@@ -1290,20 +1290,24 @@ export async function adminRoutes(app: FastifyInstance) {
         authRateLimitMax = DEFAULT_SECURITY_SETTINGS.authRateLimitMax,
         fileRateLimitMax = DEFAULT_SECURITY_SETTINGS.fileRateLimitMax,
         consoleRateLimitMax = DEFAULT_SECURITY_SETTINGS.consoleRateLimitMax,
+        consoleOutputByteLimitBytes = DEFAULT_SECURITY_SETTINGS.consoleOutputByteLimitBytes,
         lockoutMaxAttempts = DEFAULT_SECURITY_SETTINGS.lockoutMaxAttempts,
         lockoutWindowMinutes = DEFAULT_SECURITY_SETTINGS.lockoutWindowMinutes,
         lockoutDurationMinutes = DEFAULT_SECURITY_SETTINGS.lockoutDurationMinutes,
         auditRetentionDays = DEFAULT_SECURITY_SETTINGS.auditRetentionDays,
+        maxBufferMb = DEFAULT_SECURITY_SETTINGS.maxBufferMb,
       } = request.body as Partial<typeof DEFAULT_SECURITY_SETTINGS>;
 
       const numericFields = [
         authRateLimitMax,
         fileRateLimitMax,
         consoleRateLimitMax,
+        consoleOutputByteLimitBytes,
         lockoutMaxAttempts,
         lockoutWindowMinutes,
         lockoutDurationMinutes,
         auditRetentionDays,
+        maxBufferMb,
       ];
       if (numericFields.some((value) => !Number.isFinite(value) || Number(value) <= 0)) {
         return reply.status(400).send({ error: 'Security settings must be positive numbers' });
@@ -1313,10 +1317,12 @@ export async function adminRoutes(app: FastifyInstance) {
         authRateLimitMax: Number(authRateLimitMax),
         fileRateLimitMax: Number(fileRateLimitMax),
         consoleRateLimitMax: Number(consoleRateLimitMax),
+        consoleOutputByteLimitBytes: Number(consoleOutputByteLimitBytes),
         lockoutMaxAttempts: Number(lockoutMaxAttempts),
         lockoutWindowMinutes: Number(lockoutWindowMinutes),
         lockoutDurationMinutes: Number(lockoutDurationMinutes),
         auditRetentionDays: Number(auditRetentionDays),
+        maxBufferMb: Number(maxBufferMb),
       });
 
       await createAuditLog(user.userId, {
@@ -1326,10 +1332,12 @@ export async function adminRoutes(app: FastifyInstance) {
           authRateLimitMax,
           fileRateLimitMax,
           consoleRateLimitMax,
+          consoleOutputByteLimitBytes,
           lockoutMaxAttempts,
           lockoutWindowMinutes,
           lockoutDurationMinutes,
           auditRetentionDays,
+          maxBufferMb,
         },
       });
 

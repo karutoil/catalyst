@@ -23,10 +23,12 @@ export type SecuritySettings = {
   authRateLimitMax: number;
   fileRateLimitMax: number;
   consoleRateLimitMax: number;
+  consoleOutputByteLimitBytes: number;
   lockoutMaxAttempts: number;
   lockoutWindowMinutes: number;
   lockoutDurationMinutes: number;
   auditRetentionDays: number;
+  maxBufferMb: number;
 };
 
 export type ModManagerSettings = {
@@ -34,14 +36,38 @@ export type ModManagerSettings = {
   modrinthApiKey: string | null;
 };
 
+export const DEFAULT_CONSOLE_OUTPUT_BYTE_LIMIT = 256 * 1024; // 256KB/s per server
+export const MIN_CONSOLE_OUTPUT_BYTE_LIMIT = 64 * 1024;
+export const MAX_CONSOLE_OUTPUT_BYTE_LIMIT = 2 * 1024 * 1024;
+
+const resolveConsoleOutputByteLimitDefault = () => {
+  const raw = Number.parseInt(process.env.CONSOLE_OUTPUT_BYTE_LIMIT_BYTES ?? '', 10);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_CONSOLE_OUTPUT_BYTE_LIMIT;
+  }
+  return Math.min(MAX_CONSOLE_OUTPUT_BYTE_LIMIT, Math.max(MIN_CONSOLE_OUTPUT_BYTE_LIMIT, raw));
+};
+
+export const sanitizeConsoleOutputByteLimit = (value: number | null | undefined) => {
+  if (!Number.isFinite(value) || Number(value) <= 0) {
+    return resolveConsoleOutputByteLimitDefault();
+  }
+  return Math.min(
+    MAX_CONSOLE_OUTPUT_BYTE_LIMIT,
+    Math.max(MIN_CONSOLE_OUTPUT_BYTE_LIMIT, Number(value)),
+  );
+};
+
 export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   authRateLimitMax: 5,
   fileRateLimitMax: 30,
   consoleRateLimitMax: 60,
+  consoleOutputByteLimitBytes: resolveConsoleOutputByteLimitDefault(),
   lockoutMaxAttempts: 5,
   lockoutWindowMinutes: 15,
   lockoutDurationMinutes: 15,
   auditRetentionDays: 90,
+  maxBufferMb: 50,
 };
 
 export const getSmtpSettings = async (): Promise<SmtpSettings> => {
@@ -118,11 +144,15 @@ export const getSecuritySettings = async (): Promise<SecuritySettings> => {
     authRateLimitMax: settings.authRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.authRateLimitMax,
     fileRateLimitMax: settings.fileRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.fileRateLimitMax,
     consoleRateLimitMax: settings.consoleRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.consoleRateLimitMax,
+    consoleOutputByteLimitBytes: sanitizeConsoleOutputByteLimit(
+      settings.consoleOutputByteLimitBytes,
+    ),
     lockoutMaxAttempts: settings.lockoutMaxAttempts ?? DEFAULT_SECURITY_SETTINGS.lockoutMaxAttempts,
     lockoutWindowMinutes: settings.lockoutWindowMinutes ?? DEFAULT_SECURITY_SETTINGS.lockoutWindowMinutes,
     lockoutDurationMinutes:
       settings.lockoutDurationMinutes ?? DEFAULT_SECURITY_SETTINGS.lockoutDurationMinutes,
     auditRetentionDays: settings.auditRetentionDays ?? DEFAULT_SECURITY_SETTINGS.auditRetentionDays,
+    maxBufferMb: settings.maxBufferMb ?? DEFAULT_SECURITY_SETTINGS.maxBufferMb,
   };
 };
 
@@ -155,6 +185,9 @@ export const upsertModManagerSettings = async (payload: ModManagerSettings) => {
 };
 
 export const upsertSecuritySettings = async (payload: SecuritySettings) => {
+  const consoleOutputByteLimitBytes = sanitizeConsoleOutputByteLimit(
+    payload.consoleOutputByteLimitBytes,
+  );
   return prisma.systemSetting.upsert({
     where: { id: SECURITY_SETTING_ID },
     create: {
@@ -162,19 +195,23 @@ export const upsertSecuritySettings = async (payload: SecuritySettings) => {
       authRateLimitMax: payload.authRateLimitMax,
       fileRateLimitMax: payload.fileRateLimitMax,
       consoleRateLimitMax: payload.consoleRateLimitMax,
+      consoleOutputByteLimitBytes,
       lockoutMaxAttempts: payload.lockoutMaxAttempts,
       lockoutWindowMinutes: payload.lockoutWindowMinutes,
       lockoutDurationMinutes: payload.lockoutDurationMinutes,
       auditRetentionDays: payload.auditRetentionDays,
+      maxBufferMb: payload.maxBufferMb,
     },
     update: {
       authRateLimitMax: payload.authRateLimitMax,
       fileRateLimitMax: payload.fileRateLimitMax,
       consoleRateLimitMax: payload.consoleRateLimitMax,
+      consoleOutputByteLimitBytes,
       lockoutMaxAttempts: payload.lockoutMaxAttempts,
       lockoutWindowMinutes: payload.lockoutWindowMinutes,
       lockoutDurationMinutes: payload.lockoutDurationMinutes,
       auditRetentionDays: payload.auditRetentionDays,
+      maxBufferMb: payload.maxBufferMb,
     },
   });
 };

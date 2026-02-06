@@ -1,17 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, File, Folder } from 'lucide-react';
 import type { FileEntry } from '../../types/file';
 import { formatBytes, formatFileMode } from '../../utils/formatters';
 import EmptyState from '../shared/EmptyState';
 import FileContextMenu from './FileContextMenu';
+
+type SortField = 'name' | 'size' | 'modified' | 'mode';
+type SortDirection = 'asc' | 'desc';
 
 type Props = {
   files: FileEntry[];
   selectedPaths: Set<string>;
   isLoading: boolean;
   isError: boolean;
+  allSelected: boolean;
+  sortField: SortField;
+  sortDirection: SortDirection;
+  renamingEntry: FileEntry | null;
+  onSort: (field: SortField) => void;
+  onSelectAll: () => void;
   onOpen: (entry: FileEntry) => void;
   onSelect: (entry: FileEntry, selected: boolean) => void;
+  onShiftSelect: (entry: FileEntry) => void;
   onDownload: (entry: FileEntry) => void;
+  onCopyPath: (entry: FileEntry) => void;
+  onRename: (entry: FileEntry) => void;
+  onRenameSubmit: (entry: FileEntry, newName: string) => void;
+  onRenameCancel: () => void;
   onDelete: (entry: FileEntry) => void;
   onCompress: (entry: FileEntry) => void;
   onDecompress: (entry: FileEntry) => void;
@@ -21,63 +36,108 @@ type Props = {
 const isArchive = (name: string) =>
   name.endsWith('.tar.gz') || name.endsWith('.tgz') || name.endsWith('.zip');
 
+function SortIndicator({ field, active, direction }: { field: SortField; active: SortField; direction: SortDirection }) {
+  if (field !== active) return null;
+  return direction === 'asc' ? (
+    <ArrowUp className="inline h-3 w-3" />
+  ) : (
+    <ArrowDown className="inline h-3 w-3" />
+  );
+}
+
+function InlineRenameInput({
+  entry,
+  onSubmit,
+  onCancel,
+}: {
+  entry: FileEntry;
+  onSubmit: (entry: FileEntry, newName: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(entry.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    // Select name without extension for files
+    if (!entry.isDirectory) {
+      const dotIdx = entry.name.lastIndexOf('.');
+      if (dotIdx > 0) {
+        inputRef.current?.setSelectionRange(0, dotIdx);
+      } else {
+        inputRef.current?.select();
+      }
+    } else {
+      inputRef.current?.select();
+    }
+  }, [entry]);
+
+  return (
+    <input
+      ref={inputRef}
+      className="w-full max-w-xs rounded border border-primary-500 bg-white px-1.5 py-0.5 text-sm text-slate-900 outline-none dark:bg-slate-800 dark:text-slate-200"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onSubmit(entry, value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onSubmit(entry, value);
+        if (e.key === 'Escape') onCancel();
+      }}
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
 function FileList({
   files,
   selectedPaths,
   isLoading,
   isError,
+  allSelected,
+  sortField,
+  sortDirection,
+  renamingEntry,
+  onSort,
+  onSelectAll,
   onOpen,
   onSelect,
+  onShiftSelect,
   onDownload,
+  onCopyPath,
+  onRename,
+  onRenameSubmit,
+  onRenameCancel,
   onDelete,
   onCompress,
   onDecompress,
   onPermissions,
 }: Props) {
   const [contextMenuEntry, setContextMenuEntry] = useState<FileEntry | null>(null);
-  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(
-    null,
-  );
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!contextMenuPosition) return undefined;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setContextMenuPosition(null);
-        setContextMenuEntry(null);
-      }
-    };
-    const handleScroll = () => {
+    const dismiss = () => {
       setContextMenuPosition(null);
       setContextMenuEntry(null);
     };
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('[data-file-context-menu="true"]')) {
-        return;
-      }
-      setContextMenuPosition(null);
-      setContextMenuEntry(null);
-    };
-    const handleContextMenu = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('[data-file-context-menu="true"]')) {
-        return;
-      }
-      setContextMenuPosition(null);
-      setContextMenuEntry(null);
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); };
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      const t = (e.target as HTMLElement)?.closest('[data-file-context-menu="true"]');
+      if (!t) dismiss();
     };
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('scroll', dismiss, true);
     window.addEventListener('mousedown', handlePointerDown, true);
     window.addEventListener('touchstart', handlePointerDown, true);
-    window.addEventListener('contextmenu', handleContextMenu, true);
+    window.addEventListener('contextmenu', (e) => {
+      if (!(e.target as HTMLElement)?.closest('[data-file-context-menu="true"]')) dismiss();
+    }, true);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('scroll', dismiss, true);
       window.removeEventListener('mousedown', handlePointerDown, true);
       window.removeEventListener('touchstart', handlePointerDown, true);
-      window.removeEventListener('contextmenu', handleContextMenu, true);
     };
   }, [contextMenuPosition]);
 
@@ -88,7 +148,7 @@ function FileList({
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
+      <div className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
         Loading files...
       </div>
     );
@@ -96,7 +156,7 @@ function FileList({
 
   if (isError) {
     return (
-      <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-6 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+      <div className="px-4 py-8 text-center text-sm text-rose-600 dark:text-rose-400">
         Unable to load file listing.
       </div>
     );
@@ -106,89 +166,142 @@ function FileList({
     return <EmptyState title="No files here" description="Upload or create a file to get started." />;
   }
 
+  const thClass =
+    'cursor-pointer select-none px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300';
+
   return (
     <div className="overflow-x-auto">
-      <div className="min-w-[620px] divide-y divide-slate-200 dark:divide-slate-800">
-        <div className="grid grid-cols-[24px_1fr_96px_120px_160px_36px] gap-3 px-4 py-2 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 dark:text-slate-500">
-          <span />
-          <span>Name</span>
-          <span>Mode</span>
-          <span>Size</span>
-          <span>Modified</span>
-          <span className="text-right">Actions</span>
-        </div>
-        {files.map((entry) => {
-          const selected = selectedPaths.has(entry.path);
-          return (
-            <div
-              key={entry.path}
-              className={`grid grid-cols-[24px_1fr_96px_120px_160px_36px] items-center gap-3 px-4 py-2 text-sm ${
-                selected
-                  ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/20 dark:text-primary-400'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-              }`}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setContextMenuEntry(entry);
-                setContextMenuPosition({ x: event.clientX, y: event.clientY });
-              }}
-            >
+      <table className="w-full min-w-[640px]">
+        <thead>
+          <tr className="border-b border-slate-100 dark:border-slate-800">
+            <th className="w-10 px-3 py-2.5">
               <input
                 type="checkbox"
-                checked={selected}
-                onChange={(event) => onSelect(entry, event.target.checked)}
-                onClick={(event) => event.stopPropagation()}
-                className="h-4 w-4 rounded border-slate-300 bg-white text-primary-500 dark:border-slate-700 dark:bg-slate-900"
+                checked={allSelected}
+                onChange={onSelectAll}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-primary-500 dark:border-slate-600 dark:bg-slate-800"
               />
-              <button
-                type="button"
-                className="flex items-center gap-2 text-left text-slate-900 dark:text-slate-100"
-                onClick={() => onOpen(entry)}
+            </th>
+            <th className={thClass} onClick={() => onSort('name')}>
+              Name <SortIndicator field="name" active={sortField} direction={sortDirection} />
+            </th>
+            <th className={`${thClass} w-20`} onClick={() => onSort('mode')}>
+              Mode <SortIndicator field="mode" active={sortField} direction={sortDirection} />
+            </th>
+            <th className={`${thClass} w-24`} onClick={() => onSort('size')}>
+              Size <SortIndicator field="size" active={sortField} direction={sortDirection} />
+            </th>
+            <th className={`${thClass} w-40`} onClick={() => onSort('modified')}>
+              Modified <SortIndicator field="modified" active={sortField} direction={sortDirection} />
+            </th>
+            <th className="w-10 px-3 py-2.5" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+          {files.map((entry) => {
+            const selected = selectedPaths.has(entry.path);
+            const isRenaming = renamingEntry?.path === entry.path;
+            return (
+              <tr
+                key={entry.path}
+                className={`group transition-colors ${
+                  selected
+                    ? 'bg-primary-500/5 dark:bg-primary-500/10'
+                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                }`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenuEntry(entry);
+                  setContextMenuPosition({ x: e.clientX, y: e.clientY });
+                }}
+                onDoubleClick={() => {
+                  if (!isRenaming) onOpen(entry);
+                }}
               >
-                <span
-                  className={`rounded-md px-2 py-1 text-[10px] uppercase tracking-wide ${
-                    entry.isDirectory
-                      ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/20 dark:text-primary-400'
-                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                  }`}
-                >
-                  {entry.isDirectory ? 'dir' : 'file'}
-                </span>
-                <span className="truncate">{entry.name}</span>
-              </button>
-              <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {formatFileMode(entry.mode)}
-              </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {entry.isDirectory ? '-' : formatBytes(entry.size)}
-              </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {entry.modified ? new Date(entry.modified).toLocaleString() : '-'}
-              </span>
-              <div className="flex justify-end">
-                <FileContextMenu
-                  entry={entry}
-                  onOpen={() => onOpen(entry)}
-                  onDownload={!entry.isDirectory ? () => onDownload(entry) : undefined}
-                  onCompress={() => onCompress(entry)}
-                  onDecompress={
-                    !entry.isDirectory && isArchive(entry.name) ? () => onDecompress(entry) : undefined
-                  }
-                  onPermissions={() => onPermissions(entry)}
-                  onDelete={() => onDelete(entry)}
-                />
-              </div>
-            </div>
-          );
-        })}
+                <td className="px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={(e) => onSelect(entry, e.target.checked)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (e.shiftKey) {
+                        e.preventDefault();
+                        onShiftSelect(entry);
+                      }
+                    }}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-primary-500 dark:border-slate-600 dark:bg-slate-800"
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 text-left"
+                    onClick={() => onOpen(entry)}
+                  >
+                    {entry.isDirectory ? (
+                      <Folder className="h-4 w-4 shrink-0 text-primary-500" />
+                    ) : (
+                      <File className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
+                    )}
+                    {isRenaming ? (
+                      <InlineRenameInput
+                        entry={entry}
+                        onSubmit={onRenameSubmit}
+                        onCancel={onRenameCancel}
+                      />
+                    ) : (
+                      <span className="truncate text-sm text-slate-800 dark:text-slate-200">
+                        {entry.name}
+                      </span>
+                    )}
+                  </button>
+                </td>
+                <td className="px-3 py-2 font-mono text-xs text-slate-400 dark:text-slate-500">
+                  {formatFileMode(entry.mode)}
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                  {entry.isDirectory ? '—' : formatBytes(entry.size)}
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-400 dark:text-slate-500">
+                  {entry.modified ? new Date(entry.modified).toLocaleString() : '—'}
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                    <FileContextMenu
+                      entry={entry}
+                      onOpen={() => onOpen(entry)}
+                      onDownload={!entry.isDirectory ? () => onDownload(entry) : undefined}
+                      onCopyPath={() => onCopyPath(entry)}
+                      onRename={() => onRename(entry)}
+                      onCompress={() => onCompress(entry)}
+                      onDecompress={
+                        !entry.isDirectory && isArchive(entry.name)
+                          ? () => onDecompress(entry)
+                          : undefined
+                      }
+                      onPermissions={() => onPermissions(entry)}
+                      onDelete={() => onDelete(entry)}
+                    />
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+        {files.length} item{files.length !== 1 ? 's' : ''}
       </div>
-      {contextMenuEntry && contextMenuPosition ? (
+      {contextMenuEntry && contextMenuPosition && (
         <FileContextMenu
           entry={contextMenuEntry}
           onOpen={() => onOpen(contextMenuEntry)}
           onDownload={
             !contextMenuEntry.isDirectory ? () => onDownload(contextMenuEntry) : undefined
           }
+          onCopyPath={() => onCopyPath(contextMenuEntry)}
+          onRename={() => onRename(contextMenuEntry)}
           onCompress={() => onCompress(contextMenuEntry)}
           onDecompress={
             !contextMenuEntry.isDirectory && isArchive(contextMenuEntry.name)
@@ -200,7 +313,7 @@ function FileList({
           contextPosition={contextMenuPosition}
           onRequestClose={closeContextMenu}
         />
-      ) : null}
+      )}
     </div>
   );
 }

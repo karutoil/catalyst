@@ -1,5 +1,23 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  ArrowUp,
+  ChevronRight,
+  FilePlus,
+  FolderPlus,
+  RefreshCw,
+  Upload,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  XCircle,
+  Home,
+  File,
+  Folder,
+  X,
+  Loader2,
+  AlertTriangle,
+} from 'lucide-react';
 import FileEditor from './FileEditor';
 import FileList from './FileList';
 import FileTree from './FileTree';
@@ -17,8 +35,22 @@ type CreatePayload = {
   content?: string;
 };
 
+type SortField = 'name' | 'size' | 'modified' | 'mode';
+type SortDirection = 'asc' | 'desc';
+
 const isArchive = (name: string) =>
   name.endsWith('.tar.gz') || name.endsWith('.tgz') || name.endsWith('.zip');
+
+const isBufferError = (error: any): { currentMaxBufferMb: number; recommendedMaxBufferMb: number } | null => {
+  const data = error?.response?.data;
+  if (data?.code === 'MAX_BUFFER_EXCEEDED') {
+    return {
+      currentMaxBufferMb: data.currentMaxBufferMb ?? 50,
+      recommendedMaxBufferMb: data.recommendedMaxBufferMb ?? 100,
+    };
+  }
+  return null;
+};
 
 function FileManager({ serverId, isSuspended = false }: { serverId: string; isSuspended?: boolean }) {
   const {
@@ -52,6 +84,19 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
   const [permissionsEntry, setPermissionsEntry] = useState<FileEntry | null>(null);
   const [permissionsValue, setPermissionsValue] = useState('');
   const [permissionsError, setPermissionsError] = useState<string | null>(null);
+  const [renamingEntry, setRenamingEntry] = useState<FileEntry | null>(null);
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [archiveBrowsePath, setArchiveBrowsePath] = useState<string | null>(null);
+  const [archiveBrowseDir, setArchiveBrowseDir] = useState('/');
+  const [archiveEntries, setArchiveEntries] = useState<
+    Array<{ name: string; size: number; isDirectory: boolean; modified?: string }>
+  >([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [bufferError, setBufferError] = useState<{
+    currentMaxBufferMb: number;
+    recommendedMaxBufferMb: number;
+  } | null>(null);
 
   useEffect(() => {
     setSelectedPaths(new Set());
@@ -60,6 +105,7 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
     setShowDecompress(false);
     setPermissionsEntry(null);
     setPermissionsError(null);
+    setRenamingEntry(null);
   }, [path]);
 
   useEffect(() => {
@@ -77,13 +123,40 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
   const sortedFiles = useMemo(() => {
     const next = [...files];
     next.sort((a, b) => {
-      if (a.isDirectory !== b.isDirectory) {
-        return a.isDirectory ? -1 : 1;
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      let cmp = 0;
+      switch (sortField) {
+        case 'name':
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case 'size':
+          cmp = a.size - b.size;
+          break;
+        case 'modified': {
+          const am = a.modified ? new Date(a.modified).getTime() : 0;
+          const bm = b.modified ? new Date(b.modified).getTime() : 0;
+          cmp = am - bm;
+          break;
+        }
+        case 'mode':
+          cmp = (a.mode ?? 0) - (b.mode ?? 0);
+          break;
       }
-      return a.name.localeCompare(b.name);
+      return sortDirection === 'asc' ? cmp : -cmp;
     });
     return next;
-  }, [files]);
+  }, [files, sortField, sortDirection]);
+
+  const handleSort = useCallback((field: SortField) => {
+    setSortField((prev) => {
+      if (prev === field) {
+        setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      setSortDirection('asc');
+      return field;
+    });
+  }, []);
 
   const breadcrumbs = useMemo(() => buildBreadcrumbs(path), [path]);
   const selectedEntries = useMemo(
@@ -96,6 +169,8 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
     isArchive(selectedEntries[0].name)
       ? selectedEntries[0]
       : undefined;
+
+  const allSelected = sortedFiles.length > 0 && selectedPaths.size === sortedFiles.length;
 
   const invalidateFiles = () => {
     queryClient.invalidateQueries({ queryKey: ['files', serverId] });
@@ -126,8 +201,8 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
       }
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to create item';
-      notifyError(message);
+      const msg = error?.response?.data?.error || error?.message || 'Failed to create item';
+      notifyError(msg);
     },
   });
 
@@ -142,8 +217,8 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
       invalidateFiles();
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to save file';
-      notifyError(message);
+      const msg = error?.response?.data?.error || error?.message || 'Failed to save file';
+      notifyError(msg);
     },
   });
 
@@ -161,8 +236,8 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
       notifySuccess('Deleted selection');
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to delete selection';
-      notifyError(message);
+      const msg = error?.response?.data?.error || error?.message || 'Failed to delete selection';
+      notifyError(msg);
     },
   });
 
@@ -176,47 +251,68 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
       notifySuccess('Upload complete');
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to upload files';
-      notifyError(message);
+      const msg = error?.response?.data?.error || error?.message || 'Failed to upload files';
+      notifyError(msg);
     },
   });
 
   const compressMutation = useMutation({
-    mutationFn: async ({ paths, archive }: { paths: string[]; archive: string }) => filesApi.compress(serverId, { paths, archiveName: archive }),
+    mutationFn: async ({ paths, archive }: { paths: string[]; archive: string }) =>
+      filesApi.compress(serverId, { paths, archiveName: archive }),
     onSuccess: (data) => {
       invalidateFiles();
       setShowCompress(false);
       notifySuccess(data?.archivePath ? `Archive created at ${data.archivePath}` : 'Archive created');
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to compress files';
-      notifyError(message);
+      const bufErr = isBufferError(error);
+      if (bufErr) return setBufferError(bufErr);
+      const msg = error?.response?.data?.error || error?.message || 'Failed to compress files';
+      notifyError(msg);
     },
   });
 
   const decompressMutation = useMutation({
-    mutationFn: async ({ archivePath, targetPath }: { archivePath: string; targetPath: string }) => filesApi.decompress(serverId, { archivePath, targetPath }),
+    mutationFn: async ({ archivePath, targetPath }: { archivePath: string; targetPath: string }) =>
+      filesApi.decompress(serverId, { archivePath, targetPath }),
     onSuccess: () => {
       invalidateFiles();
       setShowDecompress(false);
       notifySuccess('Archive extracted');
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to extract archive';
-      notifyError(message);
+      const bufErr = isBufferError(error);
+      if (bufErr) return setBufferError(bufErr);
+      const msg = error?.response?.data?.error || error?.message || 'Failed to extract archive';
+      notifyError(msg);
     },
   });
 
   const permissionsMutation = useMutation({
-    mutationFn: async ({ path: targetPath, mode }: { path: string; mode: number }) => filesApi.updatePermissions(serverId, targetPath, mode),
+    mutationFn: async ({ path: targetPath, mode }: { path: string; mode: number }) =>
+      filesApi.updatePermissions(serverId, targetPath, mode),
     onSuccess: () => {
       invalidateFiles();
       setPermissionsEntry(null);
       notifySuccess('Permissions updated');
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || 'Failed to update permissions';
-      notifyError(message);
+      const msg = error?.response?.data?.error || error?.message || 'Failed to update permissions';
+      notifyError(msg);
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: async ({ from, to }: { from: string; to: string }) =>
+      filesApi.rename(serverId, from, to),
+    onSuccess: () => {
+      invalidateFiles();
+      setRenamingEntry(null);
+      notifySuccess('Renamed');
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.error || error?.message || 'Failed to rename';
+      notifyError(msg);
     },
   });
 
@@ -225,19 +321,64 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
       setPath(entry.path);
       return;
     }
+    if (isArchive(entry.name)) {
+      openArchiveBrowser(entry.path);
+      return;
+    }
     openFile(entry);
+  };
+
+  const openArchiveBrowser = async (archivePath: string) => {
+    setArchiveBrowsePath(archivePath);
+    setArchiveBrowseDir('/');
+    setArchiveLoading(true);
+    try {
+      const entries = await filesApi.listArchiveContents(serverId, archivePath);
+      setArchiveEntries(entries);
+    } catch (error: any) {
+      const bufErr = isBufferError(error);
+      if (bufErr) {
+        setBufferError(bufErr);
+        setArchiveBrowsePath(null);
+      } else {
+        notifyError('Failed to read archive');
+        setArchiveBrowsePath(null);
+      }
+    } finally {
+      setArchiveLoading(false);
+    }
   };
 
   const handleSelect = (entry: FileEntry, selected: boolean) => {
     setSelectedPaths((prev) => {
       const next = new Set(prev);
-      if (selected) {
-        next.add(entry.path);
-      } else {
-        next.delete(entry.path);
-      }
+      if (selected) next.add(entry.path);
+      else next.delete(entry.path);
       return next;
     });
+  };
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedPaths(new Set());
+    } else {
+      setSelectedPaths(new Set(sortedFiles.map((f) => f.path)));
+    }
+  };
+
+  const handleShiftSelect = (entry: FileEntry) => {
+    const lastSelected = [...selectedPaths].pop();
+    if (!lastSelected) {
+      setSelectedPaths(new Set([entry.path]));
+      return;
+    }
+    const paths = sortedFiles.map((f) => f.path);
+    const startIdx = paths.indexOf(lastSelected);
+    const endIdx = paths.indexOf(entry.path);
+    if (startIdx === -1 || endIdx === -1) return;
+    const [from, to] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+    const range = paths.slice(from, to + 1);
+    setSelectedPaths((prev) => new Set([...prev, ...range]));
   };
 
   const handleDownload = async (entry: FileEntry) => {
@@ -255,6 +396,24 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
     } catch {
       notifyError('Failed to download file');
     }
+  };
+
+  const handleCopyPath = (entry: FileEntry) => {
+    navigator.clipboard.writeText(entry.path).then(
+      () => notifyInfo('Path copied'),
+      () => notifyError('Failed to copy path'),
+    );
+  };
+
+  const handleRename = (entry: FileEntry, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === entry.name) {
+      setRenamingEntry(null);
+      return;
+    }
+    const parentDir = getParentPath(entry.path);
+    const newPath = joinPath(parentDir, trimmed);
+    renameMutation.mutate({ from: entry.path, to: newPath });
   };
 
   const handleCreateSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -327,314 +486,344 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
     setShowDecompress(true);
   };
 
+  const guardSuspended = (fn: () => void) => () => {
+    if (isSuspended) {
+      notifyError('Server is suspended');
+      return;
+    }
+    fn();
+  };
+
+  // Toolbar button style
+  const tbtn =
+    'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white';
+  const tbtnDanger =
+    'inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10';
+  const tbtnPrimary =
+    'inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-primary-500 disabled:opacity-50';
+
   return (
-    <div className="grid grid-cols-[240px_1fr] gap-4">
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <div className="grid grid-cols-[220px_1fr] gap-4">
+      {/* Sidebar */}
+      <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
           Folders
         </div>
         <FileTree serverId={serverId} activePath={path} onNavigate={(nextPath) => setPath(nextPath)} />
       </div>
 
-      <div className="space-y-4">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">Path</div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+      {/* Main content */}
+      <div className="space-y-3">
+        {/* Breadcrumb + toolbar */}
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+          {/* Breadcrumbs */}
+          <nav className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <button
+              type="button"
+              className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-800"
+              onClick={() => setPath('/')}
+              title="Root"
+            >
+              <Home className="h-3.5 w-3.5" />
+            </button>
+            {breadcrumbs.map((crumb) => (
+              <div key={crumb.path} className="flex items-center gap-1">
+                <ChevronRight className="h-3 w-3 text-slate-300 dark:text-slate-600" />
                 <button
                   type="button"
-                  className="rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                  onClick={() => setPath(getParentPath(path))}
-                  disabled={path === '/'}
+                  className="rounded px-1.5 py-0.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                  onClick={() => setPath(crumb.path)}
                 >
-                  Up
+                  {crumb.name}
                 </button>
-                <nav className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md px-2 py-1 text-[11px] text-slate-500 transition-all duration-300 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                    onClick={() => setPath('/')}
-                  >
-                    /
-                  </button>
-                  {breadcrumbs.map((crumb) => (
-                    <div key={crumb.path} className="flex items-center gap-2">
-                      <span className="text-slate-500 dark:text-slate-400 dark:text-slate-500">/</span>
-                      <button
-                        type="button"
-                        className="rounded-md px-2 py-1 text-[11px] text-slate-500 transition-all duration-300 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                        onClick={() => setPath(crumb.path)}
-                      >
-                        {crumb.name}
-                      </button>
-                    </div>
-                  ))}
-                </nav>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setShowUpload((prev) => !prev)}
-                disabled={isSuspended}
-              >
-                Upload
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setCreateMode('file')}
-                disabled={isSuspended}
-              >
-                New file
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setCreateMode('directory')}
-                disabled={isSuspended}
-              >
-                New folder
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => refetch()}
-              >
-                Refresh
-              </button>
-            </div>
-        </div>
-          {message ? (
-            <div className="mt-3 text-xs text-amber-600 dark:text-amber-300">{message}</div>
-          ) : null}
-          {selectedEntries.length ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-300">
-              <span>Selected {selectedEntries.length}</span>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setShowCompress(true)}
-                disabled={isSuspended}
-              >
-                Compress
-              </button>
-              {selectedArchive ? (
+            ))}
+          </nav>
+
+          {/* Toolbar */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={tbtn}
+              onClick={() => setPath(getParentPath(path))}
+              disabled={path === '/'}
+              title="Go up"
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+              Up
+            </button>
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+            <button
+              type="button"
+              className={tbtn}
+              onClick={guardSuspended(() => setShowUpload((prev) => !prev))}
+              disabled={isSuspended}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Upload
+            </button>
+            <button
+              type="button"
+              className={tbtn}
+              onClick={guardSuspended(() => setCreateMode('file'))}
+              disabled={isSuspended}
+            >
+              <FilePlus className="h-3.5 w-3.5" />
+              New File
+            </button>
+            <button
+              type="button"
+              className={tbtn}
+              onClick={guardSuspended(() => setCreateMode('directory'))}
+              disabled={isSuspended}
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              New Folder
+            </button>
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+            <button type="button" className={tbtn} onClick={() => refetch()}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+
+            {/* Selection actions */}
+            {selectedEntries.length > 0 && (
+              <>
+                <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {selectedEntries.length} selected
+                </span>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-all duration-300 hover:border-primary-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                  onClick={() => setShowDecompress(true)}
+                  className={tbtn}
+                  onClick={guardSuspended(() => setShowCompress(true))}
                   disabled={isSuspended}
                 >
-                  Decompress
+                  <Archive className="h-3.5 w-3.5" />
+                  Compress
                 </button>
-              ) : null}
-              <button
-                type="button"
-                className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-600 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-400"
-                onClick={() => setConfirmDelete(true)}
-                disabled={isSuspended}
-              >
-                Delete
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setSelectedPaths(new Set())}
-              >
-                Clear
-              </button>
-            </div>
-          ) : null}
+                {selectedArchive && (
+                  <button
+                    type="button"
+                    className={tbtn}
+                    onClick={guardSuspended(() => setShowDecompress(true))}
+                    disabled={isSuspended}
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                    Extract
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={tbtnDanger}
+                  onClick={guardSuspended(() => setConfirmDelete(true))}
+                  disabled={isSuspended}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  onClick={() => setSelectedPaths(new Set())}
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {message && (
+            <div className="mt-2 text-xs text-amber-600 dark:text-amber-300">{message}</div>
+          )}
         </div>
 
-        {showUpload ? (
+        {/* Upload panel */}
+        {showUpload && (
           <FileUploader
             path={path}
             isUploading={uploadMutation.isPending}
             onUpload={(filesToUpload) => uploadMutation.mutate(filesToUpload)}
             onClose={() => setShowUpload(false)}
           />
-        ) : null}
+        )}
 
-        {createMode ? (
+        {/* Create panel */}
+        {createMode && (
           <form
-            className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30"
+            className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
             onSubmit={handleCreateSubmit}
           >
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-slate-900 dark:text-white">
-                {createMode === 'directory' ? 'Create folder' : 'Create file'}
-              </div>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setCreateMode(null)}
-              >
-                Close
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                {createMode === 'directory' ? 'Create Folder' : 'Create File'}
+              </h3>
+              <button type="button" className={tbtn} onClick={() => setCreateMode(null)}>
+                Cancel
               </button>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                Name
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</span>
                 <input
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-primary-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
                   value={createName}
-                  onChange={(event) => setCreateName(event.target.value)}
+                  onChange={(e) => setCreateName(e.target.value)}
                   placeholder={createMode === 'directory' ? 'configs' : 'server.properties'}
+                  autoFocus
                 />
               </label>
-              {createMode === 'file' ? (
-                <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                  Initial content
+              {createMode === 'file' && (
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    Initial content
+                  </span>
                   <textarea
-                    className="h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                    className="h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 outline-none transition-colors focus:border-primary-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
                     value={createContent}
-                    onChange={(event) => setCreateContent(event.target.value)}
+                    onChange={(e) => setCreateContent(e.target.value)}
                     placeholder="# New file"
                   />
                 </label>
-              ) : null}
+              )}
             </div>
-            <div className="mt-3 flex justify-end gap-2 text-xs">
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setCreateMode(null)}
-              >
-                Cancel
-              </button>
+            <div className="mt-3 flex justify-end">
               <button
                 type="submit"
-                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                className={tbtnPrimary}
                 disabled={!createName.trim() || createMutation.isPending || isSuspended}
               >
                 Create
               </button>
             </div>
           </form>
-        ) : null}
+        )}
 
-        {showCompress ? (
-          <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
+        {/* Compress panel */}
+        {showCompress && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-slate-900 dark:text-white">Compress selection</div>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setShowCompress(false)}
-              >
-                Close
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Compress {selectedEntries.length} item(s)
+              </h3>
+              <button type="button" className={tbtn} onClick={() => setShowCompress(false)}>
+                Cancel
               </button>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                Archive name
+            <div className="mt-3">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Archive name
+                </span>
                 <input
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                  className="w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-primary-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
                   value={archiveName}
-                  onChange={(event) => setArchiveName(event.target.value)}
+                  onChange={(e) => setArchiveName(e.target.value)}
                   placeholder="archive.tar.gz"
                 />
               </label>
-              <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                {selectedEntries.length} item(s) selected
-              </div>
             </div>
-            <div className="mt-3 flex justify-end gap-2 text-xs">
+            <div className="mt-3 flex justify-end">
               <button
                 type="button"
-                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                className={tbtnPrimary}
                 onClick={handleCompress}
                 disabled={!selectedEntries.length || compressMutation.isPending || isSuspended}
               >
-                Create archive
+                <Archive className="h-3.5 w-3.5" />
+                Create Archive
               </button>
             </div>
           </div>
-        ) : null}
+        )}
 
-        {showDecompress && selectedArchive ? (
-          <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
+        {/* Decompress panel */}
+        {showDecompress && selectedArchive && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between">
-              <div className="font-semibold text-slate-900 dark:text-white">Decompress archive</div>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setShowDecompress(false)}
-              >
-                Close
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Extract: {selectedArchive.name}
+              </h3>
+              <button type="button" className={tbtn} onClick={() => setShowDecompress(false)}>
+                Cancel
               </button>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                Target path
+            <div className="mt-3">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Target path
+                </span>
                 <input
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                  className="w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-primary-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
                   value={decompressTarget}
-                  onChange={(event) => setDecompressTarget(event.target.value)}
+                  onChange={(e) => setDecompressTarget(e.target.value)}
                   placeholder="/"
                 />
               </label>
-              <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                Archive: {selectedArchive.name}
-              </div>
             </div>
-            <div className="mt-3 flex justify-end gap-2 text-xs">
+            <div className="mt-3 flex justify-end">
               <button
                 type="button"
-                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                className={tbtnPrimary}
                 onClick={handleDecompress}
                 disabled={decompressMutation.isPending || isSuspended}
               >
+                <ArchiveRestore className="h-3.5 w-3.5" />
                 Extract
               </button>
             </div>
           </div>
-        ) : null}
+        )}
 
-        {confirmDelete && selectedEntries.length ? (
-          <div className="rounded-lg border border-rose-200 bg-rose-100/60 px-4 py-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                Delete {selectedEntries.length} item(s)? This action cannot be undone.
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <button
-                  type="button"
-                  className="rounded-md border border-rose-200 px-3 py-1 text-xs text-rose-700 transition-all duration-300 hover:border-rose-400 dark:border-rose-500/30 dark:text-rose-300"
-                  onClick={handleDeleteSelection}
-                  disabled={deleteMutation.isPending || isSuspended}
-                >
-                  Confirm delete
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Cancel
-                </button>
-              </div>
+        {/* Delete confirmation */}
+        {confirmDelete && selectedEntries.length > 0 && (
+          <div className="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 dark:border-rose-500/20 dark:bg-rose-500/5">
+            <span className="text-sm text-rose-700 dark:text-rose-300">
+              Delete {selectedEntries.length} item(s)? This cannot be undone.
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className={tbtnDanger}
+                onClick={handleDeleteSelection}
+                disabled={deleteMutation.isPending || isSuspended}
+              >
+                Confirm Delete
+              </button>
+              <button type="button" className={tbtn} onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </button>
             </div>
           </div>
-        ) : null}
+        )}
 
-        <div className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 text-xs text-slate-500 dark:text-slate-400 dark:border-slate-800">
-            <span>Files</span>
-            <span>{sortedFiles.length} items</span>
-          </div>
+        {/* File list */}
+        <div className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
           <FileList
             files={sortedFiles}
             selectedPaths={selectedPaths}
             isLoading={isLoading}
             isError={isError}
+            allSelected={allSelected}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            renamingEntry={renamingEntry}
+            onSort={handleSort}
+            onSelectAll={handleSelectAll}
             onOpen={handleOpen}
             onSelect={handleSelect}
+            onShiftSelect={handleShiftSelect}
             onDownload={handleDownload}
+            onCopyPath={handleCopyPath}
+            onRename={(entry) => {
+              if (isSuspended) {
+                notifyError('Server is suspended');
+                return;
+              }
+              setRenamingEntry(entry);
+            }}
+            onRenameSubmit={handleRename}
+            onRenameCancel={() => setRenamingEntry(null)}
             onDelete={(entry) => {
               if (isSuspended) {
                 notifyError('Server is suspended');
@@ -668,93 +857,82 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
         </div>
       </div>
 
-      {activeFile ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+      {/* File editor overlay */}
+      {activeFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
           <div
-            className="absolute inset-0 bg-white dark:bg-slate-950/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={closeActiveFile}
           />
-          <div className="relative z-10 h-[90vh] w-[90vw] rounded-xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <FileEditor
-              file={activeFile}
-              isLoading={isFileLoading}
-              isSaving={saveMutation.isPending}
-              isDirty={isDirty}
-              onChange={updateActiveContent}
-              onSave={() => saveMutation.mutate()}
-              onDownload={() => handleDownload(activeFile)}
-              onReset={() => {
-                if (!activeFile) return;
-                updateActiveContent(activeFile.originalContent);
-              }}
-              onClose={closeActiveFile}
-              height="calc(90vh - 140px)"
-              isSuspended={isSuspended}
-            />
+          <div className="relative z-10 flex h-[90vh] w-full max-w-6xl flex-col rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 p-4">
+              <FileEditor
+                file={activeFile}
+                isLoading={isFileLoading}
+                isSaving={saveMutation.isPending}
+                isDirty={isDirty}
+                onChange={updateActiveContent}
+                onSave={() => saveMutation.mutate()}
+                onDownload={() => handleDownload(activeFile)}
+                onReset={() => {
+                  if (!activeFile) return;
+                  updateActiveContent(activeFile.originalContent);
+                }}
+                onClose={closeActiveFile}
+                isSuspended={isSuspended}
+              />
           </div>
         </div>
-      ) : null}
+      )}
 
-      {permissionsEntry ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+      {/* Permissions modal */}
+      {permissionsEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
           <div
-            className="absolute inset-0 bg-white dark:bg-slate-950/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setPermissionsEntry(null)}
           />
           <form
-            className="relative z-10 w-full max-w-lg rounded-xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+            className="relative z-10 w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
             onSubmit={handlePermissionsSubmit}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Edit permissions
-                </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                  {permissionsEntry.path}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setPermissionsEntry(null)}
-              >
-                Close
-              </button>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
-                Mode (octal)
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Edit Permissions
+            </h3>
+            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+              {permissionsEntry.path}
+            </p>
+            <div className="mt-4">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Mode (octal)
+                </span>
                 <input
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900 outline-none transition-colors focus:border-primary-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-primary-400"
                   value={permissionsValue}
-                  onChange={(event) => {
-                    setPermissionsValue(event.target.value);
+                  onChange={(e) => {
+                    setPermissionsValue(e.target.value);
                     setPermissionsError(null);
                   }}
                   placeholder={permissionsEntry.isDirectory ? '755' : '644'}
+                  autoFocus
                 />
               </label>
-              <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">
-                Use three or four digits. Example: 644 for files, 755 for folders.
-              </div>
+              <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                Three or four digits. Example: 644 for files, 755 for folders.
+              </p>
             </div>
-            {permissionsError ? (
-              <div className="mt-3 rounded-md border border-rose-200 bg-rose-100/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+            {permissionsError && (
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/5 dark:text-rose-300">
                 {permissionsError}
               </div>
-            ) : null}
-            <div className="mt-4 flex justify-end gap-2 text-xs">
-              <button
-                type="button"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
-                onClick={() => setPermissionsEntry(null)}
-              >
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className={tbtn} onClick={() => setPermissionsEntry(null)}>
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+                className={tbtnPrimary}
                 disabled={permissionsMutation.isPending || isSuspended}
               >
                 Update
@@ -762,8 +940,237 @@ function FileManager({ serverId, isSuspended = false }: { serverId: string; isSu
             </div>
           </form>
         </div>
-      ) : null}
+      )}
+
+      {/* Archive browser modal */}
+      {archiveBrowsePath && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setArchiveBrowsePath(null)}
+          />
+          <div className="relative z-10 flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+              <div className="flex min-w-0 items-center gap-2">
+                <Archive className="h-4 w-4 shrink-0 text-slate-400" />
+                <span className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                  {archiveBrowsePath.split('/').pop()}
+                </span>
+                <span className="text-xs text-slate-400 dark:text-slate-500">— read-only preview</span>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                onClick={() => setArchiveBrowsePath(null)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Breadcrumbs */}
+            <div className="flex items-center gap-1 border-b border-slate-100 px-4 py-2 text-xs dark:border-slate-800/60">
+              <button
+                type="button"
+                className="rounded px-1.5 py-0.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+                onClick={() => setArchiveBrowseDir('/')}
+              >
+                <Home className="inline h-3 w-3" />
+              </button>
+              {archiveBrowseDir !== '/' &&
+                archiveBrowseDir.split('/').filter(Boolean).map((seg, i, arr) => {
+                  const segPath = '/' + arr.slice(0, i + 1).join('/');
+                  return (
+                    <span key={segPath} className="flex items-center gap-1">
+                      <ChevronRight className="h-3 w-3 text-slate-300 dark:text-slate-600" />
+                      <button
+                        type="button"
+                        className="rounded px-1.5 py-0.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+                        onClick={() => setArchiveBrowseDir(segPath)}
+                      >
+                        {seg}
+                      </button>
+                    </span>
+                  );
+                })}
+            </div>
+
+            {/* Content */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {archiveLoading ? (
+                <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Reading archive…
+                </div>
+              ) : (
+                <ArchiveListing
+                  entries={archiveEntries}
+                  currentDir={archiveBrowseDir}
+                  onNavigate={setArchiveBrowseDir}
+                />
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-2 dark:border-slate-800">
+              <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                {archiveEntries.length} entries total
+              </span>
+              <button
+                type="button"
+                className={tbtn}
+                onClick={() => setArchiveBrowsePath(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bufferError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setBufferError(null)}
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-500/20">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Buffer Limit Exceeded</h3>
+            </div>
+            <p className="mb-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              This operation produced more output than the current buffer limit allows. This typically
+              happens with large archives containing many files.
+            </p>
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500 dark:text-slate-400">Current limit</span>
+                <span className="font-medium text-slate-900 dark:text-white">{bufferError.currentMaxBufferMb} MB</span>
+              </div>
+              <div className="mt-1 flex justify-between text-sm">
+                <span className="text-slate-500 dark:text-slate-400">Recommended</span>
+                <span className="font-medium text-primary-600 dark:text-primary-400">{bufferError.recommendedMaxBufferMb} MB</span>
+              </div>
+            </div>
+            <p className="mb-4 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              An admin can increase the <span className="font-medium text-slate-700 dark:text-slate-200">Max buffer (MB)</span> setting
+              under <span className="font-medium text-slate-700 dark:text-slate-200">Admin → Security</span> to resolve this.
+            </p>
+            <button
+              onClick={() => setBufferError(null)}
+              className="w-full rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/* ── Archive virtual directory listing ── */
+
+type ArchiveItem = { name: string; size: number; isDirectory: boolean; modified?: string };
+
+function formatSize(bytes: number) {
+  if (bytes === 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ArchiveListing({
+  entries,
+  currentDir,
+  onNavigate,
+}: {
+  entries: ArchiveItem[];
+  currentDir: string;
+  onNavigate: (dir: string) => void;
+}) {
+  const prefix = currentDir === '/' ? '' : currentDir.replace(/^\//, '') + '/';
+
+  const visible = useMemo(() => {
+    const seen = new Set<string>();
+    const items: (ArchiveItem & { displayName: string })[] = [];
+
+    for (const entry of entries) {
+      const { name } = entry;
+      if (prefix && !name.startsWith(prefix)) continue;
+      const rest = name.slice(prefix.length);
+      if (!rest) continue;
+
+      const slashIdx = rest.indexOf('/');
+      if (slashIdx === -1) {
+        if (!seen.has(rest)) {
+          seen.add(rest);
+          items.push({ ...entry, displayName: rest });
+        }
+      } else {
+        const dirName = rest.slice(0, slashIdx);
+        if (!seen.has(dirName)) {
+          seen.add(dirName);
+          items.push({ name: prefix + dirName, displayName: dirName, size: 0, isDirectory: true });
+        }
+      }
+    }
+
+    items.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+    return items;
+  }, [entries, prefix]);
+
+  if (visible.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-slate-400 dark:text-slate-500">
+        Empty directory
+      </div>
+    );
+  }
+
+  return (
+    <table className="w-full text-left text-sm">
+      <thead>
+        <tr className="border-b border-slate-100 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:text-slate-500">
+          <th className="px-4 py-2">Name</th>
+          <th className="px-4 py-2 text-right">Size</th>
+        </tr>
+      </thead>
+      <tbody>
+        {visible.map((item) => (
+          <tr
+            key={item.name}
+            className="border-b border-slate-50 transition-colors hover:bg-slate-50 dark:border-slate-800/40 dark:hover:bg-slate-800/40"
+            onDoubleClick={() => item.isDirectory && onNavigate('/' + item.name)}
+          >
+            <td className="px-4 py-1.5">
+              <button
+                type="button"
+                className="flex items-center gap-2 text-slate-700 transition-colors hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                onClick={() => item.isDirectory && onNavigate('/' + item.name)}
+                disabled={!item.isDirectory}
+              >
+                {item.isDirectory ? (
+                  <Folder className="h-4 w-4 shrink-0 text-sky-500/70" />
+                ) : (
+                  <File className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
+                )}
+                <span className={item.isDirectory ? 'font-medium' : ''}>{item.displayName}</span>
+              </button>
+            </td>
+            <td className="px-4 py-1.5 text-right text-xs tabular-nums text-slate-400 dark:text-slate-500">
+              {item.isDirectory ? '—' : formatSize(item.size)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

@@ -235,6 +235,8 @@ model SystemSetting {
   lockoutWindowMinutes     Int?
   lockoutDurationMinutes   Int?
   auditRetentionDays       Int?
+  consoleOutputByteLimitBytes Int?
+  maxBufferMb              Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

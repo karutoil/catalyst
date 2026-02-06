@@ -14,6 +14,21 @@ import {
 import { ServerStateMachine } from "../services/state-machine";
 import { normalizeHostIp } from "../utils/ipam";
 
+const DEFAULT_CONSOLE_OUTPUT_BYTE_LIMIT = 256 * 1024; // 256KB/s per server
+const MIN_CONSOLE_OUTPUT_BYTE_LIMIT = 64 * 1024;
+const MAX_CONSOLE_OUTPUT_BYTE_LIMIT = 2 * 1024 * 1024;
+
+const resolveConsoleOutputByteLimit = (value?: number | null) => {
+  const raw =
+    typeof value === "number" && Number.isFinite(value) && value > 0
+      ? value
+      : Number.parseInt(process.env.CONSOLE_OUTPUT_BYTE_LIMIT_BYTES ?? "", 10);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_CONSOLE_OUTPUT_BYTE_LIMIT;
+  }
+  return Math.min(MAX_CONSOLE_OUTPUT_BYTE_LIMIT, Math.max(MIN_CONSOLE_OUTPUT_BYTE_LIMIT, raw));
+};
+
 interface ConnectedAgent {
   nodeId: string;
   socket: any;
@@ -32,7 +47,7 @@ interface ClientConnection {
 type PendingAgentRequest = {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
-  timeout: NodeJS.Timeout;
+  timeout: ReturnType<typeof setTimeout>;
   kind: "json" | "binary";
   chunks?: Buffer[];
   onChunk?: (chunk: Buffer) => void;
@@ -52,12 +67,14 @@ export class WebSocketGateway {
   private serverCommandCounters = new Map<string, { count: number; resetAt: number }>();
   private serverConsoleBytes = new Map<string, { count: number; resetAt: number }>();
   private consoleResumeTimestamps = new Map<string, number>();
+  private lastConsoleLimitRefreshAt = 0;
   private readonly consoleOutputLimit = { max: 200, windowMs: 1000 };
+  private readonly consoleLimitRefreshIntervalMs = 5000;
   private consoleInputLimit = { max: 10, windowMs: 1000 };
   private readonly agentMessageLimit = { max: 10000, windowMs: 1000 };
   private readonly agentMetricsLimit = { max: 10000, windowMs: 1000 };
   private readonly serverMetricsLimit = { max: 60, windowMs: 1000 };
-  private readonly agentConsoleBytesLimit = { maxBytes: 32 * 1024 };
+  private readonly agentConsoleBytesLimit = { maxBytes: resolveConsoleOutputByteLimit() };
   private readonly pendingAgentRequestLimit = 2000;
   private readonly autoRestartingServers = new Set<string>();
   
@@ -79,6 +96,9 @@ export class WebSocketGateway {
     if (settings?.consoleRateLimitMax && settings.consoleRateLimitMax > 0) {
       this.consoleInputLimit = { ...this.consoleInputLimit, max: settings.consoleRateLimitMax };
     }
+    this.agentConsoleBytesLimit.maxBytes = resolveConsoleOutputByteLimit(
+      settings?.consoleOutputByteLimitBytes
+    );
   }
 
   private async verifyAgentApiKey(nodeId: string, tokenValue: string) {
@@ -391,6 +411,7 @@ export class WebSocketGateway {
     const now = Date.now();
     const windowMs = this.consoleOutputLimit.windowMs;
     const limit = this.agentConsoleBytesLimit.maxBytes;
+    this.maybeRefreshConsoleLimits(now);
     const existing = this.serverConsoleBytes.get(serverId);
     if (!existing || now >= existing.resetAt) {
       this.serverConsoleBytes.set(serverId, { count: bytes, resetAt: now + windowMs });
@@ -1645,11 +1666,7 @@ export class WebSocketGateway {
     const now = Date.now();
     const windowMs = this.consoleInputLimit.windowMs;
     const limit = this.consoleInputLimit.max;
-    if (now % windowMs < 25) {
-      this.refreshConsoleLimits().catch((err) =>
-        this.logger.warn({ err }, "Failed to refresh console rate limits")
-      );
-    }
+    this.maybeRefreshConsoleLimits(now);
     const existing = this.clientCommandCounters.get(clientId);
     if (!existing || now >= existing.resetAt) {
       this.clientCommandCounters.set(clientId, { count: 1, resetAt: now + windowMs });
@@ -1660,6 +1677,16 @@ export class WebSocketGateway {
     }
     existing.count += 1;
     return true;
+  }
+
+  private maybeRefreshConsoleLimits(now = Date.now()) {
+    if (now - this.lastConsoleLimitRefreshAt < this.consoleLimitRefreshIntervalMs) {
+      return;
+    }
+    this.lastConsoleLimitRefreshAt = now;
+    this.refreshConsoleLimits().catch((err) =>
+      this.logger.warn({ err }, "Failed to refresh console rate limits")
+    );
   }
 
   private allowConsoleOutput(serverId: string) {

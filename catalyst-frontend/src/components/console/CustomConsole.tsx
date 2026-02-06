@@ -186,11 +186,11 @@ function CustomConsole({
       <div
         ref={outputRef}
         onScroll={handleScroll}
-        className="console-output h-full overflow-y-auto font-mono text-[13px] leading-[1.7] text-slate-300"
+        className="console-output h-full overflow-y-auto font-mono text-[13px] leading-[1.7] text-slate-800 dark:text-slate-300"
       >
         {isLoading ? (
           <div className="flex items-center gap-2 px-4 py-3 text-xs text-slate-500">
-            <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-primary-400" />
+            <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-primary-400 dark:border-slate-600" />
             Loading recent logs…
           </div>
         ) : null}
@@ -207,7 +207,7 @@ function CustomConsole({
           </div>
         ) : null}
         {!isLoading && normalizedEntries.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-slate-600">
+          <div className="flex h-full items-center justify-center text-xs text-slate-400 dark:text-slate-600">
             No console output yet.
           </div>
         ) : (
@@ -221,15 +221,15 @@ function CustomConsole({
               return (
                 <div
                   key={entry.id}
-                  className={`console-line group flex border-l-2 ${streamBorderColors[entry.stream] ?? 'border-l-slate-700'}`}
+                  className={`console-line group flex border-l-2 ${streamBorderColors[entry.stream] ?? 'border-l-slate-300 dark:border-l-slate-700'}`}
                 >
                   {showLineNumbers ? (
-                    <span className="flex w-12 shrink-0 select-none items-start justify-end pr-3 pt-px text-[11px] text-slate-700 group-hover:text-slate-500">
+                    <span className="flex w-12 shrink-0 select-none items-start justify-end pr-3 pt-px text-[11px] text-slate-400 group-hover:text-slate-500 dark:text-slate-700 dark:group-hover:text-slate-500">
                       {index + 1}
                     </span>
                   ) : null}
                   {displayTs ? (
-                    <span className="shrink-0 select-none px-3 pt-px text-[11px] text-slate-600 group-hover:text-slate-500">
+                    <span className="shrink-0 select-none px-3 pt-px text-[11px] text-slate-400 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-500">
                       {formatTime(displayTs)}
                     </span>
                   ) : (
@@ -253,7 +253,7 @@ function CustomConsole({
                           {isLong ? (
                             <button
                               type="button"
-                              className="ml-1 text-[10px] text-sky-400/70 hover:text-sky-300"
+                              className="ml-1 text-[10px] text-sky-600/70 hover:text-sky-500 dark:text-sky-400/70 dark:hover:text-sky-300"
                               onClick={() =>
                                 setExpandedIds((c) => {
                                   const n = new Set(c);
@@ -280,7 +280,7 @@ function CustomConsole({
         <button
           type="button"
           onClick={scrollToBottom}
-          className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/95 px-3 py-1.5 text-[11px] text-slate-400 shadow-lg backdrop-blur-sm transition-all hover:border-primary-500/50 hover:text-slate-200"
+          className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-[11px] text-slate-500 shadow-lg backdrop-blur-sm transition-all hover:border-primary-500/50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-400 dark:hover:text-slate-200"
         >
           <ArrowDown className="h-3 w-3" />
           New output below

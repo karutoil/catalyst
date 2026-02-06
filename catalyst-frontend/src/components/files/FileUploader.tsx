@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Upload, X } from 'lucide-react';
 
 type Props = {
   path: string;
@@ -14,63 +15,62 @@ function FileUploader({ path, isUploading, onUpload, onClose }: Props) {
   const handleFiles = (files: FileList | null) => {
     if (!files?.length) return;
     onUpload(Array.from(files));
-    if (inputRef.current) {
-      inputRef.current.value = '';
-    }
+    if (inputRef.current) inputRef.current.value = '';
   };
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-primary-500/30">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center justify-between">
         <div>
-          <div className="font-semibold text-slate-900 dark:text-white">Upload files</div>
-          <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Target: {path}</div>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Upload Files</h3>
+          <p className="text-xs text-slate-400 dark:text-slate-500">Target: {path}</p>
         </div>
         <button
           type="button"
-          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-300 dark:hover:border-primary-500/30"
+          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
           onClick={onClose}
         >
-          Close
+          <X className="h-4 w-4" />
         </button>
       </div>
-
       <div
-        className={`mt-4 flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center transition-all duration-300 ${
+        className={`mt-3 flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 transition-colors ${
           isDragActive
-            ? 'border-primary-500 bg-primary-500/10 text-primary-600 dark:text-primary-400'
-            : 'border-slate-300 text-slate-500 dark:text-slate-400 dark:border-slate-700 dark:text-slate-400'
+            ? 'border-primary-500 bg-primary-500/5 text-primary-600 dark:text-primary-400'
+            : 'border-slate-200 text-slate-400 dark:border-slate-700 dark:text-slate-500'
         }`}
-        onDragOver={(event) => {
-          event.preventDefault();
+        onDragOver={(e) => {
+          e.preventDefault();
           setIsDragActive(true);
         }}
         onDragLeave={() => setIsDragActive(false)}
-        onDrop={(event) => {
-          event.preventDefault();
+        onDrop={(e) => {
+          e.preventDefault();
           setIsDragActive(false);
-          handleFiles(event.dataTransfer.files);
+          handleFiles(e.dataTransfer.files);
         }}
       >
-        <div className="text-sm font-semibold">Drag files here</div>
-        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">or select from your device</div>
-        <div className="mt-4 flex items-center gap-2">
+        <Upload className="mb-2 h-8 w-8" />
+        <p className="text-sm font-medium">
+          {isDragActive ? 'Drop files here' : 'Drag files here'}
+        </p>
+        <p className="mt-1 text-xs">or select from your device</p>
+        <div className="mt-4">
           <input
             ref={inputRef}
             type="file"
             multiple
             className="hidden"
-            onChange={(event) => handleFiles(event.target.files)}
+            onChange={(e) => handleFiles(e.target.files)}
           />
           <button
             type="button"
-            className="rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-primary-500/20 transition-all duration-300 hover:bg-primary-500 disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-primary-500 disabled:opacity-50"
             onClick={() => inputRef.current?.click()}
             disabled={isUploading}
           >
-            Choose files
+            {isUploading ? 'Uploading...' : 'Choose Files'}
           </button>
-          {isUploading ? <span className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Uploading...</span> : null}
         </div>
       </div>
     </div>

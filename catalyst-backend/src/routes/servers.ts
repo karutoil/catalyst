@@ -247,6 +247,63 @@ const buildConnectionInfo = (
   };
 };
 
+const isHytaleTemplate = (template: any) => {
+  const name = typeof template?.name === "string" ? template.name : "";
+  const image = typeof template?.image === "string" ? template.image : "";
+  const startup = typeof template?.startup === "string" ? template.startup : "";
+  const installScript =
+    typeof template?.installScript === "string" ? template.installScript : "";
+
+  return (
+    /hytale/i.test(name) ||
+    /hytale/i.test(image) ||
+    startup.includes("HytaleServer.jar") ||
+    installScript.includes("hytale-downloader")
+  );
+};
+
+const patchTemplateForRuntime = (template: any) => {
+  if (!template || !isHytaleTemplate(template)) {
+    return template;
+  }
+
+  const patched = { ...template } as any;
+
+  if (typeof patched.installScript === "string") {
+    patched.installScript = patched.installScript
+      .replace(
+        /unzip -o -DD "\$DOWNLOAD_ZIP" -d \{\{SERVER_DIR\}\}/g,
+        'unzip -o "$DOWNLOAD_ZIP" -d {{SERVER_DIR}}'
+      )
+      .replace(
+        /unzip -o -DD \$DOWNLOAD_ZIP -d \{\{SERVER_DIR\}\}/g,
+        'unzip -o "$DOWNLOAD_ZIP" -d {{SERVER_DIR}}'
+      );
+
+    if (!patched.installScript.includes("chown -R 1001:1001 {{SERVER_DIR}}")) {
+      patched.installScript = patched.installScript.replace(
+        /\necho '\[Catalyst\] Hytale installation complete!'\n?$/,
+        "\n\necho '[Catalyst] Fixing file ownership for runtime user...'\nchown -R 1001:1001 {{SERVER_DIR}}\nchmod -R u+rwX {{SERVER_DIR}}\n\necho '[Catalyst] Hytale installation complete!'\n"
+      );
+    }
+  }
+
+  if (
+    typeof patched.startup === "string" &&
+    /-XX:AOTCache(?:=|\b)/.test(patched.startup)
+  ) {
+    patched.startup = patched.startup
+      .replace(/\s+-Xshare:(?:on|auto|off|dump)\b/g, "")
+      .replace(/\s+-XX:DumpLoadedClassList(?:=\S+)?/g, "")
+      .replace(/\s+-XX:SharedClassListFile(?:=\S+)?/g, "")
+      .replace(/\s+-XX:SharedArchiveFile(?:=\S+)?/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  return patched;
+};
+
   const withConnectionInfo = (server: any, fallbackNode?: { publicAddress?: string }) => ({
     ...server,
     backupS3Config: redactBackupConfig(decryptBackupConfig(server.backupS3Config)),
@@ -261,6 +318,7 @@ export async function serverRoutes(app: FastifyInstance) {
   const execFileAsync = promisify(execFile);
   const serverDataRoot = process.env.SERVER_DATA_PATH || "/var/lib/catalyst/servers";
   let fileRateLimitMax = 30;
+  let maxBufferBytes = 50 * 1024 * 1024;
   const modManagerProviders = new Map<string, string>(
     [
       ["curseforge", path.resolve(__dirname, "../mod-manager/curseforge.json")],
@@ -279,9 +337,24 @@ export async function serverRoutes(app: FastifyInstance) {
   try {
     const settings = await getSecuritySettings();
     fileRateLimitMax = settings.fileRateLimitMax;
+    maxBufferBytes = (settings.maxBufferMb ?? 50) * 1024 * 1024;
   } catch (error) {
     console.warn("Failed to load security settings for file rate limits");
   }
+
+  const isMaxBufferError = (error: any): boolean =>
+    error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ||
+    (error?.message && String(error.message).includes("maxBuffer length exceeded"));
+
+  const maxBufferErrorResponse = () => {
+    const currentMb = Math.round(maxBufferBytes / (1024 * 1024));
+    return {
+      error: "Output buffer limit exceeded",
+      code: "MAX_BUFFER_EXCEEDED",
+      currentMaxBufferMb: currentMb,
+      recommendedMaxBufferMb: Math.max(currentMb * 2, 100),
+    };
+  };
 
   const normalizeRequestPath = (value?: string) => {
     if (!value) return "/";
@@ -464,8 +537,8 @@ export async function serverRoutes(app: FastifyInstance) {
   };
   const validateArchiveEntries = async (archivePath: string, isZip: boolean) => {
     const { stdout } = isZip
-      ? await execFileAsync("unzip", ["-Z", "-1", archivePath])
-      : await execFileAsync("tar", ["-tzf", archivePath]);
+      ? await execFileAsync("unzip", ["-Z", "-1", archivePath], { maxBuffer: maxBufferBytes })
+      : await execFileAsync("tar", ["-tzf", archivePath], { maxBuffer: maxBufferBytes });
     const entries = stdout
       .split("\n")
       .map((entry) => entry.trim())
@@ -2440,13 +2513,16 @@ export async function serverRoutes(app: FastifyInstance) {
         );
 
         if (archiveLower.endsWith(".zip")) {
-          await execFileAsync("zip", ["-r", targetPath, ...relativePaths], { cwd: baseDir });
+          await execFileAsync("zip", ["-r", targetPath, ...relativePaths], { cwd: baseDir, maxBuffer: maxBufferBytes });
         } else {
-          await execFileAsync("tar", ["-czf", targetPath, "-C", baseDir, ...relativePaths]);
+          await execFileAsync("tar", ["-czf", targetPath, "-C", baseDir, ...relativePaths], { maxBuffer: maxBufferBytes });
         }
 
         reply.send({ success: true, data: { archivePath: normalizedArchive } });
-      } catch (error) {
+      } catch (error: any) {
+        if (isMaxBufferError(error)) {
+          return reply.status(413).send(maxBufferErrorResponse());
+        }
         reply.status(500).send({ error: "Failed to compress files" });
       }
     }
@@ -2506,14 +2582,116 @@ export async function serverRoutes(app: FastifyInstance) {
         const isZip = archiveLower.endsWith(".zip");
         await validateArchiveEntries(archiveFullPath, isZip);
         if (isZip) {
-          await execFileAsync("unzip", ["-o", archiveFullPath, "-d", targetFullPath]);
+          await execFileAsync("unzip", ["-o", archiveFullPath, "-d", targetFullPath], { maxBuffer: maxBufferBytes });
         } else {
-          await execFileAsync("tar", ["-xzf", archiveFullPath, "-C", targetFullPath]);
+          await execFileAsync("tar", ["-xzf", archiveFullPath, "-C", targetFullPath], { maxBuffer: maxBufferBytes });
         }
 
         reply.send({ success: true });
-      } catch (error) {
+      } catch (error: any) {
+        if (isMaxBufferError(error)) {
+          return reply.status(413).send(maxBufferErrorResponse());
+        }
         reply.status(500).send({ error: "Failed to decompress archive" });
+      }
+    }
+  );
+
+  // List archive contents (without extracting)
+  app.post(
+    "/:serverId/files/archive-contents",
+    {
+      onRequest: [app.authenticate],
+      config: { rateLimit: { max: fileRateLimitMax, timeWindow: '1 minute' } },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { serverId } = request.params as { serverId: string };
+      const userId = request.user.userId;
+      const { archivePath } = request.body as { archivePath: string };
+
+      if (!archivePath) {
+        return reply.status(400).send({ error: "Missing archive path" });
+      }
+
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+      });
+
+      if (!server) {
+        return reply.status(404).send({ error: "Server not found" });
+      }
+
+      const access = await prisma.serverAccess.findFirst({
+        where: {
+          serverId,
+          userId,
+          permissions: { has: "file.read" },
+        },
+      });
+
+      if (!access && server.ownerId !== userId) {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      try {
+        const normalizedArchive = normalizeRequestPath(archivePath);
+        const archiveLower = normalizedArchive.toLowerCase();
+        const { targetPath: archiveFullPath } = await resolveServerPath(server.uuid, normalizedArchive);
+
+        const stats = await fs.stat(archiveFullPath).catch(() => null);
+        if (!stats || stats.isDirectory()) {
+          return reply.status(404).send({ error: "Archive not found" });
+        }
+
+        const isZip = archiveLower.endsWith(".zip");
+        const isTar = archiveLower.endsWith(".tar.gz") || archiveLower.endsWith(".tgz");
+        if (!isZip && !isTar) {
+          return reply.status(400).send({ error: "Unsupported archive type" });
+        }
+
+        type ArchiveEntry = { name: string; size: number; isDirectory: boolean; modified?: string };
+        const entries: ArchiveEntry[] = [];
+
+        if (isZip) {
+          const { stdout } = await execFileAsync("unzip", ["-Z", "-l", archiveFullPath], { maxBuffer: maxBufferBytes });
+          // zipinfo -l format: perms version os size type csize method date time name
+          for (const line of stdout.split("\n")) {
+            const match = line.match(/^([d-])\S+\s+\S+\s+\S+\s+(\d+)\s+\S+\s+\d+\s+\S+\s+(\d{2}-\w{3}-\d{2})\s+(\d{2}:\d{2})\s+(.+)$/);
+            if (!match) continue;
+            const isDir = match[1] === "d" || match[5].endsWith("/");
+            const name = match[5].replace(/\/$/, "");
+            if (!name || name === "." || name.startsWith("..")) continue;
+            entries.push({
+              name,
+              size: parseInt(match[2], 10) || 0,
+              isDirectory: isDir,
+            });
+          }
+        } else {
+          const { stdout } = await execFileAsync("tar", ["-tzvf", archiveFullPath], { maxBuffer: maxBufferBytes });
+          for (const line of stdout.split("\n")) {
+            // tar -tzvf format: drwxr-xr-x user/group  0 2024-01-01 00:00 path/to/dir/
+            const match = line.match(/^([d-])[\S]+\s+\S+\s+(\d+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+(.+)$/);
+            if (!match) continue;
+            const isDir = match[1] === "d" || match[5].endsWith("/");
+            const name = match[5].replace(/\/$/, "");
+            if (!name || name === "." || name.startsWith("..")) continue;
+            entries.push({
+              name,
+              size: parseInt(match[2], 10) || 0,
+              isDirectory: isDir,
+              modified: `${match[3]}T${match[4]}:00Z`,
+            });
+          }
+        }
+
+        reply.send({ success: true, data: entries });
+      } catch (error: any) {
+        request.log.error({ err: error, archivePath }, "Failed to read archive contents");
+        if (isMaxBufferError(error)) {
+          return reply.status(413).send(maxBufferErrorResponse());
+        }
+        reply.status(500).send({ error: error?.message || "Failed to read archive contents" });
       }
     }
   );
@@ -3843,12 +4021,13 @@ export async function serverRoutes(app: FastifyInstance) {
           return reply.status(400).send({ error: error.message });
         }
       }
+      const runtimeTemplate = patchTemplateForRuntime(server.template);
 
       const success = await gateway.sendToAgent(server.nodeId, {
         type: "install_server",
         serverId: server.id,
         serverUuid: server.uuid,
-        template: server.template,
+        template: runtimeTemplate,
         environment: environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,
@@ -3967,12 +4146,13 @@ export async function serverRoutes(app: FastifyInstance) {
           return reply.status(400).send({ error: error.message });
         }
       }
+      const runtimeTemplate = patchTemplateForRuntime(server.template);
 
       const success = await gateway.sendToAgent(server.nodeId, {
         type: "start_server",
         serverId: server.id,
         serverUuid: server.uuid,
-        template: server.template,
+        template: runtimeTemplate,
         environment: environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,
@@ -4057,7 +4237,7 @@ export async function serverRoutes(app: FastifyInstance) {
         type: "stop_server",
         serverId: server.id,
         serverUuid: server.uuid,
-        template: server.template,
+        template: patchTemplateForRuntime(server.template),
       });
 
       if (!success) {
@@ -4129,6 +4309,7 @@ export async function serverRoutes(app: FastifyInstance) {
       if (!gateway) {
         return reply.status(500).send({ error: "WebSocket gateway not available" });
       }
+      const runtimeTemplate = patchTemplateForRuntime(server.template);
 
       // If running, stop first
       if (currentState === ServerState.RUNNING) {
@@ -4136,7 +4317,7 @@ export async function serverRoutes(app: FastifyInstance) {
           type: "stop_server",
           serverId: server.id,
           serverUuid: server.uuid,
-          template: server.template,
+          template: runtimeTemplate,
         });
         await prisma.server.update({
           where: { id: serverId },
@@ -4171,7 +4352,7 @@ export async function serverRoutes(app: FastifyInstance) {
         type: "restart_server",
         serverId: server.id,
         serverUuid: server.uuid,
-        template: server.template,
+        template: runtimeTemplate,
         environment: environment,
         allocatedMemoryMb: server.allocatedMemoryMb,
         allocatedCpuCores: server.allocatedCpuCores,

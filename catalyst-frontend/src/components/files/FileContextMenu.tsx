@@ -1,10 +1,24 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  Archive,
+  ArchiveRestore,
+  ClipboardCopy,
+  Download,
+  FolderOpen,
+  FileText,
+  MoreHorizontal,
+  Pencil,
+  Shield,
+  Trash2,
+} from 'lucide-react';
 import type { FileEntry } from '../../types/file';
 
 type Props = {
   entry: FileEntry;
   onOpen: () => void;
   onDownload?: () => void;
+  onCopyPath?: () => void;
+  onRename?: () => void;
   onDelete: () => void;
   onCompress?: () => void;
   onDecompress?: () => void;
@@ -17,6 +31,8 @@ function FileContextMenu({
   entry,
   onOpen,
   onDownload,
+  onCopyPath,
+  onRename,
   onDelete,
   onCompress,
   onDecompress,
@@ -30,71 +46,70 @@ function FileContextMenu({
 
   const wrap = (action?: () => void) => () => {
     action?.();
-    if (detailsRef.current) {
-      detailsRef.current.open = false;
-    }
+    if (detailsRef.current) detailsRef.current.open = false;
     onRequestClose?.();
   };
 
+  const itemClass =
+    'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white';
+  const dangerClass =
+    'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-rose-600 transition-colors hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10';
+
   const menu = useMemo(
     () => (
-        <div
-          ref={menuRef}
-          className="w-36 rounded-lg border border-slate-200 bg-white p-1 text-xs shadow-lg transition-all duration-300 dark:border-slate-800 dark:bg-slate-900"
-        >
-          <button
-            type="button"
-            className="flex w-full items-center justify-between rounded-md px-2 py-1 text-slate-600 transition-all duration-300 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-            onClick={wrap(onOpen)}
-          >
-            {entry.isDirectory ? 'Open folder' : 'Open file'}
+      <div
+        ref={menuRef}
+        className="w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+      >
+        <button type="button" className={itemClass} onClick={wrap(onOpen)}>
+          {entry.isDirectory ? <FolderOpen className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+          {entry.isDirectory ? 'Open Folder' : 'Open File'}
+        </button>
+        {onDownload && (
+          <button type="button" className={itemClass} onClick={wrap(onDownload)}>
+            <Download className="h-3.5 w-3.5" />
+            Download
           </button>
-          {onDownload ? (
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-md px-2 py-1 text-slate-600 transition-all duration-300 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-              onClick={wrap(onDownload)}
-            >
-              Download
-            </button>
-          ) : null}
-          {onCompress ? (
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-md px-2 py-1 text-slate-600 transition-all duration-300 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-              onClick={wrap(onCompress)}
-            >
-              Compress
-            </button>
-          ) : null}
-          {onDecompress ? (
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-md px-2 py-1 text-slate-600 transition-all duration-300 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-              onClick={wrap(onDecompress)}
-            >
-              Decompress
-            </button>
-          ) : null}
-          {onPermissions ? (
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-md px-2 py-1 text-slate-600 transition-all duration-300 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-              onClick={wrap(onPermissions)}
-            >
-              Permissions
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="flex w-full items-center justify-between rounded-md px-2 py-1 text-rose-600 transition-all duration-300 hover:bg-rose-100 dark:text-rose-400 dark:hover:bg-rose-500/10"
-            onClick={wrap(onDelete)}
-          >
-            Delete
+        )}
+        {onCopyPath && (
+          <button type="button" className={itemClass} onClick={wrap(onCopyPath)}>
+            <ClipboardCopy className="h-3.5 w-3.5" />
+            Copy Path
+          </button>
+        )}
+        {onRename && (
+          <button type="button" className={itemClass} onClick={wrap(onRename)}>
+            <Pencil className="h-3.5 w-3.5" />
+            Rename
+          </button>
+        )}
+        <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+        {onCompress && (
+          <button type="button" className={itemClass} onClick={wrap(onCompress)}>
+            <Archive className="h-3.5 w-3.5" />
+            Compress
+          </button>
+        )}
+        {onDecompress && (
+          <button type="button" className={itemClass} onClick={wrap(onDecompress)}>
+            <ArchiveRestore className="h-3.5 w-3.5" />
+            Extract
+          </button>
+        )}
+        {onPermissions && (
+          <button type="button" className={itemClass} onClick={wrap(onPermissions)}>
+            <Shield className="h-3.5 w-3.5" />
+            Permissions
+          </button>
+        )}
+        <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+        <button type="button" className={dangerClass} onClick={wrap(onDelete)}>
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
         </button>
       </div>
     ),
-    [entry.isDirectory, onCompress, onDecompress, onDelete, onDownload, onOpen, onPermissions],
+    [entry.isDirectory, onCompress, onDecompress, onDelete, onDownload, onCopyPath, onRename, onOpen, onPermissions],
   );
 
   useLayoutEffect(() => {
@@ -112,9 +127,7 @@ function FileContextMenu({
     if (nextY + rect.height > window.innerHeight - padding) {
       nextY = Math.max(padding, window.innerHeight - rect.height - padding);
     }
-    nextX = Math.max(padding, nextX);
-    nextY = Math.max(padding, nextY);
-    setMenuPosition({ x: nextX, y: nextY });
+    setMenuPosition({ x: Math.max(padding, nextX), y: Math.max(padding, nextY) });
   }, [contextPosition]);
 
   if (contextPosition && menuPosition) {
@@ -123,11 +136,11 @@ function FileContextMenu({
         data-file-context-menu="true"
         className="fixed z-50"
         style={{ left: menuPosition.x, top: menuPosition.y }}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
         }}
       >
         {menu}
@@ -136,14 +149,14 @@ function FileContextMenu({
   }
 
   return (
-    <details ref={detailsRef} className="relative" onClick={(event) => event.stopPropagation()}>
+    <details ref={detailsRef} className="relative" onClick={(e) => e.stopPropagation()}>
       <summary
-        className="list-none flex cursor-pointer items-center justify-center rounded-md border border-slate-200 px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-400 dark:hover:border-primary-500/30 [&::-webkit-details-marker]:hidden"
+        className="list-none flex cursor-pointer items-center justify-center rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300 [&::-webkit-details-marker]:hidden"
         aria-label="File actions"
       >
-        ...
+        <MoreHorizontal className="h-4 w-4" />
       </summary>
-      <div className="absolute right-0 z-10 mt-2">{menu}</div>
+      <div className="absolute right-0 z-10 mt-1">{menu}</div>
     </details>
   );
 }
