@@ -88,7 +88,7 @@ export default {
         sm: '0.25rem',
       },
       boxShadow: {
-        'surface-light': '0 14px 30px -18px rgba(15, 23, 42, 0.28), 0 3px 12px -8px rgba(15, 23, 42, 0.12)',
+        'surface-light': '0 14px 30px -18px rgba(15, 23, 42, 0.16), 0 3px 12px -8px rgba(15, 23, 42, 0.06)',
         'surface-dark': '0 18px 36px -18px rgba(2, 6, 23, 0.7), 0 6px 18px -12px rgba(2, 6, 23, 0.6)',
       },
       keyframes: {

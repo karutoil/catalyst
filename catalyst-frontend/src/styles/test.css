@@ -1,349 +1,195 @@
-@import 'tailwindcss';
-
-/* 
-  GLASSMORPHISM THEME - TEST.CSS
-  Import this file in main.tsx to override the default look.
-  
-  v2.0 - Enhanced with animations, terminal styling, and neon accents.
+/*
+  Catalyst Theme: MacOS 26 Tahoe
+  Description: A futuristic glass-morphic theme with deep depth and crystalline surfaces.
+  Target: Catalyst Frontend
 */
 
-@layer base {
-  :root {
-    /* Base Glass Variables */
-    --glass-border-opacity: 0.15;
-    --glass-bg-opacity: 0.65;
-    --glass-blur: 16px;
-    --glass-saturation: 180%;
-    --neon-glow: 0 0 10px;
+:root {
+  /* Radius - heavily rounded for modern OS feel */
+  --radius: 1rem;
 
-    /* Light Mode - Frosty Glass */
-    --background: 210 40% 98%; 
-    --foreground: 222 47% 11%;
-    
-    --card: 0 0% 100%; 
-    --card-foreground: 222 47% 11%;
-    
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    
-    --primary: 189 94% 42%;
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    
-    --accent: 308 67% 56%;
-    --accent-foreground: 0 0% 100%;
-    
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    
-    --border: 214 20% 80%;
-    --input: 214 20% 90%;
-    --ring: 189 94% 42%;
-    
-    --radius: 1rem;
-    
-    /* Status Colors */
-    --status-online: 142 70% 50%;
-    --status-offline: 0 84% 60%;
-    --status-warning: 45 93% 47%;
-  }
+  /* Fonts - System preferred */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
 
-  .dark {
-    /* Dark Mode - Cyberpunk/Space Glass */
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    /* Darker, deeper cards */
-    --card: 224 71% 4%; 
-    --card-foreground: 210 40% 98%;
-    
-    --popover: 224 71% 4%;
-    --popover-foreground: 210 40% 98%;
-    
-    --primary: 189 94% 42%;
-    --primary-foreground: 0 0% 100%;
-    
-    --secondary: 217 32% 18%;
-    --secondary-foreground: 210 40% 98%;
-    
-    --muted: 217 32% 18%;
-    --muted-foreground: 215 20% 75%;
-    
-    --accent: 308 67% 56%;
-    --accent-foreground: 0 0% 100%;
-    
-    --destructive: 0 62% 30%;
-    --destructive-foreground: 0 0% 100%;
-    
-    --border: 217 32% 25%;
-    --input: 217 32% 15%;
-    --ring: 189 94% 42%;
-  }
+  /* Colors - Light Mode (Alpine Day) */
+  --background: 210 30% 98%;      /* Ice White */
+  --foreground: 222 47% 12%;      /* Deep Slate */
+  
+  --card: 0 0% 100%;              /* Pure White (will be glassed) */
+  --card-foreground: 222 47% 12%;
+  
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 12%;
+  
+  --primary: 205 100% 50%;        /* Tahoe Azure */
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 210 30% 94%;
+  --secondary-foreground: 222 47% 12%;
+  
+  --muted: 210 20% 90%;
+  --muted-foreground: 215 20% 45%;
+  
+  --accent: 205 100% 50%;
+  --accent-foreground: 0 0% 100%;
+  
+  --destructive: 0 85% 60%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 210 20% 88%;
+  --input: 210 20% 90%;
+  --ring: 205 100% 50%;
+
+  /* Tahoe Specific Variables */
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+
+  /* Sonner Toast Overrides */
+  --sonner-background: #ffffff;
+  --sonner-border: #e2e8f0;
+  --sonner-text: #0f172a;
 }
 
-@layer base {
-  body {
-    background: 
-      /* Subtle mesh gradient */
-      radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%), 
-      radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%), 
-      radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%),
-      radial-gradient(at 0% 100%, hsla(339, 49%, 30%, 0.5) 0, transparent 50%),
-      radial-gradient(at 100% 100%, hsla(225, 39%, 30%, 0.5) 0, transparent 50%);
-    background-color: hsl(var(--background));
-    background-attachment: fixed;
-    background-size: cover;
-    min-height: 100vh;
-  }
-
-  :root:not(.dark) body {
-    background: 
-      radial-gradient(at 0% 0%, hsla(189, 100%, 96%, 1) 0, transparent 50%), 
-      radial-gradient(at 50% 100%, hsla(273, 100%, 96%, 1) 0, transparent 50%), 
-      radial-gradient(at 100% 0%, hsla(308, 100%, 96%, 1) 0, transparent 50%);
-    background-color: hsl(var(--background));
-  }
-
-  /* Custom Selection Color */
-  ::selection {
-    background: hsl(var(--brand-cyan) / 0.3);
-    color: inherit;
-  }
-}
-
-@layer utilities {
-  /* Enhanced Glass Utility */
-  .glass {
-    background: hsl(var(--card) / var(--glass-bg-opacity));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-    border: 1px solid hsl(var(--border) / var(--glass-border-opacity));
-    box-shadow: 
-      0 4px 6px -1px rgba(0, 0, 0, 0.1), 
-      0 2px 4px -1px rgba(0, 0, 0, 0.06),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.1); 
-  }
-
-  /* Stronger glass for high contrast areas */
-  .glass-strong {
-    @apply glass;
-    background: hsl(var(--card) / 0.8);
-    backdrop-filter: blur(24px) saturate(180%);
-  }
-
-  .glass-hover {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+.dark {
+  /* Colors - Dark Mode (Abyssal Night) */
+  --background: 224 35% 8%;       /* Deepest Lake Blue */
+  --foreground: 210 20% 98%;      /* Ice White */
   
-  .glass-hover:hover {
-    background: hsl(var(--card) / 0.9);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    transform: translateY(-2px);
-    border-color: hsl(var(--primary) / 0.5);
-  }
-
-  .glass-panel {
-    @apply glass rounded-2xl p-6;
-  }
-
-  /* Neon Glow Effects for Statuses */
-  .glow-green {
-    box-shadow: 0 0 10px hsl(var(--status-online) / 0.5);
-    border-color: hsl(var(--status-online) / 0.5);
-  }
+  --card: 224 30% 12%;            /* Dark Glass Base */
+  --card-foreground: 210 20% 98%;
   
-  .glow-red {
-    box-shadow: 0 0 10px hsl(var(--status-offline) / 0.5);
-    border-color: hsl(var(--status-offline) / 0.5);
-  }
-
-  /* Glass Form Elements */
-  .glass-input {
-    background: hsl(var(--input) / 0.2);
-    backdrop-filter: blur(8px);
-    border: 1px solid hsl(var(--border) / 0.3);
-    @apply rounded-xl px-4 py-2 outline-none transition-all duration-200;
-  }
-
-  .glass-input:focus {
-    background: hsl(var(--input) / 0.4);
-    border-color: hsl(var(--primary));
-    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
-    transform: translateY(-1px);
-  }
-
-  /* Glass Buttons with "Sheen" effect */
-  .glass-button {
-    position: relative;
-    overflow: hidden;
-    background: linear-gradient(135deg, hsl(var(--primary) / 0.9), hsl(var(--primary) / 0.7));
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: white;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    @apply rounded-xl px-6 py-2.5 font-medium shadow-lg transition-all active:scale-95 hover:shadow-cyan-500/25;
-  }
+  --popover: 224 30% 12%;
+  --popover-foreground: 210 20% 98%;
   
-  .glass-button::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 200%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-    transition: 0.5s;
-  }
+  --primary: 195 90% 60%;         /* Electric Ice */
+  --primary-foreground: 224 40% 10%;
   
-  .glass-button:hover::after {
-    left: 100%;
-  }
+  --secondary: 224 25% 18%;
+  --secondary-foreground: 210 20% 98%;
+  
+  --muted: 224 25% 16%;
+  --muted-foreground: 215 20% 65%;
+  
+  --accent: 195 90% 60%;
+  --accent-foreground: 224 40% 10%;
+  
+  --destructive: 0 70% 60%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 224 25% 20%;
+  --input: 224 25% 20%;
+  --ring: 195 90% 60%;
 
-  /* Terminal Window Styling */
-  .glass-terminal {
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(12px);
-    border: 1px solid hsl(var(--border) / 0.2);
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    @apply rounded-xl p-4 shadow-2xl;
-  }
+  /* Tahoe Specific Variables */
+  --glass-bg: rgba(20, 25, 40, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  /* Sonner Toast Overrides */
+  --sonner-background: #1e293b;
+  --sonner-border: #334155;
+  --sonner-text: #f8fafc;
 }
 
 /* 
-   GLOBAL COMPONENT OVERRIDES 
-   Deep integration into shadcn/ui and standard elements
+   GLOBAL THEME OVERRIDES 
+   Applying the Tahoe look to the entire application
 */
 
-/* 1. Main Layout Containers */
-.card, 
-[class*="bg-card"], 
-[class*="bg-background"],
-[role="dialog"],
-[data-state="open"] {
-  background-color: hsl(var(--card) / var(--glass-bg-opacity)) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(120%) !important;
-  border: 1px solid hsl(var(--border) / 0.3) !important;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15) !important;
+body {
+  font-family: var(--font-sans);
+  background-image: linear-gradient(to bottom right, hsl(var(--background)), hsl(var(--muted)));
+  background-attachment: fixed;
+  letter-spacing: -0.015em;
+  transition: background-color 0.5s ease;
 }
 
-/* 2. Navigation & Sidebars - Frosty Sidebar */
-aside, nav, header {
-  background-color: hsl(var(--background) / 0.6) !important;
-  backdrop-filter: blur(20px) !important;
-  border-right: 1px solid hsl(var(--border) / 0.2) !important;
-  border-bottom: 1px solid hsl(var(--border) / 0.2) !important;
-  z-index: 50;
+/* Glassmorphism Utility */
+.glass, .card, .popover, [role="dialog"], .bg-card, .bg-popover {
+  background-color: var(--glass-bg, rgba(255,255,255,0.8)) !important;
+  backdrop-filter: blur(var(--glass-blur, 16px)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(180%);
+  border: 1px solid var(--glass-border, rgba(255,255,255,0.2)) !important;
+  box-shadow: var(--glass-shadow, 0 8px 32px 0 rgba(31, 38, 135, 0.07));
 }
 
-/* 3. Dropdowns, Popovers, Command Menu */
-[role="menu"], 
-[role="listbox"],
-[cmdk-root] {
-  background-color: hsl(var(--popover) / 0.8) !important;
-  backdrop-filter: blur(24px) !important;
-  border: 1px solid hsl(var(--border) / 0.2) !important;
-  box-shadow: 0 20px 40px -10px rgba(0,0,0,0.3) !important;
-  animation: glass-fade-in 0.2s ease-out;
+/* Special handling for dark mode glass */
+.dark .glass, .dark .card, .dark .popover, .dark [role="dialog"], .dark .bg-card, .dark .bg-popover {
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
 
-/* 4. Inputs & Textareas */
-input[type="text"],
-input[type="password"],
-input[type="email"],
-input[type="number"],
-textarea,
-select,
-[cmdk-input] {
-  background-color: hsl(var(--input) / 0.2) !important;
-  backdrop-filter: blur(10px);
-  border: 1px solid hsl(var(--border) / 0.3) !important;
-  border-radius: 0.75rem !important;
-  transition: all 0.2s;
+/* Inputs & Form Elements */
+input, textarea, select, .input {
+  background-color: rgba(255, 255, 255, 0.5) !important;
+  border-radius: calc(var(--radius) - 2px) !important;
+  border: 1px solid transparent !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05), 0 0 0 1px hsl(var(--border) / 0.5);
+  transition: all 0.2s ease;
 }
 
-input:focus, textarea:focus, select:focus, [cmdk-input]:focus {
-  background-color: hsl(var(--input) / 0.4) !important;
-  border-color: hsl(var(--primary) / 0.8) !important;
-  box-shadow: 0 0 15px hsl(var(--primary) / 0.2) !important;
+.dark input, .dark textarea, .dark select, .dark .input {
+  background-color: rgba(0, 0, 0, 0.2) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.2), 0 0 0 1px hsl(var(--border) / 0.5);
 }
 
-/* 5. Buttons - Vibrant Glass */
-button[class*="bg-primary"] {
-  background-image: linear-gradient(to bottom right, hsl(var(--primary)), hsl(var(--brand-cyan))) !important;
-  box-shadow: 0 4px 15px hsl(var(--primary) / 0.4) !important;
-  border: 1px solid rgba(255,255,255,0.2) !important;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+input:focus, textarea:focus, select:focus, .input:focus {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.3) !important;
+  transform: translateY(-1px);
 }
 
-button[class*="bg-primary"]:hover {
-  filter: brightness(1.2) !important;
-  box-shadow: 0 6px 20px hsl(var(--primary) / 0.6) !important;
+.dark input:focus, .dark textarea:focus, .dark select:focus, .dark .input:focus {
+  background-color: rgba(0, 0, 0, 0.4) !important;
 }
 
-/* 6. Console/Terminal Specifics */
-.xterm-viewport, .terminal-container {
-  background-color: rgba(10, 10, 15, 0.7) !important;
-  backdrop-filter: blur(8px);
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255,255,255,0.1);
+/* Buttons */
+button, .btn, [role="button"] {
+  border-radius: 9999px !important; /* Pill shape */
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: transform 0.1s active, box-shadow 0.2s ease;
 }
 
-/* 7. Tables - Floating Rows */
-table {
-  border-collapse: separate;
-  border-spacing: 0 4px;
+button:active {
+  transform: scale(0.98);
 }
 
-tr[class*="hover:bg-muted"]:hover td {
-  background-color: hsl(var(--accent) / 0.15) !important;
-  backdrop-filter: blur(4px);
+/* Primary Buttons */
+.bg-primary {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(210 90% 45%)) !important;
+  box-shadow: 0 4px 12px hsl(var(--primary) / 0.4);
+  border: 1px solid rgba(255,255,255,0.2);
 }
 
-/* 8. Skeleton Loaders - Shimmer Glass */
-[class*="animate-pulse"] {
-  background-color: hsl(var(--muted) / 0.3) !important;
+.dark .bg-primary {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(190 90% 50%)) !important;
+  box-shadow: 0 4px 12px hsl(var(--primary) / 0.3);
+  color: hsl(var(--primary-foreground)) !important;
 }
 
-/* 9. Scrollbars - Slim & Glassy */
+/* Scrollbars */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 14px;
 }
+
 ::-webkit-scrollbar-track {
-  background: transparent; 
+  background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 20px;
-  border: 2px solid transparent;
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border: 4px solid transparent;
   background-clip: content-box;
+  border-radius: 99px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.6);
+  background-color: hsl(var(--muted-foreground) / 0.6);
 }
 
-/* Animations */
-@keyframes glass-fade-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+/* Typography refinement */
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.025em;
 }
 
-@keyframes glass-slide-up {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-glass-in {
-  animation: glass-fade-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-/* Dialog Overlay - Frosty Backdrop */
-[data-state="open"]::backdrop, 
-div[class*="bg-black/80"],
-div[class*="bg-background/80"] {
-  backdrop-filter: blur(8px) !important;
-  background-color: rgba(0,0,0,0.3) !important;
-}

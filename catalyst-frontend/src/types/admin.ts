@@ -185,10 +185,12 @@ export interface SecuritySettings {
   authRateLimitMax: number;
   fileRateLimitMax: number;
   consoleRateLimitMax: number;
+  consoleOutputByteLimitBytes: number;
   lockoutMaxAttempts: number;
   lockoutWindowMinutes: number;
   lockoutDurationMinutes: number;
   auditRetentionDays: number;
+  maxBufferMb: number;
 }
 
 export interface ModManagerSettings {

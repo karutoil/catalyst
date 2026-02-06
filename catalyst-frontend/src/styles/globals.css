@@ -10,19 +10,19 @@
   --brand-blue: 216 100% 50%;
   --brand-black: 224 60% 5%;
 
-  --background: 210 40% 98%;
+  --background: 220 14% 94%;
   --foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
+  --muted: 220 13% 91%;
   --muted-foreground: 215 16% 47%;
-  --popover: 210 40% 98%;
+  --popover: 220 18% 97%;
   --popover-foreground: 222 47% 11%;
-  --card: 0 0% 100%;
+  --card: 220 18% 97%;
   --card-foreground: 222 47% 11%;
-  --border: 214 20% 90%;
-  --input: 214 20% 90%;
+  --border: 220 13% 86%;
+  --input: 220 13% 86%;
   --primary: 189 94% 42%;
   --primary-foreground: 220 18% 15%;
-  --secondary: 210 40% 96%;
+  --secondary: 220 13% 92%;
   --secondary-foreground: 222 47% 11%;
   --accent: var(--brand-magenta);
   --accent-foreground: 0 0% 100%;
@@ -31,11 +31,11 @@
   --ring: 189 94% 42%;
   --radius: 0.5rem;
 
-  --slate-50: 210 40% 98%;
-  --slate-100: 210 40% 96%;
-  --slate-200: 214 32% 91%;
-  --slate-300: 213 27% 84%;
-  --slate-400: 215 20% 65%;
+  --slate-50: 220 16% 96%;
+  --slate-100: 220 14% 93%;
+  --slate-200: 220 13% 87%;
+  --slate-300: 220 11% 80%;
+  --slate-400: 215 16% 57%;
   --slate-500: 215 16% 47%;
   --slate-600: 215 19% 35%;
   --slate-700: 215 25% 27%;
@@ -54,7 +54,7 @@
   --sky-800: 189 82% 30%;
   --sky-900: 189 75% 22%;
 
-  --sonner-background: hsl(0 0% 100%);
+  --sonner-background: hsl(var(--card));
   --sonner-border: hsl(var(--border));
   --sonner-text: hsl(var(--foreground));
   --sonner-success: hsl(142 70% 40%);
@@ -122,6 +122,11 @@
 
 .light {
   color-scheme: light;
+}
+
+/* Soften hard-coded bg-white surfaces in light mode */
+:root:not(.dark) .bg-white {
+  background-color: hsl(var(--card));
 }
 
 
@@ -279,17 +284,32 @@ select option {
   }
 }
 
-/* Console styles */
+/* Console styles — light mode */
 .console-output {
+  background: hsl(var(--slate-50));
+  scrollbar-color: hsl(var(--slate-300)) hsl(var(--slate-50));
+}
+
+.console-output::-webkit-scrollbar-track {
+  background: hsl(var(--slate-50));
+}
+
+.console-output::-webkit-scrollbar-thumb {
+  background: hsl(var(--slate-300));
+  border-color: hsl(var(--slate-50));
+}
+
+/* Console styles — dark mode */
+.dark .console-output {
   background: hsl(224 71% 4%);
   scrollbar-color: hsl(var(--slate-700)) hsl(224 71% 4%);
 }
 
-.console-output::-webkit-scrollbar-track {
+.dark .console-output::-webkit-scrollbar-track {
   background: hsl(224 71% 4%);
 }
 
-.console-output::-webkit-scrollbar-thumb {
+.dark .console-output::-webkit-scrollbar-thumb {
   background: hsl(var(--slate-700));
   border-color: hsl(224 71% 4%);
 }
@@ -300,51 +320,94 @@ select option {
 }
 
 .console-line:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.dark .console-line:hover {
   background: rgba(255, 255, 255, 0.025);
 }
 
 .console-search-match {
-  background: rgba(250, 204, 21, 0.25);
-  color: #fde68a;
+  background: rgba(250, 204, 21, 0.3);
+  color: #92400e;
   border-radius: 2px;
   padding: 0 1px;
 }
 
-/* Console syntax highlighting */
+.dark .console-search-match {
+  background: rgba(250, 204, 21, 0.25);
+  color: #fde68a;
+}
+
+/* Console syntax highlighting — light mode */
 .console-output .chl-error {
-  color: #f87171;
+  color: #dc2626;
   font-weight: 600;
 }
 
 .console-output .chl-warn {
-  color: #fbbf24;
+  color: #d97706;
   font-weight: 600;
 }
 
 .console-output .chl-info {
-  color: #60a5fa;
+  color: #2563eb;
 }
 
 .console-output .chl-time {
-  color: #818cf8;
+  color: #7c3aed;
 }
 
 .console-output .chl-uuid {
-  color: #a78bfa;
+  color: #8b5cf6;
   opacity: 0.7;
 }
 
 .console-output .chl-ip {
-  color: #34d399;
+  color: #059669;
 }
 
 .console-output .chl-url {
-  color: #38bdf8;
+  color: #0284c7;
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: rgba(56, 189, 248, 0.3);
+  text-decoration-color: rgba(2, 132, 199, 0.3);
 }
 
 .console-output .chl-num {
+  color: #ea580c;
+}
+
+/* Console syntax highlighting — dark mode */
+.dark .console-output .chl-error {
+  color: #f87171;
+}
+
+.dark .console-output .chl-warn {
+  color: #fbbf24;
+}
+
+.dark .console-output .chl-info {
+  color: #60a5fa;
+}
+
+.dark .console-output .chl-time {
+  color: #818cf8;
+}
+
+.dark .console-output .chl-uuid {
+  color: #a78bfa;
+}
+
+.dark .console-output .chl-ip {
+  color: #34d399;
+}
+
+.dark .console-output .chl-url {
+  color: #38bdf8;
+  text-decoration-color: rgba(56, 189, 248, 0.3);
+}
+
+.dark .console-output .chl-num {
   color: #fb923c;
 }

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -52,6 +53,96 @@ impl Clone for WebSocketHandler {
 }
 
 impl WebSocketHandler {
+    fn is_hytale_template(template: &serde_json::Map<String, Value>) -> bool {
+        let name = template
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let image = template
+            .get("image")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let startup = template
+            .get("startup")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let install_script = template
+            .get("installScript")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+
+        name.to_lowercase().contains("hytale")
+            || image.to_lowercase().contains("hytale")
+            || startup.contains("HytaleServer.jar")
+            || install_script.contains("hytale-downloader")
+    }
+
+    async fn ensure_hytale_runtime_permissions(
+        &self,
+        server_id: &str,
+        template: &serde_json::Map<String, Value>,
+        server_dir: &str,
+    ) -> AgentResult<()> {
+        if !Self::is_hytale_template(template) {
+            return Ok(());
+        }
+
+        if let Ok(metadata) = tokio::fs::metadata(server_dir).await {
+            if metadata.uid() == 1001 {
+                return Ok(());
+            }
+        }
+
+        self.emit_console_output(
+            server_id,
+            "system",
+            "[Catalyst] Repairing Hytale file permissions for runtime user...\n",
+        )
+        .await?;
+
+        let ownership_status = tokio::process::Command::new("chown")
+            .arg("-R")
+            .arg("1001:1001")
+            .arg(server_dir)
+            .status()
+            .await
+            .map_err(|e| AgentError::IoError(format!("Failed to run chown: {}", e)))?;
+        if !ownership_status.success() {
+            warn!(
+                "Failed to chown Hytale server directory {} for server {}",
+                server_dir, server_id
+            );
+            self.emit_console_output(
+                server_id,
+                "system",
+                "[Catalyst] Warning: failed to set ownership to uid/gid 1001.\n",
+            )
+            .await?;
+        }
+
+        let chmod_status = tokio::process::Command::new("chmod")
+            .arg("-R")
+            .arg("u+rwX")
+            .arg(server_dir)
+            .status()
+            .await
+            .map_err(|e| AgentError::IoError(format!("Failed to run chmod: {}", e)))?;
+        if !chmod_status.success() {
+            warn!(
+                "Failed to chmod Hytale server directory {} for server {}",
+                server_dir, server_id
+            );
+            self.emit_console_output(
+                server_id,
+                "system",
+                "[Catalyst] Warning: failed to apply chmod u+rwX on server files.\n",
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
     pub fn new(
         config: Arc<AgentConfig>,
         runtime: Arc<ContainerdRuntime>,
@@ -714,6 +805,9 @@ impl WebSocketHandler {
                 .await?;
         }
 
+        self.ensure_hytale_runtime_permissions(server_id, template, &server_dir)
+            .await?;
+
         // Emit state update
         self.emit_server_state_update(server_id, "stopped", None, None, None)
             .await?;
@@ -878,6 +972,8 @@ impl WebSocketHandler {
             let server_dir_path = PathBuf::from(&server_dir);
             self.storage_manager
                 .ensure_mounted(server_uuid, &server_dir_path, disk_mb)
+                .await?;
+            self.ensure_hytale_runtime_permissions(server_id, template, &server_dir)
                 .await?;
 
             info!("Starting server: {} (UUID: {})", server_id, server_uuid);

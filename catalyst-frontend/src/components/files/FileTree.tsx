@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight, Folder, FolderOpen } from 'lucide-react';
 import { filesApi } from '../../services/api/files';
 import type { FileEntry } from '../../types/file';
 import { normalizePath } from '../../utils/filePaths';
@@ -25,6 +26,7 @@ type NodeProps = {
 
 function FileTreeNode({ serverId, entry, depth, activePath, expanded, onToggle, onNavigate }: NodeProps) {
   const isExpanded = expanded.has(entry.path);
+  const isActive = normalizePath(activePath) === entry.path;
   const { data, isLoading } = useQuery({
     queryKey: ['files', serverId, entry.path],
     queryFn: () => filesApi.list(serverId, entry.path),
@@ -38,31 +40,45 @@ function FileTreeNode({ serverId, entry, depth, activePath, expanded, onToggle, 
 
   return (
     <div>
-      <div className="flex items-center gap-1" style={{ paddingLeft: depth * 12 }}>
+      <div
+        className={`flex items-center gap-1 rounded-md py-0.5 ${
+          isActive
+            ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/15 dark:text-primary-400'
+            : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800/50'
+        }`}
+        style={{ paddingLeft: depth * 12 }}
+      >
         <button
           type="button"
-          className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 text-[10px] text-slate-500 dark:text-slate-400 transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:text-slate-500 dark:hover:border-primary-500/30"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 dark:text-slate-500"
           onClick={() => onToggle(entry.path)}
-          aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}
+          aria-label={isExpanded ? 'Collapse' : 'Expand'}
         >
-          {isExpanded ? '-' : '+'}
+          {isExpanded ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
         </button>
         <button
           type="button"
-          className={`flex-1 rounded-md px-2 py-1 text-left text-xs ${
-            normalizePath(activePath) === entry.path
-              ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/20 dark:text-primary-400'
-              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-          }`}
+          className="flex flex-1 items-center gap-1.5 truncate px-1 py-0.5 text-left text-xs"
           onClick={() => onNavigate(entry.path)}
         >
-          {entry.name}
+          {isExpanded ? (
+            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary-500" />
+          ) : (
+            <Folder className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+          )}
+          <span className="truncate">{entry.name}</span>
         </button>
       </div>
-      {isExpanded ? (
-        <div className="mt-1 space-y-1">
+      {isExpanded && (
+        <div className="mt-0.5 space-y-0.5">
           {isLoading ? (
-            <div className="pl-7 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Loading...</div>
+            <div style={{ paddingLeft: (depth + 1) * 12 + 24 }} className="text-[11px] text-slate-400 dark:text-slate-500">
+              Loading...
+            </div>
           ) : childDirectories.length ? (
             childDirectories.map((child) => (
               <FileTreeNode
@@ -77,10 +93,12 @@ function FileTreeNode({ serverId, entry, depth, activePath, expanded, onToggle, 
               />
             ))
           ) : (
-            <div className="pl-7 text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">No subfolders</div>
+            <div style={{ paddingLeft: (depth + 1) * 12 + 24 }} className="text-[11px] text-slate-400 dark:text-slate-500">
+              No subfolders
+            </div>
           )}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -99,32 +117,30 @@ function FileTree({ serverId, activePath, onNavigate }: Props) {
   const handleToggle = (path: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
       return next;
     });
   };
 
   return (
-    <div className="space-y-2 text-sm">
+    <div className="space-y-0.5 text-sm">
       <button
         type="button"
-        className={`w-full rounded-md px-2 py-1 text-left text-xs ${
+        className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs ${
           normalizePath(activePath) === '/'
-            ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/20 dark:text-primary-400'
-            : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+            ? 'bg-primary-500/10 text-primary-600 dark:bg-primary-500/15 dark:text-primary-400'
+            : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800/50'
         }`}
         onClick={() => onNavigate('/')}
       >
-        /
+        <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary-500" />
+        <span>/</span>
       </button>
       {isLoading ? (
-        <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">Loading directories...</div>
+        <div className="px-2 text-[11px] text-slate-400 dark:text-slate-500">Loading...</div>
       ) : isError ? (
-        <div className="text-xs text-rose-500 dark:text-rose-300">Unable to load directory tree.</div>
+        <div className="px-2 text-[11px] text-rose-500">Unable to load.</div>
       ) : directories.length ? (
         directories.map((entry) => (
           <FileTreeNode
@@ -139,7 +155,7 @@ function FileTree({ serverId, activePath, onNavigate }: Props) {
           />
         ))
       ) : (
-        <div className="text-xs text-slate-500 dark:text-slate-400 dark:text-slate-500">No folders found.</div>
+        <div className="px-2 text-[11px] text-slate-400 dark:text-slate-500">No folders found.</div>
       )}
     </div>
   );

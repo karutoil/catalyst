@@ -10,23 +10,23 @@ const ALL_STREAMS = ['stdout', 'stderr', 'system', 'stdin'] as const;
 const STREAM_COLORS: Record<string, { dot: string; active: string; inactive: string }> = {
   stdout: {
     dot: 'bg-emerald-400',
-    active: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
-    inactive: 'border-slate-700 text-slate-500 hover:border-slate-600',
+    active: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    inactive: 'border-slate-300 text-slate-500 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600',
   },
   stderr: {
     dot: 'bg-rose-400',
-    active: 'border-rose-500/50 bg-rose-500/10 text-rose-400',
-    inactive: 'border-slate-700 text-slate-500 hover:border-slate-600',
+    active: 'border-rose-500/50 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+    inactive: 'border-slate-300 text-slate-500 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600',
   },
   system: {
     dot: 'bg-sky-400',
-    active: 'border-sky-500/50 bg-sky-500/10 text-sky-400',
-    inactive: 'border-slate-700 text-slate-500 hover:border-slate-600',
+    active: 'border-sky-500/50 bg-sky-500/10 text-sky-600 dark:text-sky-400',
+    inactive: 'border-slate-300 text-slate-500 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600',
   },
   stdin: {
     dot: 'bg-amber-400',
-    active: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
-    inactive: 'border-slate-700 text-slate-500 hover:border-slate-600',
+    active: 'border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    inactive: 'border-slate-300 text-slate-500 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600',
   },
 };
 
@@ -187,7 +187,7 @@ function ServerConsolePage() {
                     isActive ? colors.active : colors.inactive
                   }`}
                 >
-                  <span className={`h-1.5 w-1.5 rounded-full ${isActive ? colors.dot : 'bg-slate-600'}`} />
+                  <span className={`h-1.5 w-1.5 rounded-full ${isActive ? colors.dot : 'bg-slate-300 dark:bg-slate-600'}`} />
                   {stream}
                 </button>
               );

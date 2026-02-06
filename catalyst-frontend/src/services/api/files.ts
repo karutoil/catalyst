@@ -210,4 +210,13 @@ export const filesApi = {
     );
     return data;
   },
+  listArchiveContents: async (serverId: string, archivePath: string) => {
+    const { data } = await apiClient.post<
+      ApiResponse<Array<{ name: string; size: number; isDirectory: boolean; modified?: string }>>
+    >(
+      `/api/servers/${serverId}/files/archive-contents`,
+      { archivePath: normalizePath(archivePath) },
+    );
+    return data.data ?? [];
+  },
 };
