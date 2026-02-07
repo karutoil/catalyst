@@ -231,11 +231,15 @@ model SystemSetting {
   authRateLimitMax         Int?
   fileRateLimitMax         Int?
   consoleRateLimitMax      Int?
+  consoleOutputLinesMax    Int?
+  consoleOutputByteLimitBytes Int?
+  agentMessageMax          Int?
+  agentMetricsMax          Int?
+  serverMetricsMax         Int?
   lockoutMaxAttempts       Int?
   lockoutWindowMinutes     Int?
   lockoutDurationMinutes   Int?
   auditRetentionDays       Int?
-  consoleOutputByteLimitBytes Int?
   maxBufferMb              Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

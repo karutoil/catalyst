@@ -8,7 +8,7 @@ import { adminApi } from '../../services/api/admin';
 import { notifyError, notifySuccess } from '../../utils/notify';
 
 const MIN_CONSOLE_OUTPUT_BYTES_PER_SECOND = 64 * 1024;
-const MAX_CONSOLE_OUTPUT_BYTES_PER_SECOND = 2 * 1024 * 1024;
+const MAX_CONSOLE_OUTPUT_BYTES_PER_SECOND = 10 * 1024 * 1024;
 
 function SecurityPage() {
   const queryClient = useQueryClient();
@@ -16,7 +16,11 @@ function SecurityPage() {
   const [authRateLimitMax, setAuthRateLimitMax] = useState('5');
   const [fileRateLimitMax, setFileRateLimitMax] = useState('30');
   const [consoleRateLimitMax, setConsoleRateLimitMax] = useState('60');
-  const [consoleOutputByteLimitBytes, setConsoleOutputByteLimitBytes] = useState('262144');
+  const [consoleOutputLinesMax, setConsoleOutputLinesMax] = useState('2000');
+  const [consoleOutputByteLimitBytes, setConsoleOutputByteLimitBytes] = useState('2097152');
+  const [agentMessageMax, setAgentMessageMax] = useState('10000');
+  const [agentMetricsMax, setAgentMetricsMax] = useState('10000');
+  const [serverMetricsMax, setServerMetricsMax] = useState('60');
   const [lockoutMaxAttempts, setLockoutMaxAttempts] = useState('5');
   const [lockoutWindowMinutes, setLockoutWindowMinutes] = useState('15');
   const [lockoutDurationMinutes, setLockoutDurationMinutes] = useState('15');
@@ -36,7 +40,11 @@ function SecurityPage() {
     setAuthRateLimitMax(String(settings.authRateLimitMax));
     setFileRateLimitMax(String(settings.fileRateLimitMax));
     setConsoleRateLimitMax(String(settings.consoleRateLimitMax));
+    setConsoleOutputLinesMax(String(settings.consoleOutputLinesMax));
     setConsoleOutputByteLimitBytes(String(settings.consoleOutputByteLimitBytes));
+    setAgentMessageMax(String(settings.agentMessageMax));
+    setAgentMetricsMax(String(settings.agentMetricsMax));
+    setServerMetricsMax(String(settings.serverMetricsMax));
     setLockoutMaxAttempts(String(settings.lockoutMaxAttempts));
     setLockoutWindowMinutes(String(settings.lockoutWindowMinutes));
     setLockoutDurationMinutes(String(settings.lockoutDurationMinutes));
@@ -49,8 +57,12 @@ function SecurityPage() {
       Number(authRateLimitMax) > 0 &&
       Number(fileRateLimitMax) > 0 &&
       Number(consoleRateLimitMax) > 0 &&
+      Number(consoleOutputLinesMax) > 0 &&
       Number(consoleOutputByteLimitBytes) >= MIN_CONSOLE_OUTPUT_BYTES_PER_SECOND &&
       Number(consoleOutputByteLimitBytes) <= MAX_CONSOLE_OUTPUT_BYTES_PER_SECOND &&
+      Number(agentMessageMax) > 0 &&
+      Number(agentMetricsMax) > 0 &&
+      Number(serverMetricsMax) > 0 &&
       Number(lockoutMaxAttempts) > 0 &&
       Number(lockoutWindowMinutes) > 0 &&
       Number(lockoutDurationMinutes) > 0 &&
@@ -60,7 +72,11 @@ function SecurityPage() {
       authRateLimitMax,
       fileRateLimitMax,
       consoleRateLimitMax,
+      consoleOutputLinesMax,
       consoleOutputByteLimitBytes,
+      agentMessageMax,
+      agentMetricsMax,
+      serverMetricsMax,
       lockoutMaxAttempts,
       lockoutWindowMinutes,
       lockoutDurationMinutes,
@@ -75,7 +91,11 @@ function SecurityPage() {
         authRateLimitMax: Number(authRateLimitMax),
         fileRateLimitMax: Number(fileRateLimitMax),
         consoleRateLimitMax: Number(consoleRateLimitMax),
+        consoleOutputLinesMax: Number(consoleOutputLinesMax),
         consoleOutputByteLimitBytes: Number(consoleOutputByteLimitBytes),
+        agentMessageMax: Number(agentMessageMax),
+        agentMetricsMax: Number(agentMetricsMax),
+        serverMetricsMax: Number(serverMetricsMax),
         lockoutMaxAttempts: Number(lockoutMaxAttempts),
         lockoutWindowMinutes: Number(lockoutWindowMinutes),
         lockoutDurationMinutes: Number(lockoutDurationMinutes),
@@ -178,11 +198,29 @@ function SecurityPage() {
           </label>
           <label className="block text-xs text-slate-500 dark:text-slate-300">
             <span className="flex items-center gap-1">
+              Console output lines / sec
+              <span className="group relative">
+                <Info className="h-3.5 w-3.5 cursor-help text-slate-400 dark:text-slate-500" />
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Maximum lines per second from server console output. Increase for servers with large startup logs.
+                </span>
+              </span>
+            </span>
+            <input
+              value={consoleOutputLinesMax}
+              onChange={(event) => setConsoleOutputLinesMax(event.target.value)}
+              type="number"
+              min="1"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+            />
+          </label>
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
+            <span className="flex items-center gap-1">
               Console output bytes / sec
               <span className="group relative">
                 <Info className="h-3.5 w-3.5 cursor-help text-slate-400 dark:text-slate-500" />
                 <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                  Per-server websocket console output cap. Allowed range is 65,536 to 2,097,152 bytes per second.
+                  Per-server websocket console output cap. Allowed range is 65,536 to 10,485,760 bytes per second.
                 </span>
               </span>
             </span>
@@ -192,6 +230,60 @@ function SecurityPage() {
               type="number"
               min={String(MIN_CONSOLE_OUTPUT_BYTES_PER_SECOND)}
               max={String(MAX_CONSOLE_OUTPUT_BYTES_PER_SECOND)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+            />
+          </label>
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
+            <span className="flex items-center gap-1">
+              Agent messages / sec
+              <span className="group relative">
+                <Info className="h-3.5 w-3.5 cursor-help text-slate-400 dark:text-slate-500" />
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Maximum WebSocket messages per second from each agent node.
+                </span>
+              </span>
+            </span>
+            <input
+              value={agentMessageMax}
+              onChange={(event) => setAgentMessageMax(event.target.value)}
+              type="number"
+              min="1"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+            />
+          </label>
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
+            <span className="flex items-center gap-1">
+              Agent metrics / sec
+              <span className="group relative">
+                <Info className="h-3.5 w-3.5 cursor-help text-slate-400 dark:text-slate-500" />
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Maximum agent-level metric messages per second from each agent node.
+                </span>
+              </span>
+            </span>
+            <input
+              value={agentMetricsMax}
+              onChange={(event) => setAgentMetricsMax(event.target.value)}
+              type="number"
+              min="1"
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
+            />
+          </label>
+          <label className="block text-xs text-slate-500 dark:text-slate-300">
+            <span className="flex items-center gap-1">
+              Server metrics / sec
+              <span className="group relative">
+                <Info className="h-3.5 w-3.5 cursor-help text-slate-400 dark:text-slate-500" />
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Maximum server-level metric messages per second per server.
+                </span>
+              </span>
+            </span>
+            <input
+              value={serverMetricsMax}
+              onChange={(event) => setServerMetricsMax(event.target.value)}
+              type="number"
+              min="1"
               className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition-all duration-300 focus:border-primary-500 focus:outline-none hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-400 dark:hover:border-primary-500/30"
             />
           </label>

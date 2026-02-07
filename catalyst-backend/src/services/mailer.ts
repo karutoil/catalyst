@@ -23,7 +23,11 @@ export type SecuritySettings = {
   authRateLimitMax: number;
   fileRateLimitMax: number;
   consoleRateLimitMax: number;
+  consoleOutputLinesMax: number;
   consoleOutputByteLimitBytes: number;
+  agentMessageMax: number;
+  agentMetricsMax: number;
+  serverMetricsMax: number;
   lockoutMaxAttempts: number;
   lockoutWindowMinutes: number;
   lockoutDurationMinutes: number;
@@ -62,7 +66,11 @@ export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   authRateLimitMax: 5,
   fileRateLimitMax: 30,
   consoleRateLimitMax: 60,
+  consoleOutputLinesMax: 2000,
   consoleOutputByteLimitBytes: resolveConsoleOutputByteLimitDefault(),
+  agentMessageMax: 10000,
+  agentMetricsMax: 10000,
+  serverMetricsMax: 60,
   lockoutMaxAttempts: 5,
   lockoutWindowMinutes: 15,
   lockoutDurationMinutes: 15,
@@ -144,9 +152,13 @@ export const getSecuritySettings = async (): Promise<SecuritySettings> => {
     authRateLimitMax: settings.authRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.authRateLimitMax,
     fileRateLimitMax: settings.fileRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.fileRateLimitMax,
     consoleRateLimitMax: settings.consoleRateLimitMax ?? DEFAULT_SECURITY_SETTINGS.consoleRateLimitMax,
+    consoleOutputLinesMax: settings.consoleOutputLinesMax ?? DEFAULT_SECURITY_SETTINGS.consoleOutputLinesMax,
     consoleOutputByteLimitBytes: sanitizeConsoleOutputByteLimit(
       settings.consoleOutputByteLimitBytes,
     ),
+    agentMessageMax: settings.agentMessageMax ?? DEFAULT_SECURITY_SETTINGS.agentMessageMax,
+    agentMetricsMax: settings.agentMetricsMax ?? DEFAULT_SECURITY_SETTINGS.agentMetricsMax,
+    serverMetricsMax: settings.serverMetricsMax ?? DEFAULT_SECURITY_SETTINGS.serverMetricsMax,
     lockoutMaxAttempts: settings.lockoutMaxAttempts ?? DEFAULT_SECURITY_SETTINGS.lockoutMaxAttempts,
     lockoutWindowMinutes: settings.lockoutWindowMinutes ?? DEFAULT_SECURITY_SETTINGS.lockoutWindowMinutes,
     lockoutDurationMinutes:
@@ -195,7 +207,11 @@ export const upsertSecuritySettings = async (payload: SecuritySettings) => {
       authRateLimitMax: payload.authRateLimitMax,
       fileRateLimitMax: payload.fileRateLimitMax,
       consoleRateLimitMax: payload.consoleRateLimitMax,
+      consoleOutputLinesMax: payload.consoleOutputLinesMax,
       consoleOutputByteLimitBytes,
+      agentMessageMax: payload.agentMessageMax,
+      agentMetricsMax: payload.agentMetricsMax,
+      serverMetricsMax: payload.serverMetricsMax,
       lockoutMaxAttempts: payload.lockoutMaxAttempts,
       lockoutWindowMinutes: payload.lockoutWindowMinutes,
       lockoutDurationMinutes: payload.lockoutDurationMinutes,
@@ -206,7 +222,11 @@ export const upsertSecuritySettings = async (payload: SecuritySettings) => {
       authRateLimitMax: payload.authRateLimitMax,
       fileRateLimitMax: payload.fileRateLimitMax,
       consoleRateLimitMax: payload.consoleRateLimitMax,
+      consoleOutputLinesMax: payload.consoleOutputLinesMax,
       consoleOutputByteLimitBytes,
+      agentMessageMax: payload.agentMessageMax,
+      agentMetricsMax: payload.agentMetricsMax,
+      serverMetricsMax: payload.serverMetricsMax,
       lockoutMaxAttempts: payload.lockoutMaxAttempts,
       lockoutWindowMinutes: payload.lockoutWindowMinutes,
       lockoutDurationMinutes: payload.lockoutDurationMinutes,

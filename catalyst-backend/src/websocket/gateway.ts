@@ -14,9 +14,9 @@ import {
 import { ServerStateMachine } from "../services/state-machine";
 import { normalizeHostIp } from "../utils/ipam";
 
-const DEFAULT_CONSOLE_OUTPUT_BYTE_LIMIT = 256 * 1024; // 256KB/s per server
-const MIN_CONSOLE_OUTPUT_BYTE_LIMIT = 64 * 1024;
-const MAX_CONSOLE_OUTPUT_BYTE_LIMIT = 2 * 1024 * 1024;
+const DEFAULT_CONSOLE_OUTPUT_BYTE_LIMIT = 2 * 1024 * 1024; // 2MB/s per server
+const MIN_CONSOLE_OUTPUT_BYTE_LIMIT = 256 * 1024;
+const MAX_CONSOLE_OUTPUT_BYTE_LIMIT = 10 * 1024 * 1024;
 
 const resolveConsoleOutputByteLimit = (value?: number | null) => {
   const raw =
@@ -68,12 +68,12 @@ export class WebSocketGateway {
   private serverConsoleBytes = new Map<string, { count: number; resetAt: number }>();
   private consoleResumeTimestamps = new Map<string, number>();
   private lastConsoleLimitRefreshAt = 0;
-  private readonly consoleOutputLimit = { max: 200, windowMs: 1000 };
+  private consoleOutputLimit = { max: 2000, windowMs: 1000 };
   private readonly consoleLimitRefreshIntervalMs = 5000;
   private consoleInputLimit = { max: 10, windowMs: 1000 };
-  private readonly agentMessageLimit = { max: 10000, windowMs: 1000 };
-  private readonly agentMetricsLimit = { max: 10000, windowMs: 1000 };
-  private readonly serverMetricsLimit = { max: 60, windowMs: 1000 };
+  private agentMessageLimit = { max: 10000, windowMs: 1000 };
+  private agentMetricsLimit = { max: 10000, windowMs: 1000 };
+  private serverMetricsLimit = { max: 60, windowMs: 1000 };
   private readonly agentConsoleBytesLimit = { maxBytes: resolveConsoleOutputByteLimit() };
   private readonly pendingAgentRequestLimit = 2000;
   private readonly autoRestartingServers = new Set<string>();
@@ -95,6 +95,18 @@ export class WebSocketGateway {
     const settings = await this.prisma.systemSetting.findUnique({ where: { id: "security" } });
     if (settings?.consoleRateLimitMax && settings.consoleRateLimitMax > 0) {
       this.consoleInputLimit = { ...this.consoleInputLimit, max: settings.consoleRateLimitMax };
+    }
+    if (settings?.consoleOutputLinesMax && settings.consoleOutputLinesMax > 0) {
+      this.consoleOutputLimit = { ...this.consoleOutputLimit, max: settings.consoleOutputLinesMax };
+    }
+    if (settings?.agentMessageMax && settings.agentMessageMax > 0) {
+      this.agentMessageLimit = { ...this.agentMessageLimit, max: settings.agentMessageMax };
+    }
+    if (settings?.agentMetricsMax && settings.agentMetricsMax > 0) {
+      this.agentMetricsLimit = { ...this.agentMetricsLimit, max: settings.agentMetricsMax };
+    }
+    if (settings?.serverMetricsMax && settings.serverMetricsMax > 0) {
+      this.serverMetricsLimit = { ...this.serverMetricsLimit, max: settings.serverMetricsMax };
     }
     this.agentConsoleBytesLimit.maxBytes = resolveConsoleOutputByteLimit(
       settings?.consoleOutputByteLimitBytes

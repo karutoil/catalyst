@@ -890,6 +890,109 @@ export async function serverRoutes(app: FastifyInstance) {
   };
   const sanitizeFilename = (value: string) => value.replace(/[^a-z0-9._-]/gi, "_");
 
+  /**
+   * Resolve actual download URL + filename for Spigot resources.
+   * Spigot version-specific download endpoints redirect to spigotmc.org which blocks programmatic access.
+   * We prefer externalUrl from resource metadata, fallback to generic /download endpoint (cdn.spiget.org).
+   */
+  const resolveSpigotDownload = async (
+    baseUrl: string,
+    headers: Record<string, string>,
+    projectId: string,
+    versionId: string
+  ): Promise<{ downloadUrl: string; filename: string }> => {
+    const resourceUrl = `${baseUrl}/v2/resources/${encodeURIComponent(projectId)}`;
+    const resourceRes = await fetch(resourceUrl, { headers });
+    let externalUrl = "";
+    if (resourceRes.ok) {
+      const data = (await resourceRes.json()) as any;
+      externalUrl = data?.file?.externalUrl || "";
+    }
+    const downloadUrl = externalUrl || `${baseUrl}/v2/resources/${encodeURIComponent(projectId)}/download`;
+    const safeName = sanitizeFilename(String(versionId));
+    return { downloadUrl, filename: `spigot-${projectId}-${safeName}.jar` };
+  };
+
+  /**
+   * Resolve actual download URL + filename for Paper (Hangar) resources.
+   * Many Hangar plugins have downloadUrl: null with only externalUrl pointing to GitHub release pages.
+   * We resolve GitHub release URLs to actual .jar asset download URLs via GitHub API.
+   */
+  const resolvePaperDownload = async (
+    baseUrl: string,
+    headers: Record<string, string>,
+    projectId: string,
+    versionId: string
+  ): Promise<{ downloadUrl: string; filename: string }> => {
+    const rawProjectId = decodeURIComponent(String(projectId));
+    const parts = rawProjectId.split("/");
+    if (parts.length < 2) return { downloadUrl: "", filename: "" };
+    const slug = parts[0];
+    const encodedProjectId = parts.map(encodeURIComponent).join("/");
+
+    // Try the standard Hangar download endpoint first
+    const hangarUrl = `${baseUrl}/api/v1/projects/${encodedProjectId}/versions/${encodeURIComponent(versionId)}/PAPER/download`;
+    let downloadUrl = "";
+    let filename = `${slug}-${versionId}.jar`;
+
+    try {
+      const headRes = await fetch(hangarUrl, { headers, redirect: "manual" });
+      if (headRes.status >= 200 && headRes.status < 400) {
+        return { downloadUrl: hangarUrl, filename };
+      }
+    } catch {}
+
+    // Fetch version metadata to check for externalUrl
+    const vUrl = `${baseUrl}/api/v1/projects/${encodeURIComponent(slug)}/versions/${encodeURIComponent(versionId)}`;
+    const vRes = await fetch(vUrl, { headers });
+    if (!vRes.ok) return { downloadUrl: "", filename };
+    const vData = (await vRes.json()) as any;
+    const platformDl = vData?.downloads?.PAPER;
+
+    if (platformDl?.downloadUrl) {
+      downloadUrl = platformDl.downloadUrl.startsWith("http")
+        ? platformDl.downloadUrl
+        : `${baseUrl}${platformDl.downloadUrl}`;
+    } else if (platformDl?.externalUrl) {
+      // Resolve GitHub release URLs to actual asset download
+      const ghMatch = platformDl.externalUrl.match(
+        /github\.com\/([^/]+)\/([^/]+)\/releases\/tag\/([^/?#]+)/
+      );
+      if (ghMatch) {
+        const ghApiUrl = `https://api.github.com/repos/${ghMatch[1]}/${ghMatch[2]}/releases/tags/${ghMatch[3]}`;
+        try {
+          const ghRes = await fetch(ghApiUrl, { headers: { "User-Agent": "CatalystPluginManager/1.0" } });
+          if (ghRes.ok) {
+            const ghData = (await ghRes.json()) as any;
+            const jarAsset = (ghData.assets || []).find((a: any) => a.name?.endsWith(".jar"));
+            if (jarAsset) {
+              downloadUrl = jarAsset.browser_download_url;
+              filename = jarAsset.name;
+            }
+          }
+        } catch {}
+      }
+      if (!downloadUrl) downloadUrl = platformDl.externalUrl;
+    }
+
+    return { downloadUrl, filename };
+  };
+
+  /**
+   * Download a file with appropriate headers — only sends provider-specific API headers
+   * when the URL belongs to the provider's base domain. Uses generic headers for external URLs.
+   */
+  const fetchDownload = async (
+    downloadUrl: string,
+    providerBaseUrl: string,
+    providerHeaders: Record<string, string>
+  ): Promise<Response> => {
+    const dlHeaders = downloadUrl.startsWith(providerBaseUrl)
+      ? providerHeaders
+      : { "User-Agent": "CatalystPluginManager/1.0" };
+    return fetch(downloadUrl, { headers: dlHeaders, redirect: "follow" });
+  };
+
   const resolveServerPath = async (serverUuid: string, requestedPath: string, nodeServerDataDir?: string) => {
     const baseDir = path.resolve(nodeServerDataDir || serverDataRoot, serverUuid);
     await fs.mkdir(baseDir, { recursive: true });
@@ -2336,7 +2439,7 @@ export async function serverRoutes(app: FastifyInstance) {
       try {
         const { targetPath: resolvedPath } = await resolveServerPath(server.uuid, normalizedFile);
         await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-        const downloadResponse = await fetch(downloadUrl);
+        const downloadResponse = await fetch(downloadUrl, { redirect: "follow" });
         if (!downloadResponse.ok || !downloadResponse.body) {
           const body = await downloadResponse.text();
           return reply
@@ -2632,11 +2735,9 @@ export async function serverRoutes(app: FastifyInstance) {
         downloadUrl = file?.url ?? "";
         filename = file?.filename ?? "";
       } else if (provider === "spigot") {
-        downloadUrl = `${baseUrl}${providerConfig.endpoints.versionDownload
-          .replace("{projectId}", encodeURIComponent(projectId))
-          .replace("{versionId}", encodeURIComponent(String(versionId)))}`;
-        const safeName = sanitizeFilename(String(versionId));
-        filename = `spigot-${projectId}-${safeName}.jar`;
+        const resolved = await resolveSpigotDownload(baseUrl, headers, String(projectId), String(versionId));
+        downloadUrl = resolved.downloadUrl;
+        filename = resolved.filename;
       } else if (provider === "paper") {
         const rawProjectId = decodeURIComponent(String(projectId));
         const encodedProjectId = rawProjectId
@@ -2660,10 +2761,44 @@ export async function serverRoutes(app: FastifyInstance) {
           downloads?.paper ||
           Object.values(downloads || {})[0];
         downloadUrl = downloadEntry?.downloadUrl ?? "";
-        filename =
-          downloadEntry?.fileInfo?.name ||
-          metadata?.name ||
-          `paper-${projectId}-${versionId}.jar`;
+        const externalUrl = downloadEntry?.externalUrl ?? "";
+
+        // If no direct download URL, try to resolve external URL
+        if (!downloadUrl && externalUrl) {
+          // Convert GitHub release page URLs to API asset download
+          const ghMatch = externalUrl.match(
+            /github\.com\/([^/]+)\/([^/]+)\/releases\/tags?\/([^/?#]+)/
+          );
+          if (ghMatch) {
+            const [, owner, repo, tag] = ghMatch;
+            const ghApiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/tags/${tag}`;
+            const ghRes = await fetch(ghApiUrl, {
+              headers: { "User-Agent": "CatalystPluginManager/1.0", Accept: "application/vnd.github+json" },
+            });
+            if (ghRes.ok) {
+              const ghData = (await ghRes.json()) as any;
+              const assets = ghData?.assets ?? [];
+              const jarAsset = assets.find((a: any) => a.name?.endsWith(".jar")) ?? assets[0];
+              if (jarAsset?.browser_download_url) {
+                downloadUrl = jarAsset.browser_download_url;
+                filename = jarAsset.name;
+              }
+            }
+          }
+          if (!downloadUrl) {
+            downloadUrl = externalUrl;
+          }
+        }
+
+        if (!filename) {
+          filename =
+            downloadEntry?.fileInfo?.name ||
+            metadata?.name ||
+            `paper-${projectId}-${versionId}.jar`;
+        }
+        if (filename && !filename.endsWith(".jar")) {
+          filename = `${filename}-${versionId}.jar`;
+        }
       } else {
         return reply.status(400).send({ error: "Unsupported provider" });
       }
@@ -2678,7 +2813,7 @@ export async function serverRoutes(app: FastifyInstance) {
       try {
         const { targetPath: resolvedPath } = await resolveServerPath(server.uuid, normalizedFile);
         await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-        const downloadResponse = await fetch(downloadUrl, { headers });
+        const downloadResponse = await fetchDownload(downloadUrl, baseUrl, headers);
         if (!downloadResponse.ok || !downloadResponse.body) {
           const body = await downloadResponse.text();
           return reply
@@ -3190,14 +3325,13 @@ export async function serverRoutes(app: FastifyInstance) {
             downloadUrl = fData.data?.downloadUrl ?? "";
             newFilename = fData.data?.fileName ?? "";
           } else if (record.provider === "paper") {
-            const parts = record.projectId.split("/");
-            if (parts.length >= 2) {
-              downloadUrl = `${baseUrl}/api/v1/projects/${encodeURIComponent(parts[0])}/versions/${encodeURIComponent(parts[1])}/PAPER/download`;
-              newFilename = `${parts[0]}-${record.latestVersionId}.jar`;
-            }
+            const resolved = await resolvePaperDownload(baseUrl, headers, record.projectId, record.latestVersionId);
+            downloadUrl = resolved.downloadUrl;
+            newFilename = resolved.filename;
           } else if (record.provider === "spigot") {
-            downloadUrl = `${baseUrl}/v2/resources/${encodeURIComponent(record.projectId)}/versions/${encodeURIComponent(record.latestVersionId)}/download`;
-            newFilename = `spigot-${record.projectId}-${record.latestVersionId}.jar`;
+            const resolved = await resolveSpigotDownload(baseUrl, headers, record.projectId, record.latestVersionId);
+            downloadUrl = resolved.downloadUrl;
+            newFilename = resolved.filename;
           }
 
           if (!downloadUrl || !newFilename) {
@@ -3220,7 +3354,7 @@ export async function serverRoutes(app: FastifyInstance) {
           const { targetPath: resolvedPath } = await resolveServerPath(server.uuid, normalizedFile);
           await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
 
-          const dlRes = await fetch(downloadUrl, { headers, redirect: "follow" });
+          const dlRes = await fetchDownload(downloadUrl, baseUrl, headers);
           if (!dlRes.ok || !dlRes.body) throw new Error("Download failed");
           const arrayBuffer = await dlRes.arrayBuffer();
           await fs.writeFile(resolvedPath, Buffer.from(arrayBuffer));
@@ -3311,14 +3445,13 @@ export async function serverRoutes(app: FastifyInstance) {
               newFilename = file.filename;
             }
           } else if (record.provider === "paper") {
-            const parts = record.projectId.split("/");
-            if (parts.length >= 2) {
-              downloadUrl = `${baseUrl}/api/v1/projects/${encodeURIComponent(parts[0])}/versions/${encodeURIComponent(parts[1])}/PAPER/download`;
-              newFilename = `${parts[0]}-${record.latestVersionId}.jar`;
-            }
+            const resolved = await resolvePaperDownload(baseUrl, headers, record.projectId, record.latestVersionId);
+            downloadUrl = resolved.downloadUrl;
+            newFilename = resolved.filename;
           } else if (record.provider === "spigot") {
-            downloadUrl = `${baseUrl}/v2/resources/${encodeURIComponent(record.projectId)}/versions/${encodeURIComponent(record.latestVersionId)}/download`;
-            newFilename = `spigot-${record.projectId}-${record.latestVersionId}.jar`;
+            const resolved = await resolveSpigotDownload(baseUrl, headers, record.projectId, record.latestVersionId);
+            downloadUrl = resolved.downloadUrl;
+            newFilename = resolved.filename;
           }
 
           if (!downloadUrl || !newFilename) {
@@ -3337,7 +3470,7 @@ export async function serverRoutes(app: FastifyInstance) {
           const { targetPath: resolvedPath } = await resolveServerPath(server.uuid, normalizedFile);
           await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
 
-          const dlRes = await fetch(downloadUrl, { headers, redirect: "follow" });
+          const dlRes = await fetchDownload(downloadUrl, baseUrl, headers);
           if (!dlRes.ok || !dlRes.body) throw new Error("Download failed");
           const arrayBuffer = await dlRes.arrayBuffer();
           await fs.writeFile(resolvedPath, Buffer.from(arrayBuffer));

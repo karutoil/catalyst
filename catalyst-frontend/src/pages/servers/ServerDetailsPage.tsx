@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowDown, ArrowUpCircle, Check, Copy, Download, ExternalLink, Loader2, Package, Puzzle, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUpCircle, Check, CheckSquare, Copy, Download, ExternalLink, Loader2, Package, Puzzle, RefreshCw, Search, Square, Trash2, X } from 'lucide-react';
 import { useServer } from '../../hooks/useServer';
 import { useServerMetrics } from '../../hooks/useServerMetrics';
 import {
@@ -423,7 +423,15 @@ function ServerDetailsPage() {
   const [isCheckingModUpdates, setIsCheckingModUpdates] = useState(false);
   const [isCheckingPluginUpdates, setIsCheckingPluginUpdates] = useState(false);
   const [isUpdatingMods, setIsUpdatingMods] = useState(false);
-  const [isUpdatingPlugins, setIsUpdatingPlugins] = useState(false);  const {
+  const [isUpdatingPlugins, setIsUpdatingPlugins] = useState(false);
+  const [selectedModFiles, setSelectedModFiles] = useState<Set<string>>(new Set());
+  const [selectedPluginFiles, setSelectedPluginFiles] = useState<Set<string>>(new Set());
+  const [modInstalledSearch, setModInstalledSearch] = useState('');
+  const [pluginInstalledSearch, setPluginInstalledSearch] = useState('');
+  const [modInstalledSort, setModInstalledSort] = useState<'name' | 'size' | 'date'>('name');
+  const [pluginInstalledSort, setPluginInstalledSort] = useState<'name' | 'size' | 'date'>('name');
+  const [modInstalledFilter, setModInstalledFilter] = useState<'all' | 'updates' | 'tracked' | 'untracked'>('all');
+  const [pluginInstalledFilter, setPluginInstalledFilter] = useState<'all' | 'updates' | 'tracked' | 'untracked'>('all');  const {
     entries,
     send,
     isLoading: consoleLoading,
@@ -1170,6 +1178,40 @@ function ServerDetailsPage() {
     }
     return [];
   }, [modSearchResults]);
+
+  const filteredInstalledMods = useMemo(() => {
+    let list = [...installedMods];
+    if (modInstalledSearch) {
+      const q = modInstalledSearch.toLowerCase();
+      list = list.filter((m) => (m.projectName || m.name).toLowerCase().includes(q));
+    }
+    if (modInstalledFilter === 'updates') list = list.filter((m) => m.hasUpdate);
+    else if (modInstalledFilter === 'tracked') list = list.filter((m) => m.provider);
+    else if (modInstalledFilter === 'untracked') list = list.filter((m) => !m.provider);
+    list.sort((a, b) => {
+      if (modInstalledSort === 'size') return b.size - a.size;
+      if (modInstalledSort === 'date') return new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime();
+      return (a.projectName || a.name).localeCompare(b.projectName || b.name);
+    });
+    return list;
+  }, [installedMods, modInstalledSearch, modInstalledFilter, modInstalledSort]);
+
+  const filteredInstalledPlugins = useMemo(() => {
+    let list = [...installedPlugins];
+    if (pluginInstalledSearch) {
+      const q = pluginInstalledSearch.toLowerCase();
+      list = list.filter((p) => (p.projectName || p.name).toLowerCase().includes(q));
+    }
+    if (pluginInstalledFilter === 'updates') list = list.filter((p) => p.hasUpdate);
+    else if (pluginInstalledFilter === 'tracked') list = list.filter((p) => p.provider);
+    else if (pluginInstalledFilter === 'untracked') list = list.filter((p) => !p.provider);
+    list.sort((a, b) => {
+      if (pluginInstalledSort === 'size') return b.size - a.size;
+      if (pluginInstalledSort === 'date') return new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime();
+      return (a.projectName || a.name).localeCompare(b.projectName || b.name);
+    });
+    return list;
+  }, [installedPlugins, pluginInstalledSearch, pluginInstalledFilter, pluginInstalledSort]);
 
   const modVersionOptions = useMemo(() => {
     if (!modVersions) return [];
@@ -2584,127 +2626,249 @@ function ServerDetailsPage() {
                 </div>
               ) : (
                 /* Installed mods */
-                <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-                    <div className="flex items-center gap-2">
-                      <select
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 transition-colors focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                        value={modTarget}
-                        onChange={(event) => setModTarget(event.target.value as typeof modTarget)}
-                      >
-                        {modTargetOptions.map((target) => (
-                          <option key={target} value={target}>{titleCase(target)}</option>
-                        ))}
-                      </select>
-                      <span className="text-xs text-slate-400 dark:text-slate-500">{installedMods.length} file{installedMods.length !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {installedMods.some((m) => m.hasUpdate) && (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                  {/* Toolbar */}
+                  <div className="space-y-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 transition-colors focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          value={modTarget}
+                          onChange={(event) => setModTarget(event.target.value as typeof modTarget)}
+                        >
+                          {modTargetOptions.map((target) => (
+                            <option key={target} value={target}>{titleCase(target)}</option>
+                          ))}
+                        </select>
+                        <span className="text-xs tabular-nums text-slate-400 dark:text-slate-500">
+                          {filteredInstalledMods.length}{filteredInstalledMods.length !== installedMods.length ? ` / ${installedMods.length}` : ''} file{installedMods.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {installedMods.some((m) => m.hasUpdate) && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
+                            disabled={isUpdatingMods}
+                            onClick={() => {
+                              const modsToUpdate = selectedModFiles.size > 0
+                                ? installedMods.filter((m) => m.hasUpdate && selectedModFiles.has(m.name))
+                                : installedMods.filter((m) => m.hasUpdate);
+                              if (!modsToUpdate.length) return;
+                              setUpdateConfirmMods(modsToUpdate.map((m) => ({
+                                name: m.name,
+                                currentVersion: m.versionId || 'unknown',
+                                latestVersion: m.latestVersionName || m.latestVersionId || 'latest',
+                              })));
+                            }}
+                          >
+                            <ArrowUpCircle className="h-3 w-3" />
+                            Update {selectedModFiles.size > 0 ? 'Selected' : 'All'} ({(selectedModFiles.size > 0 ? installedMods.filter((m) => m.hasUpdate && selectedModFiles.has(m.name)) : installedMods.filter((m) => m.hasUpdate)).length})
+                          </button>
+                        )}
+                        {selectedModFiles.size > 0 && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20"
+                            onClick={() => {
+                              if (!confirm(`Remove ${selectedModFiles.size} selected mod${selectedModFiles.size !== 1 ? 's' : ''}?`)) return;
+                              selectedModFiles.forEach((name) => uninstallModMutation.mutate(name));
+                              setSelectedModFiles(new Set());
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Remove ({selectedModFiles.size})
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
-                          disabled={isUpdatingMods}
-                          onClick={() => {
-                            const modsToUpdate = installedMods.filter((m) => m.hasUpdate);
-                            setUpdateConfirmMods(modsToUpdate.map((m) => ({
-                              name: m.name,
-                              currentVersion: m.versionId || 'unknown',
-                              latestVersion: m.latestVersionName || m.latestVersionId || 'latest',
-                            })));
+                          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                          disabled={isCheckingModUpdates}
+                          onClick={async () => {
+                            if (!server?.id) return;
+                            setIsCheckingModUpdates(true);
+                            try {
+                              const result = await modManagerApi.checkUpdates(server.id);
+                              refetchInstalledMods();
+                              if (result.updatesAvailable > 0) {
+                                notifySuccess(`${result.updatesAvailable} update${result.updatesAvailable !== 1 ? 's' : ''} available`);
+                              } else {
+                                notifySuccess('All mods are up to date');
+                              }
+                            } catch {
+                              notifyError('Failed to check for updates');
+                            } finally {
+                              setIsCheckingModUpdates(false);
+                            }
                           }}
                         >
-                          <ArrowUpCircle className="h-3 w-3" />
-                          Update All ({installedMods.filter((m) => m.hasUpdate).length})
+                          {isCheckingModUpdates ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          {isCheckingModUpdates ? 'Checking…' : 'Check Updates'}
                         </button>
-                      )}
+                      </div>
+                    </div>
+                    {/* Search, Filter, Sort row */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search installed mods…"
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:placeholder:text-slate-500"
+                          value={modInstalledSearch}
+                          onChange={(e) => setModInstalledSearch(e.target.value)}
+                        />
+                      </div>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        value={modInstalledFilter}
+                        onChange={(e) => setModInstalledFilter(e.target.value as typeof modInstalledFilter)}
+                      >
+                        <option value="all">All</option>
+                        <option value="updates">Has Updates</option>
+                        <option value="tracked">Tracked</option>
+                        <option value="untracked">Untracked</option>
+                      </select>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        value={modInstalledSort}
+                        onChange={(e) => setModInstalledSort(e.target.value as typeof modInstalledSort)}
+                      >
+                        <option value="name">Sort: Name</option>
+                        <option value="size">Sort: Size</option>
+                        <option value="date">Sort: Date</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Select All bar */}
+                  {filteredInstalledMods.length > 0 && (
+                    <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/50 px-4 py-1.5 dark:border-slate-800 dark:bg-slate-800/30">
                       <button
                         type="button"
-                        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                        disabled={isCheckingModUpdates}
-                        onClick={async () => {
-                          if (!server?.id) return;
-                          setIsCheckingModUpdates(true);
-                          try {
-                            const result = await modManagerApi.checkUpdates(server.id);
-                            refetchInstalledMods();
-                            if (result.updatesAvailable > 0) {
-                              notifySuccess(`${result.updatesAvailable} update${result.updatesAvailable !== 1 ? 's' : ''} available`);
-                            } else {
-                              notifySuccess('All mods are up to date');
-                            }
-                          } catch {
-                            notifyError('Failed to check for updates');
-                          } finally {
-                            setIsCheckingModUpdates(false);
+                        className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        onClick={() => {
+                          if (selectedModFiles.size === filteredInstalledMods.length) {
+                            setSelectedModFiles(new Set());
+                          } else {
+                            setSelectedModFiles(new Set(filteredInstalledMods.map((m) => m.name)));
                           }
                         }}
                       >
-                        {isCheckingModUpdates ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                        {isCheckingModUpdates ? 'Checking…' : 'Check Updates'}
+                        {selectedModFiles.size === filteredInstalledMods.length && filteredInstalledMods.length > 0 ? (
+                          <CheckSquare className="h-3.5 w-3.5 text-primary-500" />
+                        ) : (
+                          <Square className="h-3.5 w-3.5" />
+                        )}
+                        {selectedModFiles.size > 0 ? `${selectedModFiles.size} selected` : 'Select all'}
                       </button>
+                      {selectedModFiles.size > 0 && (
+                        <button
+                          type="button"
+                          className="text-xs text-slate-400 transition-colors hover:text-slate-600 dark:hover:text-slate-300"
+                          onClick={() => setSelectedModFiles(new Set())}
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
-                  </div>
-                  {installedMods.length === 0 ? (
+                  )}
+
+                  {/* Mod list */}
+                  {filteredInstalledMods.length === 0 ? (
                     <div className="p-8">
                       <EmptyState
-                        title={`No ${modTarget} installed`}
-                        description="Install mods from the Browse tab to see them here."
+                        title={modInstalledSearch || modInstalledFilter !== 'all' ? 'No matching mods' : `No ${modTarget} installed`}
+                        description={modInstalledSearch || modInstalledFilter !== 'all' ? 'Try adjusting your search or filter.' : 'Install mods from the Browse tab to see them here.'}
                       />
                     </div>
                   ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {installedMods.map((mod) => (
-                        <div key={mod.name} className="group flex items-center justify-between px-4 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <Package className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
-                              <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{mod.projectName || mod.name}</span>
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                      {filteredInstalledMods.map((mod) => {
+                        const isSelected = selectedModFiles.has(mod.name);
+                        return (
+                          <div
+                            key={mod.name}
+                            className={`group flex items-center gap-3 px-4 py-3 transition-colors ${isSelected ? 'bg-primary-50/40 dark:bg-primary-500/5' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
+                          >
+                            {/* Checkbox */}
+                            <button
+                              type="button"
+                              className="shrink-0"
+                              onClick={() => {
+                                const next = new Set(selectedModFiles);
+                                if (isSelected) next.delete(mod.name); else next.add(mod.name);
+                                setSelectedModFiles(next);
+                              }}
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="h-4 w-4 text-primary-500" />
+                              ) : (
+                                <Square className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-400 dark:text-slate-600 dark:group-hover:text-slate-500" />
+                              )}
+                            </button>
+
+                            {/* Icon */}
+                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${mod.hasUpdate ? 'bg-amber-50 dark:bg-amber-500/10' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                              <Package className={`h-4 w-4 ${mod.hasUpdate ? 'text-amber-500 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                            </div>
+
+                            {/* Info */}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{mod.projectName || mod.name}</span>
+                                {mod.hasUpdate && (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                                    <ArrowUpCircle className="h-2.5 w-2.5" />
+                                    Update
+                                  </span>
+                                )}
+                                {mod.provider && (
+                                  <span className="inline-flex shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium capitalize text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                    {mod.provider}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+                                <span className="font-mono">{formatBytes(mod.size)}</span>
+                                {mod.modifiedAt && <span>{new Date(mod.modifiedAt).toLocaleDateString()}</span>}
+                                {mod.versionId && <span title={mod.versionId}>v{mod.versionId.length > 12 ? mod.versionId.slice(0, 8) + '…' : mod.versionId}</span>}
+                                {mod.hasUpdate && mod.latestVersionName && (
+                                  <span className="font-medium text-amber-600 dark:text-amber-400">→ {mod.latestVersionName}</span>
+                                )}
+                                {!mod.provider && <span className="italic text-slate-300 dark:text-slate-600">untracked</span>}
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                               {mod.hasUpdate && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-                                  <ArrowUpCircle className="h-2.5 w-2.5" />
-                                  Update
-                                </span>
-                              )}
-                            </div>
-                            <div className="ml-6 mt-0.5 flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500">
-                              <span>{formatBytes(mod.size)}</span>
-                              {mod.modifiedAt && <span>{new Date(mod.modifiedAt).toLocaleDateString()}</span>}
-                              {mod.provider && <span className="capitalize">{mod.provider}</span>}
-                              {mod.versionId && <span>v{mod.versionId.slice(0, 8)}</span>}
-                              {mod.hasUpdate && mod.latestVersionName && (
-                                <span className="text-amber-600 dark:text-amber-400">→ {mod.latestVersionName}</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {mod.hasUpdate && (
-                              <button
-                                type="button"
-                                className="rounded-md p-1.5 text-amber-500 opacity-0 transition-all hover:bg-amber-50 group-hover:opacity-100 dark:hover:bg-amber-500/10"
-                                title="Update to latest"
-                                disabled={isUpdatingMods}
-                                onClick={() => {
-                                  setUpdateConfirmMods([{
+                                <button
+                                  type="button"
+                                  className="rounded-lg p-1.5 text-amber-500 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/10"
+                                  title="Update to latest version"
+                                  disabled={isUpdatingMods}
+                                  onClick={() => setUpdateConfirmMods([{
                                     name: mod.name,
                                     currentVersion: mod.versionId || 'unknown',
                                     latestVersion: mod.latestVersionName || mod.latestVersionId || 'latest',
-                                  }]);
-                                }}
+                                  }])}
+                                >
+                                  <ArrowUpCircle className="h-4 w-4" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                                title="Remove"
+                                onClick={() => { if (confirm(`Remove ${mod.projectName || mod.name}?`)) uninstallModMutation.mutate(mod.name); }}
                               >
-                                <ArrowUpCircle className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              className="rounded-md p-1.5 text-slate-400 opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-                              title="Remove"
-                              onClick={() => { if (confirm(`Remove ${mod.name}?`)) uninstallModMutation.mutate(mod.name); }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2943,116 +3107,238 @@ function ServerDetailsPage() {
                 </div>
               ) : (
                 /* Installed plugins */
-                <div className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-                    <span className="text-xs text-slate-400 dark:text-slate-500">{installedPlugins.length} plugin{installedPlugins.length !== 1 ? 's' : ''} installed</span>
-                    <div className="flex items-center gap-1.5">
-                      {installedPlugins.some((p) => p.hasUpdate) && (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                  {/* Toolbar */}
+                  <div className="space-y-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs tabular-nums text-slate-400 dark:text-slate-500">
+                        {filteredInstalledPlugins.length}{filteredInstalledPlugins.length !== installedPlugins.length ? ` / ${installedPlugins.length}` : ''} plugin{installedPlugins.length !== 1 ? 's' : ''}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {installedPlugins.some((p) => p.hasUpdate) && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
+                            disabled={isUpdatingPlugins}
+                            onClick={() => {
+                              const pluginsToUpdate = selectedPluginFiles.size > 0
+                                ? installedPlugins.filter((p) => p.hasUpdate && selectedPluginFiles.has(p.name))
+                                : installedPlugins.filter((p) => p.hasUpdate);
+                              if (!pluginsToUpdate.length) return;
+                              setUpdateConfirmPlugins(pluginsToUpdate.map((p) => ({
+                                name: p.name,
+                                currentVersion: p.versionId || 'unknown',
+                                latestVersion: p.latestVersionName || p.latestVersionId || 'latest',
+                              })));
+                            }}
+                          >
+                            <ArrowUpCircle className="h-3 w-3" />
+                            Update {selectedPluginFiles.size > 0 ? 'Selected' : 'All'} ({(selectedPluginFiles.size > 0 ? installedPlugins.filter((p) => p.hasUpdate && selectedPluginFiles.has(p.name)) : installedPlugins.filter((p) => p.hasUpdate)).length})
+                          </button>
+                        )}
+                        {selectedPluginFiles.size > 0 && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20"
+                            onClick={() => {
+                              if (!confirm(`Remove ${selectedPluginFiles.size} selected plugin${selectedPluginFiles.size !== 1 ? 's' : ''}?`)) return;
+                              selectedPluginFiles.forEach((name) => uninstallPluginMutation.mutate(name));
+                              setSelectedPluginFiles(new Set());
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Remove ({selectedPluginFiles.size})
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
-                          disabled={isUpdatingPlugins}
-                          onClick={() => {
-                            const pluginsToUpdate = installedPlugins.filter((p) => p.hasUpdate);
-                            setUpdateConfirmPlugins(pluginsToUpdate.map((p) => ({
-                              name: p.name,
-                              currentVersion: p.versionId || 'unknown',
-                              latestVersion: p.latestVersionName || p.latestVersionId || 'latest',
-                            })));
+                          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                          disabled={isCheckingPluginUpdates}
+                          onClick={async () => {
+                            if (!server?.id) return;
+                            setIsCheckingPluginUpdates(true);
+                            try {
+                              const result = await pluginManagerApi.checkUpdates(server.id);
+                              refetchInstalledPlugins();
+                              if (result.updatesAvailable > 0) {
+                                notifySuccess(`${result.updatesAvailable} update${result.updatesAvailable !== 1 ? 's' : ''} available`);
+                              } else {
+                                notifySuccess('All plugins are up to date');
+                              }
+                            } catch {
+                              notifyError('Failed to check for updates');
+                            } finally {
+                              setIsCheckingPluginUpdates(false);
+                            }
                           }}
                         >
-                          <ArrowUpCircle className="h-3 w-3" />
-                          Update All ({installedPlugins.filter((p) => p.hasUpdate).length})
+                          {isCheckingPluginUpdates ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          {isCheckingPluginUpdates ? 'Checking…' : 'Check Updates'}
                         </button>
-                      )}
+                      </div>
+                    </div>
+                    {/* Search, Filter, Sort row */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search installed plugins…"
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:placeholder:text-slate-500"
+                          value={pluginInstalledSearch}
+                          onChange={(e) => setPluginInstalledSearch(e.target.value)}
+                        />
+                      </div>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        value={pluginInstalledFilter}
+                        onChange={(e) => setPluginInstalledFilter(e.target.value as typeof pluginInstalledFilter)}
+                      >
+                        <option value="all">All</option>
+                        <option value="updates">Has Updates</option>
+                        <option value="tracked">Tracked</option>
+                        <option value="untracked">Untracked</option>
+                      </select>
+                      <select
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 focus:border-primary-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        value={pluginInstalledSort}
+                        onChange={(e) => setPluginInstalledSort(e.target.value as typeof pluginInstalledSort)}
+                      >
+                        <option value="name">Sort: Name</option>
+                        <option value="size">Sort: Size</option>
+                        <option value="date">Sort: Date</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Select All bar */}
+                  {filteredInstalledPlugins.length > 0 && (
+                    <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/50 px-4 py-1.5 dark:border-slate-800 dark:bg-slate-800/30">
                       <button
                         type="button"
-                        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                        disabled={isCheckingPluginUpdates}
-                        onClick={async () => {
-                          if (!server?.id) return;
-                          setIsCheckingPluginUpdates(true);
-                          try {
-                            const result = await pluginManagerApi.checkUpdates(server.id);
-                            refetchInstalledPlugins();
-                            if (result.updatesAvailable > 0) {
-                              notifySuccess(`${result.updatesAvailable} update${result.updatesAvailable !== 1 ? 's' : ''} available`);
-                            } else {
-                              notifySuccess('All plugins are up to date');
-                            }
-                          } catch {
-                            notifyError('Failed to check for updates');
-                          } finally {
-                            setIsCheckingPluginUpdates(false);
+                        className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        onClick={() => {
+                          if (selectedPluginFiles.size === filteredInstalledPlugins.length) {
+                            setSelectedPluginFiles(new Set());
+                          } else {
+                            setSelectedPluginFiles(new Set(filteredInstalledPlugins.map((p) => p.name)));
                           }
                         }}
                       >
-                        {isCheckingPluginUpdates ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                        {isCheckingPluginUpdates ? 'Checking…' : 'Check Updates'}
+                        {selectedPluginFiles.size === filteredInstalledPlugins.length && filteredInstalledPlugins.length > 0 ? (
+                          <CheckSquare className="h-3.5 w-3.5 text-primary-500" />
+                        ) : (
+                          <Square className="h-3.5 w-3.5" />
+                        )}
+                        {selectedPluginFiles.size > 0 ? `${selectedPluginFiles.size} selected` : 'Select all'}
                       </button>
+                      {selectedPluginFiles.size > 0 && (
+                        <button
+                          type="button"
+                          className="text-xs text-slate-400 transition-colors hover:text-slate-600 dark:hover:text-slate-300"
+                          onClick={() => setSelectedPluginFiles(new Set())}
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
-                  </div>
-                  {installedPlugins.length === 0 ? (
+                  )}
+
+                  {/* Plugin list */}
+                  {filteredInstalledPlugins.length === 0 ? (
                     <div className="p-8">
                       <EmptyState
-                        title="No plugins installed"
-                        description="Install plugins from the Browse tab to see them here."
+                        title={pluginInstalledSearch || pluginInstalledFilter !== 'all' ? 'No matching plugins' : 'No plugins installed'}
+                        description={pluginInstalledSearch || pluginInstalledFilter !== 'all' ? 'Try adjusting your search or filter.' : 'Install plugins from the Browse tab to see them here.'}
                       />
                     </div>
                   ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {installedPlugins.map((plugin) => (
-                        <div key={plugin.name} className="group flex items-center justify-between px-4 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <Puzzle className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
-                              <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{plugin.projectName || plugin.name}</span>
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                      {filteredInstalledPlugins.map((plugin) => {
+                        const isSelected = selectedPluginFiles.has(plugin.name);
+                        return (
+                          <div
+                            key={plugin.name}
+                            className={`group flex items-center gap-3 px-4 py-3 transition-colors ${isSelected ? 'bg-primary-50/40 dark:bg-primary-500/5' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
+                          >
+                            {/* Checkbox */}
+                            <button
+                              type="button"
+                              className="shrink-0"
+                              onClick={() => {
+                                const next = new Set(selectedPluginFiles);
+                                if (isSelected) next.delete(plugin.name); else next.add(plugin.name);
+                                setSelectedPluginFiles(next);
+                              }}
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="h-4 w-4 text-primary-500" />
+                              ) : (
+                                <Square className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-400 dark:text-slate-600 dark:group-hover:text-slate-500" />
+                              )}
+                            </button>
+
+                            {/* Icon */}
+                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${plugin.hasUpdate ? 'bg-amber-50 dark:bg-amber-500/10' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                              <Puzzle className={`h-4 w-4 ${plugin.hasUpdate ? 'text-amber-500 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                            </div>
+
+                            {/* Info */}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{plugin.projectName || plugin.name}</span>
+                                {plugin.hasUpdate && (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                                    <ArrowUpCircle className="h-2.5 w-2.5" />
+                                    Update
+                                  </span>
+                                )}
+                                {plugin.provider && (
+                                  <span className="inline-flex shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium capitalize text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                    {plugin.provider}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+                                <span className="font-mono">{formatBytes(plugin.size)}</span>
+                                {plugin.modifiedAt && <span>{new Date(plugin.modifiedAt).toLocaleDateString()}</span>}
+                                {plugin.versionId && <span title={plugin.versionId}>v{plugin.versionId.length > 12 ? plugin.versionId.slice(0, 8) + '…' : plugin.versionId}</span>}
+                                {plugin.hasUpdate && plugin.latestVersionName && (
+                                  <span className="font-medium text-amber-600 dark:text-amber-400">→ {plugin.latestVersionName}</span>
+                                )}
+                                {!plugin.provider && <span className="italic text-slate-300 dark:text-slate-600">untracked</span>}
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                               {plugin.hasUpdate && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-                                  <ArrowUpCircle className="h-2.5 w-2.5" />
-                                  Update
-                                </span>
-                              )}
-                            </div>
-                            <div className="ml-6 mt-0.5 flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500">
-                              <span>{formatBytes(plugin.size)}</span>
-                              {plugin.modifiedAt && <span>{new Date(plugin.modifiedAt).toLocaleDateString()}</span>}
-                              {plugin.provider && <span className="capitalize">{plugin.provider}</span>}
-                              {plugin.versionId && <span>v{plugin.versionId.slice(0, 8)}</span>}
-                              {plugin.hasUpdate && plugin.latestVersionName && (
-                                <span className="text-amber-600 dark:text-amber-400">→ {plugin.latestVersionName}</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {plugin.hasUpdate && (
-                              <button
-                                type="button"
-                                className="rounded-md p-1.5 text-amber-500 opacity-0 transition-all hover:bg-amber-50 group-hover:opacity-100 dark:hover:bg-amber-500/10"
-                                title="Update to latest"
-                                disabled={isUpdatingPlugins}
-                                onClick={() => {
-                                  setUpdateConfirmPlugins([{
+                                <button
+                                  type="button"
+                                  className="rounded-lg p-1.5 text-amber-500 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/10"
+                                  title="Update to latest version"
+                                  disabled={isUpdatingPlugins}
+                                  onClick={() => setUpdateConfirmPlugins([{
                                     name: plugin.name,
                                     currentVersion: plugin.versionId || 'unknown',
                                     latestVersion: plugin.latestVersionName || plugin.latestVersionId || 'latest',
-                                  }]);
-                                }}
+                                  }])}
+                                >
+                                  <ArrowUpCircle className="h-4 w-4" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                                title="Remove"
+                                onClick={() => { if (confirm(`Remove ${plugin.projectName || plugin.name}?`)) uninstallPluginMutation.mutate(plugin.name); }}
                               >
-                                <ArrowUpCircle className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              className="rounded-md p-1.5 text-slate-400 opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-                              title="Remove"
-                              onClick={() => { if (confirm(`Remove ${plugin.name}?`)) uninstallPluginMutation.mutate(plugin.name); }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
