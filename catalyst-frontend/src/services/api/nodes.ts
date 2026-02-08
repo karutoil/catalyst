@@ -72,6 +72,12 @@ export const nodesApi = {
     >(`/api/nodes/${nodeId}/deployment-token`);
     return data.data;
   },
+  ipPools: async (nodeId: string) => {
+    const { data } = await apiClient.get<
+      ApiResponse<Array<{ id: string; networkName: string; cidr: string; availableCount: number }>>
+    >(`/api/nodes/${nodeId}/ip-pools`);
+    return data.data || [];
+  },
   availableIps: async (nodeId: string, networkName: string, limit = 200) => {
     const { data } = await apiClient.get<ApiResponse<string[]>>(
       `/api/nodes/${nodeId}/ip-availability`,

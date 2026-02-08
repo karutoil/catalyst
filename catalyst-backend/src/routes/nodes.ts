@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes, timingSafeEqual } from "crypto";
-import { listAvailableIps } from "../utils/ipam";
+import { listAvailableIps, summarizePool } from "../utils/ipam";
 import { Prisma } from "@prisma/client";
 import { auth } from "../auth";
 import { serialize } from '../utils/serialize';
@@ -699,6 +699,43 @@ export async function nodeRoutes(app: FastifyInstance) {
     }
   );
 
+  // List IP pools (macvlan interfaces) for a node
+  app.get(
+    "/:nodeId/ip-pools",
+    { onRequest: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isAdmin = await ensureAdmin(prisma, request.user.userId, reply, "admin.read");
+      if (!isAdmin) return;
+      const { nodeId } = request.params as { nodeId: string };
+
+      const node = await prisma.node.findUnique({ where: { id: nodeId } });
+      if (!node) {
+        return reply.status(404).send({ error: "Node not found" });
+      }
+
+      const pools = await prisma.ipPool.findMany({
+        where: { nodeId },
+        include: {
+          allocations: { where: { releasedAt: null } },
+        },
+        orderBy: { networkName: "asc" },
+      });
+
+      const data = pools.map((pool) => {
+        const summary = summarizePool(pool);
+        const usedCount = pool.allocations.length;
+        return {
+          id: pool.id,
+          networkName: pool.networkName,
+          cidr: pool.cidr,
+          availableCount: Math.max(0, summary.total - summary.reservedCount - usedCount),
+        };
+      });
+
+      reply.send(serialize({ success: true, data }));
+    }
+  );
+
   // List available IPs from IPAM pool for a node/network
   app.get(
     "/:nodeId/ip-availability",
@@ -762,8 +799,8 @@ export async function nodeRoutes(app: FastifyInstance) {
           ? {
               OR: [
                 { ip: { contains: searchQuery } },
-                { alias: { contains: searchQuery, mode: "insensitive" } },
-                { notes: { contains: searchQuery, mode: "insensitive" } },
+                { alias: { contains: searchQuery, mode: "insensitive" as const } },
+                { notes: { contains: searchQuery, mode: "insensitive" as const } },
               ],
             }
           : {}),

@@ -49,13 +49,36 @@ interface SFTPSession {
 
 async function validateTokenAndGetServer(username: string, password: string): Promise<SFTPSession | null> {
   try {
-    // Username format: serverId
     const serverId = username;
+    let userId: string | null = null;
 
-    const session = await auth.api.getSession({
-      headers: new Headers({ authorization: `Bearer ${password}` }),
-    });
-    if (!session) {
+    // Try bearer token auth first
+    try {
+      const session = await auth.api.getSession({
+        headers: new Headers({ authorization: `Bearer ${password}` }),
+      });
+      if (session) {
+        userId = session.user.id;
+      }
+    } catch {
+      // Bearer auth failed, try direct session token lookup
+    }
+
+    // Fallback: look up session token directly in database
+    if (!userId) {
+      const dbSession = await prisma.session.findFirst({
+        where: {
+          token: password,
+          expiresAt: { gt: new Date() },
+        },
+        select: { userId: true },
+      });
+      if (dbSession) {
+        userId = dbSession.userId;
+      }
+    }
+
+    if (!userId) {
       return null;
     }
 
@@ -63,7 +86,7 @@ async function validateTokenAndGetServer(username: string, password: string): Pr
     const serverAccess = await prisma.serverAccess.findFirst({
       where: {
         serverId,
-        userId: session.user.id,
+        userId,
       },
       include: {
         server: {
@@ -79,8 +102,9 @@ async function validateTokenAndGetServer(username: string, password: string): Pr
     }
 
     const permissions = serverAccess.permissions;
+    const serverUuid = serverAccess.server.uuid;
 
-    const serverPath = join(SERVER_FILES_ROOT, serverId, 'files');
+    const serverPath = join(SERVER_FILES_ROOT, serverUuid);
 
     // Ensure server directory exists
     try {
@@ -89,9 +113,14 @@ async function validateTokenAndGetServer(username: string, password: string): Pr
       // Directory creation errors are non-fatal
     }
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, username: true },
+    });
+
     return {
-      userId: session.user.id,
-      username: (session.user as any).username ?? session.user.email,
+      userId,
+      username: user?.username ?? user?.email ?? userId,
       serverId,
       serverPath,
       permissions,
@@ -143,10 +172,10 @@ function startSFTPServer(logger: Logger) {
             if (session) {
               ctx.accept();
             } else {
-              ctx.reject();
+              ctx.reject(['password']);
             }
           } else {
-            ctx.reject();
+            ctx.reject(['password']);
           }
         })
         .on('ready', () => {
@@ -185,330 +214,376 @@ function startSFTPServer(logger: Logger) {
 }
 
 function handleSFTPSession(sftpStream: SFTPStream, session: SFTPSession) {
-  const handles = new Map<Buffer, { type: 'file' | 'dir'; path: string; stream?: any; dir?: any }>();
+  const handles = new Map<number, { type: 'file' | 'dir'; path: string; stream?: any; dir?: any; sent?: boolean }>();
   let handleCounter = 0;
 
+  // Serialize all async handlers to prevent interleaved responses
+  let queue = Promise.resolve();
+  const enqueue = (fn: () => Promise<void>) => {
+    queue = queue.then(fn, fn);
+  };
+
+  const createHandle = (data: { type: 'file' | 'dir'; path: string; stream?: any; dir?: any; sent?: boolean }): Buffer => {
+    const id = handleCounter++;
+    const buf = Buffer.alloc(4);
+    buf.writeUInt32BE(id, 0);
+    handles.set(id, data);
+    return buf;
+  };
+
+  const getHandle = (buf: Buffer) => {
+    const id = buf.readUInt32BE(0);
+    return handles.get(id);
+  };
+
+  const deleteHandle = (buf: Buffer) => {
+    const id = buf.readUInt32BE(0);
+    handles.delete(id);
+  };
+
   sftpStream
-    .on('OPEN', async (reqid, filename, flags, attrs) => {
-      try {
-        const fullPath = normalizePath(session.serverPath, filename);
-        
-        // Check permissions
-        if (flags & utils.sftp.OPEN_MODE.WRITE) {
-          if (!hasPermission(session, 'file.write')) {
-            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+    .on('OPEN', (reqid, filename, flags, _attrs) => {
+      enqueue(async () => {
+        try {
+          const fullPath = normalizePath(session.serverPath, filename);
+          
+          if (flags & utils.sftp.OPEN_MODE.WRITE) {
+            if (!hasPermission(session, 'file.write')) {
+              return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+            }
+          } else {
+            if (!hasPermission(session, 'file.read')) {
+              return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+            }
           }
-        } else {
+
+          let handle: Buffer;
+
+          if (flags & utils.sftp.OPEN_MODE.WRITE) {
+            const stream = createWriteStream(fullPath, {
+              flags: flags & utils.sftp.OPEN_MODE.APPEND ? 'a' : 'w',
+            });
+            handle = createHandle({ type: 'file', path: fullPath, stream });
+          } else {
+            const stream = createReadStream(fullPath);
+            handle = createHandle({ type: 'file', path: fullPath, stream });
+          }
+
+          sftpStream.handle(reqid, handle);
+
+          await prisma.serverLog.create({
+            data: {
+              serverId: session.serverId,
+              stream: 'system',
+              data: `SFTP: ${session.username} opened ${filename}`,
+            },
+          }).catch(() => {});
+        } catch (err: any) {
+          console.error('SFTP OPEN error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
+        }
+      });
+    })
+    .on('READ', (reqid, handle, offset, length) => {
+      enqueue(async () => {
+        try {
+          const handleData = getHandle(handle);
+          if (!handleData || handleData.type !== 'file') {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
+          }
+
           if (!hasPermission(session, 'file.read')) {
             return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
           }
-        }
 
-        const handle = Buffer.alloc(4);
-        handle.writeUInt32BE(handleCounter++, 0);
+          const buffer = Buffer.alloc(length);
+          const fd = await fs.open(handleData.path, 'r');
+          const { bytesRead } = await fd.read(buffer, 0, length, offset);
+          await fd.close();
 
-        if (flags & utils.sftp.OPEN_MODE.WRITE) {
-          const stream = createWriteStream(fullPath, {
-            flags: flags & utils.sftp.OPEN_MODE.APPEND ? 'a' : 'w',
-          });
-          handles.set(handle, { type: 'file', path: fullPath, stream });
-        } else {
-          const stream = createReadStream(fullPath);
-          handles.set(handle, { type: 'file', path: fullPath, stream });
-        }
-
-        sftpStream.handle(reqid, handle);
-
-        // Log file access
-        await prisma.serverLog.create({
-          data: {
-            serverId: session.serverId,
-            stream: 'system',
-            data: `SFTP: ${session.username} opened ${filename}`,
-          },
-        });
-      } catch (err: any) {
-        console.error('SFTP OPEN error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
-    })
-    .on('READ', async (reqid, handle, offset, length) => {
-      try {
-        const handleData = handles.get(handle);
-        if (!handleData || handleData.type !== 'file') {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-        }
-
-        if (!hasPermission(session, 'file.read')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
-        }
-
-        const buffer = Buffer.alloc(length);
-        const fd = await fs.open(handleData.path, 'r');
-        const { bytesRead } = await fd.read(buffer, 0, length, offset);
-        await fd.close();
-
-        if (bytesRead === 0) {
-          sftpStream.status(reqid, utils.sftp.STATUS_CODE.EOF);
-        } else {
-          sftpStream.data(reqid, buffer.slice(0, bytesRead));
-        }
-      } catch (err: any) {
-        console.error('SFTP READ error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
-    })
-    .on('WRITE', async (reqid, handle, offset, data) => {
-      try {
-        const handleData = handles.get(handle);
-        if (!handleData || handleData.type !== 'file') {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-        }
-
-        if (!hasPermission(session, 'file.write')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
-        }
-
-        const fd = await fs.open(handleData.path, 'r+');
-        await fd.write(data, 0, data.length, offset);
-        await fd.close();
-
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
-      } catch (err: any) {
-        console.error('SFTP WRITE error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
-    })
-    .on('CLOSE', async (reqid, handle) => {
-      try {
-        const handleData = handles.get(handle);
-        if (handleData) {
-          if (handleData.stream) {
-            handleData.stream.close?.();
+          if (bytesRead === 0) {
+            sftpStream.status(reqid, utils.sftp.STATUS_CODE.EOF);
+          } else {
+            sftpStream.data(reqid, buffer.slice(0, bytesRead));
           }
-          handles.delete(handle);
+        } catch (err: any) {
+          console.error('SFTP READ error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
-      } catch (err: any) {
-        console.error('SFTP CLOSE error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
+      });
     })
-    .on('OPENDIR', async (reqid, path) => {
-      try {
-        const fullPath = normalizePath(session.serverPath, path);
+    .on('WRITE', (reqid, handle, offset, data) => {
+      enqueue(async () => {
+        try {
+          const handleData = getHandle(handle);
+          if (!handleData || handleData.type !== 'file') {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
+          }
 
-        if (!hasPermission(session, 'file.read')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.write')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          const fd = await fs.open(handleData.path, 'r+');
+          await fd.write(data, 0, data.length, offset);
+          await fd.close();
+
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
+        } catch (err: any) {
+          console.error('SFTP WRITE error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
-
-        const entries = await fs.readdir(fullPath, { withFileTypes: true });
-
-        const handle = Buffer.alloc(4);
-        handle.writeUInt32BE(handleCounter++, 0);
-        handles.set(handle, { type: 'dir', path: fullPath, dir: entries });
-
-        sftpStream.handle(reqid, handle);
-      } catch (err: any) {
-        console.error('SFTP OPENDIR error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
+      });
     })
-    .on('READDIR', async (reqid, handle) => {
-      try {
-        const handleData = handles.get(handle);
-        if (!handleData || handleData.type !== 'dir') {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
+    .on('CLOSE', (reqid, handle) => {
+      enqueue(async () => {
+        try {
+          const handleData = getHandle(handle);
+          if (handleData) {
+            if (handleData.stream) {
+              handleData.stream.close?.();
+            }
+            deleteHandle(handle);
+          }
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
+        } catch (err: any) {
+          console.error('SFTP CLOSE error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
+      });
+    })
+    .on('OPENDIR', (reqid, dirpath) => {
+      enqueue(async () => {
+        try {
+          const fullPath = normalizePath(session.serverPath, dirpath);
 
-        if (!hasPermission(session, 'file.read')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.read')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          const entries = await fs.readdir(fullPath, { withFileTypes: true });
+
+          const handle = createHandle({ type: 'dir', path: fullPath, dir: entries, sent: false });
+
+          sftpStream.handle(reqid, handle);
+        } catch (err: any) {
+          console.error('SFTP OPENDIR error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
+      });
+    })
+    .on('READDIR', (reqid, handle) => {
+      enqueue(async () => {
+        try {
+          const handleData = getHandle(handle);
+          if (!handleData || handleData.type !== 'dir') {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
+          }
 
-        const entries = handleData.dir;
-        if (!entries || entries.length === 0) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.EOF);
-        }
+          if (!hasPermission(session, 'file.read')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
 
-        const fileList: Array<{
-          filename: string;
-          longname: string;
-          attrs: {
-            mode: number;
-            uid: number;
-            gid: number;
-            size: number;
-            atime: number;
-            mtime: number;
+          // Already sent entries, return EOF
+          if (handleData.sent) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.EOF);
+          }
+
+          handleData.sent = true;
+          const entries = handleData.dir || [];
+
+          // Build file list including . and ..
+          const dirStats = await fs.stat(handleData.path);
+          const dirAttrs = {
+            mode: dirStats.mode,
+            uid: dirStats.uid,
+            gid: dirStats.gid,
+            size: dirStats.size,
+            atime: Math.floor(dirStats.atimeMs / 1000),
+            mtime: Math.floor(dirStats.mtimeMs / 1000),
           };
-        }> = [];
-        for (const entry of entries.splice(0, 100)) {
-          const entryPath = join(handleData.path, entry.name);
-          try {
-            const stats = await fs.stat(entryPath);
-            fileList.push({
-              filename: entry.name,
-              longname: formatLongname(entry.name, stats),
-              attrs: {
-                mode: stats.mode,
-                uid: stats.uid,
-                gid: stats.gid,
-                size: stats.size,
-                atime: Math.floor(stats.atimeMs / 1000),
-                mtime: Math.floor(stats.mtimeMs / 1000),
-              },
-            });
-          } catch (err) {
-            console.error(`Failed to stat ${entryPath}:`, err);
+
+          const fileList: Array<{ filename: string; longname: string; attrs: any }> = [
+            { filename: '.', longname: formatLongname('.', dirStats), attrs: dirAttrs },
+            { filename: '..', longname: formatLongname('..', dirStats), attrs: dirAttrs },
+          ];
+
+          for (const entry of entries) {
+            const entryPath = join(handleData.path, entry.name);
+            try {
+              const stats = await fs.stat(entryPath);
+              fileList.push({
+                filename: entry.name,
+                longname: formatLongname(entry.name, stats),
+                attrs: {
+                  mode: stats.mode,
+                  uid: stats.uid,
+                  gid: stats.gid,
+                  size: stats.size,
+                  atime: Math.floor(stats.atimeMs / 1000),
+                  mtime: Math.floor(stats.mtimeMs / 1000),
+                },
+              });
+            } catch (err) {
+              // Skip entries that can't be stat'd
+            }
           }
-        }
 
-        if (fileList.length === 0) {
-          sftpStream.status(reqid, utils.sftp.STATUS_CODE.EOF);
-        } else {
           sftpStream.name(reqid, fileList);
+        } catch (err: any) {
+          console.error('SFTP READDIR error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
-      } catch (err: any) {
-        console.error('SFTP READDIR error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
+      });
     })
-    .on('STAT', async (reqid, path) => {
-      try {
-        const fullPath = normalizePath(session.serverPath, path);
+    .on('STAT', (reqid, filepath) => {
+      enqueue(async () => {
+        try {
+          const fullPath = normalizePath(session.serverPath, filepath);
 
-        if (!hasPermission(session, 'file.read')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.read')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          const stats = await fs.stat(fullPath);
+          sftpStream.attrs(reqid, {
+            mode: stats.mode,
+            uid: stats.uid,
+            gid: stats.gid,
+            size: stats.size,
+            atime: Math.floor(stats.atimeMs / 1000),
+            mtime: Math.floor(stats.mtimeMs / 1000),
+          });
+        } catch (err: any) {
+          console.error('SFTP STAT error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.NO_SUCH_FILE);
         }
-
-        const stats = await fs.stat(fullPath);
-        sftpStream.attrs(reqid, {
-          mode: stats.mode,
-          uid: stats.uid,
-          gid: stats.gid,
-          size: stats.size,
-          atime: Math.floor(stats.atimeMs / 1000),
-          mtime: Math.floor(stats.mtimeMs / 1000),
-        });
-      } catch (err: any) {
-        console.error('SFTP STAT error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.NO_SUCH_FILE);
-      }
+      });
     })
-    .on('LSTAT', async (reqid, path) => {
-      try {
-        const fullPath = normalizePath(session.serverPath, path);
+    .on('LSTAT', (reqid, filepath) => {
+      enqueue(async () => {
+        try {
+          const fullPath = normalizePath(session.serverPath, filepath);
 
-        if (!hasPermission(session, 'file.read')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.read')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          const stats = await fs.lstat(fullPath);
+          sftpStream.attrs(reqid, {
+            mode: stats.mode,
+            uid: stats.uid,
+            gid: stats.gid,
+            size: stats.size,
+            atime: Math.floor(stats.atimeMs / 1000),
+            mtime: Math.floor(stats.mtimeMs / 1000),
+          });
+        } catch (err: any) {
+          console.error('SFTP LSTAT error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.NO_SUCH_FILE);
         }
-
-        const stats = await fs.lstat(fullPath);
-        sftpStream.attrs(reqid, {
-          mode: stats.mode,
-          uid: stats.uid,
-          gid: stats.gid,
-          size: stats.size,
-          atime: Math.floor(stats.atimeMs / 1000),
-          mtime: Math.floor(stats.mtimeMs / 1000),
-        });
-      } catch (err: any) {
-        console.error('SFTP LSTAT error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.NO_SUCH_FILE);
-      }
+      });
     })
-    .on('REMOVE', async (reqid, path) => {
-      try {
-        const fullPath = normalizePath(session.serverPath, path);
+    .on('REMOVE', (reqid, filepath) => {
+      enqueue(async () => {
+        try {
+          const fullPath = normalizePath(session.serverPath, filepath);
 
-        if (!hasPermission(session, 'file.delete')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.delete')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          await fs.unlink(fullPath);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
+
+          await prisma.serverLog.create({
+            data: {
+              serverId: session.serverId,
+              stream: 'system',
+              data: `SFTP: ${session.username} deleted ${filepath}`,
+            },
+          }).catch(() => {});
+        } catch (err: any) {
+          console.error('SFTP REMOVE error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
-
-        await fs.unlink(fullPath);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
-
-        await prisma.serverLog.create({
-          data: {
-            serverId: session.serverId,
-            stream: 'system',
-            data: `SFTP: ${session.username} deleted ${path}`,
-          },
-        });
-      } catch (err: any) {
-        console.error('SFTP REMOVE error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
+      });
     })
-    .on('RMDIR', async (reqid, path) => {
-      try {
-        const fullPath = normalizePath(session.serverPath, path);
+    .on('RMDIR', (reqid, dirpath) => {
+      enqueue(async () => {
+        try {
+          const fullPath = normalizePath(session.serverPath, dirpath);
 
-        if (!hasPermission(session, 'file.delete')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.delete')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          await fs.rmdir(fullPath);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
+
+          await prisma.serverLog.create({
+            data: {
+              serverId: session.serverId,
+              stream: 'system',
+              data: `SFTP: ${session.username} removed directory ${dirpath}`,
+            },
+          }).catch(() => {});
+        } catch (err: any) {
+          console.error('SFTP RMDIR error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
-
-        await fs.rmdir(fullPath);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
-
-        await prisma.serverLog.create({
-          data: {
-            serverId: session.serverId,
-            stream: 'system',
-            data: `SFTP: ${session.username} removed directory ${path}`,
-          },
-        });
-      } catch (err: any) {
-        console.error('SFTP RMDIR error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
+      });
     })
-    .on('MKDIR', async (reqid, path, attrs) => {
-      try {
-        const fullPath = normalizePath(session.serverPath, path);
+    .on('MKDIR', (reqid, dirpath, attrs) => {
+      enqueue(async () => {
+        try {
+          const fullPath = normalizePath(session.serverPath, dirpath);
 
-        if (!hasPermission(session, 'file.write')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.write')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          await fs.mkdir(fullPath, { mode: attrs.mode });
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
+
+          await prisma.serverLog.create({
+            data: {
+              serverId: session.serverId,
+              stream: 'system',
+              data: `SFTP: ${session.username} created directory ${dirpath}`,
+            },
+          }).catch(() => {});
+        } catch (err: any) {
+          console.error('SFTP MKDIR error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
-
-        await fs.mkdir(fullPath, { mode: attrs.mode });
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
-
-        await prisma.serverLog.create({
-          data: {
-            serverId: session.serverId,
-            stream: 'system',
-            data: `SFTP: ${session.username} created directory ${path}`,
-          },
-        });
-      } catch (err: any) {
-        console.error('SFTP MKDIR error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
+      });
     })
-    .on('RENAME', async (reqid, oldPath, newPath) => {
-      try {
-        const fullOldPath = normalizePath(session.serverPath, oldPath);
-        const fullNewPath = normalizePath(session.serverPath, newPath);
+    .on('RENAME', (reqid, oldPath, newPath) => {
+      enqueue(async () => {
+        try {
+          const fullOldPath = normalizePath(session.serverPath, oldPath);
+          const fullNewPath = normalizePath(session.serverPath, newPath);
 
-        if (!hasPermission(session, 'file.write')) {
-          return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          if (!hasPermission(session, 'file.write')) {
+            return sftpStream.status(reqid, utils.sftp.STATUS_CODE.PERMISSION_DENIED);
+          }
+
+          await fs.rename(fullOldPath, fullNewPath);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
+
+          await prisma.serverLog.create({
+            data: {
+              serverId: session.serverId,
+              stream: 'system',
+              data: `SFTP: ${session.username} renamed ${oldPath} to ${newPath}`,
+            },
+          }).catch(() => {});
+        } catch (err: any) {
+          console.error('SFTP RENAME error:', err);
+          sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
         }
-
-        await fs.rename(fullOldPath, fullNewPath);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.OK);
-
-        await prisma.serverLog.create({
-          data: {
-            serverId: session.serverId,
-            stream: 'system',
-            data: `SFTP: ${session.username} renamed ${oldPath} to ${newPath}`,
-          },
-        });
-      } catch (err: any) {
-        console.error('SFTP RENAME error:', err);
-        sftpStream.status(reqid, utils.sftp.STATUS_CODE.FAILURE);
-      }
+      });
     })
     .on('REALPATH', (reqid, path) => {
       try {
