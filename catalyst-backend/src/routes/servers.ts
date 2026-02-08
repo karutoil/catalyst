@@ -1262,7 +1262,7 @@ export async function serverRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Template image is required" });
       }
       if (template.images && Array.isArray(template.images)) {
-        const hasVariant = template.images.some((option) => option?.name === resolvedEnvironment.IMAGE_VARIANT);
+        const hasVariant = template.images.some((option: any) => option?.name === resolvedEnvironment.IMAGE_VARIANT);
         if (resolvedEnvironment.IMAGE_VARIANT && !hasVariant) {
           return reply.status(400).send({ error: "Invalid image variant selected" });
         }
@@ -1943,7 +1943,7 @@ export async function serverRoutes(app: FastifyInstance) {
           }
 
           nextEnvironment = {
-            ...(environment || server.environment || {}),
+            ...((environment || server.environment || {}) as Record<string, any>),
           };
           if (nextPrimaryIp) {
             nextEnvironment.CATALYST_NETWORK_IP = nextPrimaryIp;
@@ -1952,7 +1952,7 @@ export async function serverRoutes(app: FastifyInstance) {
           }
         } else if (isHostNetwork && hostNetworkIp) {
           nextEnvironment = {
-            ...(environment || server.environment || {}),
+            ...((environment || server.environment || {}) as Record<string, any>),
             CATALYST_NETWORK_IP: hostNetworkIp,
           };
         }
@@ -4532,7 +4532,7 @@ export async function serverRoutes(app: FastifyInstance) {
     userId: string;
     token: string;
     reply: FastifyReply;
-    invite?: { id: string; serverId: string; email: string; permissions: string[] };
+    invite?: { id: string; serverId: string; email: string; permissions: string[]; cancelledAt?: Date | null; acceptedAt?: Date | null; expiresAt: Date };
   }) => {
     const invite =
       args.invite ??
@@ -5045,9 +5045,7 @@ export async function serverRoutes(app: FastifyInstance) {
       const database = await prisma.serverDatabase.findFirst({
         where: { id: databaseId, serverId },
         include: {
-          host: {
-            select: { id: true, name: true, host: true, port: true },
-          },
+          host: true,
         },
       });
 
@@ -6070,8 +6068,8 @@ export async function serverRoutes(app: FastifyInstance) {
             retentionCount !== undefined ? retentionCount : server.backupRetentionCount,
           backupRetentionDays:
             retentionDays !== undefined ? retentionDays : server.backupRetentionDays,
-          backupS3Config: encryptedS3Config ?? server.backupS3Config,
-          backupSftpConfig: encryptedSftpConfig ?? server.backupSftpConfig,
+          backupS3Config: (encryptedS3Config ?? server.backupS3Config) as any,
+          backupSftpConfig: (encryptedSftpConfig ?? server.backupSftpConfig) as any,
         },
       });
 
@@ -6080,8 +6078,8 @@ export async function serverRoutes(app: FastifyInstance) {
         backupStorageMode: updated.backupStorageMode,
         backupRetentionCount: updated.backupRetentionCount,
         backupRetentionDays: updated.backupRetentionDays,
-        backupS3Config: redactBackupConfig(decryptBackupConfig(updated.backupS3Config)),
-        backupSftpConfig: redactBackupConfig(decryptBackupConfig(updated.backupSftpConfig)),
+        backupS3Config: redactBackupConfig(decryptBackupConfig(updated.backupS3Config as any)),
+        backupSftpConfig: redactBackupConfig(decryptBackupConfig(updated.backupSftpConfig as any)),
       });
     }
   );
@@ -6228,7 +6226,7 @@ export async function serverRoutes(app: FastifyInstance) {
         });
 
         const backupName = `transfer-${Date.now()}`;
-        const mode = transferMode || server.backupStorageMode || "local";
+        const mode = (transferMode || server.backupStorageMode || "local") as import("../services/backup-storage").BackupStorageMode;
         const { buildBackupPaths, buildTransferBackupPath } = await import("../services/backup-storage");
         const { agentPath, storagePath, storageKey } = buildBackupPaths(server.uuid, backupName, mode, server);
         if (mode === "s3" && !storageKey) {

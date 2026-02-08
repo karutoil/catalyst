@@ -193,4 +193,11 @@ export const serversApi = {
     );
     return data;
   },
+
+  getSftpConnectionInfo: async () => {
+    const { data } = await apiClient.get<
+      ApiResponse<{ enabled: boolean; host: string; port: number; sftpPassword: string | null }>
+    >('/api/sftp/connection-info');
+    return data.data;
+  },
 };

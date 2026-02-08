@@ -26,6 +26,7 @@ import UpdateServerModal from '../../components/servers/UpdateServerModal';
 import TransferServerModal from '../../components/servers/TransferServerModal';
 import DeleteServerDialog from '../../components/servers/DeleteServerDialog';
 import FileManager from '../../components/files/FileManager';
+import SftpConnectionInfo from '../../components/files/SftpConnectionInfo';
 import BackupSection from '../../components/backups/BackupSection';
 import CreateTaskModal from '../../components/tasks/CreateTaskModal';
 import EditTaskModal from '../../components/tasks/EditTaskModal';
@@ -2012,8 +2013,18 @@ function ServerDetailsPage() {
       ) : null}
 
       {activeTab === 'files' ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
-          <FileManager serverId={server.id} isSuspended={isSuspended} />
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+            <FileManager serverId={server.id} isSuspended={isSuspended} />
+          </div>
+          <details className="rounded-xl border border-slate-200 bg-white shadow-surface-light dark:shadow-surface-dark transition-all duration-300 hover:border-primary-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              SFTP Connection Details
+            </summary>
+            <div className="border-t border-slate-200 px-4 py-4 dark:border-slate-800">
+              <SftpConnectionInfo serverId={server.id} />
+            </div>
+          </details>
         </div>
       ) : null}
 

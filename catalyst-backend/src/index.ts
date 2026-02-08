@@ -537,6 +537,34 @@ async function bootstrap() {
       reply.type("text/plain").send(script);
     });
 
+    // SFTP connection info endpoint (authenticated)
+    app.get("/api/sftp/connection-info", { preHandler: [authenticate] }, async (request, reply) => {
+      const enabled = process.env.SFTP_ENABLED !== 'false';
+      const port = parseInt(process.env.SFTP_PORT || '2022');
+      const host = process.env.BACKEND_URL
+        ? new URL(process.env.BACKEND_URL).hostname
+        : process.env.BACKEND_EXTERNAL_ADDRESS
+          ? new URL(process.env.BACKEND_EXTERNAL_ADDRESS).hostname
+          : request.hostname.split(':')[0];
+
+      // Find a valid session token for this user to use as SFTP password
+      const userId = (request as any).user?.userId;
+      let sftpPassword: string | null = null;
+      if (userId) {
+        const activeSession = await prisma.session.findFirst({
+          where: { userId, expiresAt: { gt: new Date() } },
+          orderBy: { createdAt: 'desc' },
+          select: { token: true },
+        });
+        sftpPassword = activeSession?.token ?? null;
+      }
+
+      reply.send({
+        success: true,
+        data: { enabled, host, port, sftpPassword },
+      });
+    });
+
     // Public theme settings endpoint (unauthenticated)
     app.get("/api/theme-settings/public", async (_request, reply) => {
       let settings = await prisma.themeSettings.findUnique({

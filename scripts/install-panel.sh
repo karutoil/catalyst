@@ -36,7 +36,6 @@ NON_INTERACTIVE=false
 PM=""
 INIT_SYSTEM=""
 PKG_UPDATED=0
-POSTGRES_SERVICE="postgresql"
 DB_NAME="catalyst_db"
 DB_USER="catalyst"
 DB_PASSWORD=""
@@ -48,6 +47,15 @@ PANEL_URL=""
 CADDY_SITE=""
 NODE_BIN=""
 CADDY_BINARY_FALLBACK=false
+CONTAINER_NAMESPACE="${CATALYST_CONTAINER_NAMESPACE:-catalyst}"
+POSTGRES_CONTAINER_NAME="${CATALYST_POSTGRES_CONTAINER_NAME:-catalyst-postgres}"
+REDIS_CONTAINER_NAME="${CATALYST_REDIS_CONTAINER_NAME:-catalyst-redis}"
+POSTGRES_IMAGE="${CATALYST_POSTGRES_IMAGE:-docker.io/library/postgres:16-alpine}"
+REDIS_IMAGE="${CATALYST_REDIS_IMAGE:-docker.io/library/redis:7-alpine}"
+POSTGRES_PORT="${CATALYST_POSTGRES_PORT:-5432}"
+REDIS_PORT="${CATALYST_REDIS_PORT:-6379}"
+POSTGRES_VOLUME="${CATALYST_POSTGRES_VOLUME:-catalyst-postgres-data}"
+REDIS_VOLUME="${CATALYST_REDIS_VOLUME:-catalyst-redis-data}"
 
 log() {
   printf '[catalyst-installer] %s\n' "$*"
@@ -81,6 +89,10 @@ Options:
 Examples:
   sudo ./scripts/install-panel.sh --domain panel.example.com
   sudo ./scripts/install-panel.sh --domain 203.0.113.10 --non-interactive
+
+Notes:
+  PostgreSQL and Redis are deployed as nerdctl containers in namespace "catalyst"
+  (override with CATALYST_CONTAINER_NAMESPACE).
 EOF
 }
 
@@ -283,22 +295,171 @@ ensure_nodejs() {
   command -v npm >/dev/null 2>&1 || die "npm is required but was not installed."
 }
 
-ensure_postgresql_packages() {
-  log "Installing PostgreSQL..."
+ensure_containerd_package() {
   case "$PM" in
     apt)
-      pkg_install postgresql postgresql-contrib
+      if pkg_install containerd >/dev/null 2>&1; then
+        return
+      fi
+      if pkg_install containerd.io >/dev/null 2>&1; then
+        return
+      fi
+      die "Could not install containerd via apt."
       ;;
-    apk)
-      pkg_install postgresql postgresql-contrib postgresql-client
+    apk|dnf|yum|pacman)
+      pkg_install containerd
       ;;
-    dnf|yum)
-      pkg_install postgresql-server postgresql postgresql-contrib
-      ;;
-    pacman)
-      pkg_install postgresql
+    *)
+      die "Unsupported distro for containerd installation."
       ;;
   esac
+}
+
+install_nerdctl_binary() {
+  log "Installing nerdctl from upstream release..."
+  local arch json url tmp_file tmp_dir
+  case "$(uname -m)" in
+    x86_64) arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    armv7l) arch="armv7" ;;
+    *)
+      die "Unsupported architecture for nerdctl binary install: $(uname -m)"
+      ;;
+  esac
+
+  json="$(curl -fsSL https://api.github.com/repos/containerd/nerdctl/releases/latest)"
+  url="$(printf '%s' "$json" | jq -r ".assets[] | select(.name | test(\"nerdctl-[0-9.]+-linux-${arch}\\\\.tar\\\\.gz$\")) | .browser_download_url" | head -n1)"
+  [ -n "$url" ] || die "Could not find a nerdctl release asset for linux-${arch}."
+
+  tmp_file="$(mktemp /tmp/nerdctl.XXXXXX.tar.gz)"
+  tmp_dir="$(mktemp -d /tmp/nerdctl.XXXXXX)"
+  curl -fsSL "$url" -o "$tmp_file"
+  tar -xzf "$tmp_file" -C "$tmp_dir"
+  [ -f "${tmp_dir}/nerdctl" ] || die "Downloaded nerdctl archive did not include nerdctl binary."
+  install -m 0755 "${tmp_dir}/nerdctl" /usr/local/bin/nerdctl
+  if [ -f "${tmp_dir}/nerdctl-ctr" ]; then
+    install -m 0755 "${tmp_dir}/nerdctl-ctr" /usr/local/bin/nerdctl-ctr
+  fi
+  rm -rf "$tmp_file" "$tmp_dir"
+}
+
+ensure_container_runtime() {
+  log "Ensuring container runtime (containerd + nerdctl)..."
+  if ! command -v containerd >/dev/null 2>&1; then
+    ensure_containerd_package
+  fi
+
+  if ! command -v nerdctl >/dev/null 2>&1; then
+    if ! pkg_install nerdctl >/dev/null 2>&1; then
+      install_nerdctl_binary
+    fi
+  fi
+
+  case "$INIT_SYSTEM" in
+    systemd)
+      systemctl daemon-reload
+      systemctl enable --now containerd
+      ;;
+    openrc)
+      rc-update add containerd default >/dev/null 2>&1 || true
+      rc-service containerd restart >/dev/null 2>&1 || rc-service containerd start
+      ;;
+  esac
+
+  local i
+  for i in $(seq 1 30); do
+    if nerdctl version >/dev/null 2>&1; then
+      return
+    fi
+    sleep 1
+  done
+  die "containerd/nerdctl is not ready."
+}
+
+nerdctl_ns() {
+  nerdctl --namespace "$CONTAINER_NAMESPACE" "$@"
+}
+
+container_exists() {
+  local name="$1"
+  nerdctl_ns container inspect "$name" >/dev/null 2>&1
+}
+
+ensure_postgres_container() {
+  if container_exists "$POSTGRES_CONTAINER_NAME"; then
+    log "PostgreSQL container already exists; starting it..."
+    nerdctl_ns start "$POSTGRES_CONTAINER_NAME" >/dev/null 2>&1 || true
+    return
+  fi
+
+  log "Deploying PostgreSQL with nerdctl (${POSTGRES_IMAGE})..."
+  nerdctl_ns pull "$POSTGRES_IMAGE"
+  nerdctl_ns run -d \
+    --name "$POSTGRES_CONTAINER_NAME" \
+    --restart always \
+    -e POSTGRES_DB="$DB_NAME" \
+    -e POSTGRES_USER="$DB_USER" \
+    -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+    -p "127.0.0.1:${POSTGRES_PORT}:5432" \
+    -v "${POSTGRES_VOLUME}:/var/lib/postgresql/data" \
+    "$POSTGRES_IMAGE" >/dev/null
+}
+
+ensure_redis_container() {
+  if container_exists "$REDIS_CONTAINER_NAME"; then
+    log "Redis container already exists; starting it..."
+    nerdctl_ns start "$REDIS_CONTAINER_NAME" >/dev/null 2>&1 || true
+    return
+  fi
+
+  log "Deploying Redis with nerdctl (${REDIS_IMAGE})..."
+  nerdctl_ns pull "$REDIS_IMAGE"
+  nerdctl_ns run -d \
+    --name "$REDIS_CONTAINER_NAME" \
+    --restart always \
+    -p "127.0.0.1:${REDIS_PORT}:6379" \
+    -v "${REDIS_VOLUME}:/data" \
+    "$REDIS_IMAGE" redis-server --appendonly yes >/dev/null
+}
+
+deploy_dependency_containers() {
+  ensure_postgres_container
+  ensure_redis_container
+}
+
+wait_for_postgres() {
+  log "Waiting for PostgreSQL container to accept connections..."
+  local i
+  for i in $(seq 1 60); do
+    if nerdctl_ns exec "$POSTGRES_CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1 ||
+      nerdctl_ns exec "$POSTGRES_CONTAINER_NAME" pg_isready -U postgres >/dev/null 2>&1; then
+      return
+    fi
+    sleep 1
+  done
+  die "PostgreSQL container did not become ready in time."
+}
+
+wait_for_redis() {
+  log "Waiting for Redis container to accept connections..."
+  local i
+  for i in $(seq 1 30); do
+    if nerdctl_ns exec "$REDIS_CONTAINER_NAME" redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
+      return
+    fi
+    sleep 1
+  done
+  die "Redis container did not become ready in time."
+}
+
+is_container_running() {
+  local name="$1"
+  [ "$(nerdctl_ns inspect --format '{{.State.Running}}' "$name" 2>/dev/null || echo false)" = "true" ]
+}
+
+verify_dependency_containers() {
+  is_container_running "$POSTGRES_CONTAINER_NAME" || die "PostgreSQL container is not running."
+  is_container_running "$REDIS_CONTAINER_NAME" || die "Redis container is not running."
 }
 
 ensure_caddy_user() {
@@ -606,7 +767,7 @@ write_backend_env() {
   cat > "$ENV_FILE" <<EOF
 NODE_ENV=production
 PORT=${BACKEND_PORT}
-DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}
+DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${DB_NAME}
 CORS_ORIGIN=${PANEL_URL}
 JWT_SECRET=${JWT_SECRET}
 BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
@@ -633,7 +794,7 @@ BACKEND_URL=${PANEL_URL}
 API_URL=${PANEL_URL}/api
 PLUGINS_DIR=${APP_ROOT}/catalyst-plugins
 PLUGIN_HOT_RELOAD=false
-REDIS_URL=
+REDIS_URL=redis://127.0.0.1:${REDIS_PORT}
 WHMCS_OIDC_CLIENT_ID=
 WHMCS_OIDC_CLIENT_SECRET=
 WHMCS_OIDC_DISCOVERY_URL=
@@ -685,104 +846,6 @@ create_backend_env_symlink() {
   ln -sfn "$ENV_FILE" "${APP_ROOT}/catalyst-backend/.env"
 }
 
-as_postgres() {
-  local cmd="$1"
-  if command -v sudo >/dev/null 2>&1; then
-    sudo -u postgres sh -c "$cmd"
-    return
-  fi
-  su -s /bin/sh postgres -c "$cmd"
-}
-
-initialize_postgres_cluster() {
-  if command -v postgresql-setup >/dev/null 2>&1; then
-    postgresql-setup --initdb >/dev/null 2>&1 || postgresql-setup --initdb --unit postgresql >/dev/null 2>&1 || true
-  fi
-
-  local initdb_bin=""
-  if command -v initdb >/dev/null 2>&1; then
-    initdb_bin="$(command -v initdb)"
-  else
-    initdb_bin="$(ls /usr/pgsql-*/bin/initdb 2>/dev/null | head -n1 || true)"
-  fi
-
-  if [ -n "$initdb_bin" ]; then
-    if [ -d /var/lib/postgres ] && [ ! -f /var/lib/postgres/data/PG_VERSION ]; then
-      mkdir -p /var/lib/postgres/data
-      chown -R postgres:postgres /var/lib/postgres
-      as_postgres "${initdb_bin} -D /var/lib/postgres/data" >/dev/null 2>&1 || true
-    fi
-    if [ -d /var/lib/postgresql ] && [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
-      mkdir -p /var/lib/postgresql/data
-      chown -R postgres:postgres /var/lib/postgresql
-      as_postgres "${initdb_bin} -D /var/lib/postgresql/data" >/dev/null 2>&1 || true
-    fi
-    if [ -d /var/lib/pgsql ] && [ ! -f /var/lib/pgsql/data/PG_VERSION ]; then
-      mkdir -p /var/lib/pgsql/data
-      chown -R postgres:postgres /var/lib/pgsql
-      as_postgres "${initdb_bin} -D /var/lib/pgsql/data" >/dev/null 2>&1 || true
-    fi
-  fi
-}
-
-enable_postgres_service() {
-  initialize_postgres_cluster
-
-  if [ "$INIT_SYSTEM" = "openrc" ]; then
-    rc-update add postgresql default >/dev/null 2>&1 || true
-    rc-service postgresql restart >/dev/null 2>&1 || rc-service postgresql start
-    POSTGRES_SERVICE="postgresql"
-    return
-  fi
-
-  local candidates=(
-    "postgresql"
-    "postgresql.service"
-    "postgresql-16"
-    "postgresql-15"
-    "postgresql@16-main"
-    "postgresql@15-main"
-  )
-
-  local candidate
-  for candidate in "${candidates[@]}"; do
-    if systemctl enable --now "$candidate" >/dev/null 2>&1; then
-      POSTGRES_SERVICE="$candidate"
-      return
-    fi
-  done
-
-  die "Could not start PostgreSQL service automatically."
-}
-
-wait_for_postgres() {
-  log "Waiting for PostgreSQL to accept connections..."
-  local i
-  for i in $(seq 1 30); do
-    if as_postgres "pg_isready >/dev/null 2>&1"; then
-      return
-    fi
-    sleep 1
-  done
-  die "PostgreSQL did not become ready in time."
-}
-
-configure_postgres_database() {
-  log "Configuring PostgreSQL database and user..."
-  as_postgres "psql -v ON_ERROR_STOP=1 -c \"DO \\\$\\\$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}') THEN
-    CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';
-  ELSE
-    ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
-  END IF;
-END
-\\\$\\\$;\""
-
-  as_postgres "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'\" | grep -q 1 || psql -v ON_ERROR_STOP=1 -c \"CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};\""
-  as_postgres "psql -v ON_ERROR_STOP=1 -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};\""
-}
-
 service_enable_start() {
   local svc="$1"
   if [ "$INIT_SYSTEM" = "systemd" ]; then
@@ -824,8 +887,8 @@ write_backend_service() {
     cat > /etc/systemd/system/catalyst-backend.service <<EOF
 [Unit]
 Description=Catalyst Backend API
-After=network-online.target
-Wants=network-online.target
+After=network-online.target containerd.service
+Wants=network-online.target containerd.service
 
 [Service]
 Type=simple
@@ -857,7 +920,7 @@ output_log="/var/log/catalyst/backend.log"
 error_log="/var/log/catalyst/backend.log"
 
 depend() {
-  need net postgresql
+  need net containerd
 }
 EOF
   chmod +x /etc/init.d/catalyst-backend
@@ -954,11 +1017,19 @@ Caddy config: ${CADDYFILE}
 PostgreSQL database: ${DB_NAME}
 PostgreSQL user: ${DB_USER}
 PostgreSQL password: ${DB_PASSWORD}
+Container namespace: ${CONTAINER_NAMESPACE}
+PostgreSQL container: ${POSTGRES_CONTAINER_NAME} (${POSTGRES_IMAGE})
+Redis container: ${REDIS_CONTAINER_NAME} (${REDIS_IMAGE})
 EOF
   chmod 600 "$SUMMARY_FILE"
 }
 
 start_services() {
+  log "Starting dependency containers..."
+  nerdctl_ns start "$POSTGRES_CONTAINER_NAME" >/dev/null 2>&1 || true
+  nerdctl_ns start "$REDIS_CONTAINER_NAME" >/dev/null 2>&1 || true
+  verify_dependency_containers
+
   log "Starting backend service..."
   service_enable_start catalyst-backend
 
@@ -984,6 +1055,7 @@ start_services() {
 }
 
 verify_services() {
+  verify_dependency_containers
   if [ "$INIT_SYSTEM" = "systemd" ]; then
     systemctl is-active --quiet catalyst-backend || die "catalyst-backend service is not active."
     systemctl is-active --quiet caddy || die "caddy service is not active."
@@ -1005,7 +1077,7 @@ main() {
   persist_state
 
   ensure_nodejs
-  ensure_postgresql_packages
+  ensure_container_runtime
   ensure_caddy
   ensure_catalyst_user
   ensure_directories
@@ -1015,9 +1087,9 @@ main() {
   ensure_sftp_host_key
   create_backend_env_symlink
 
-  enable_postgres_service
+  deploy_dependency_containers
   wait_for_postgres
-  configure_postgres_database
+  wait_for_redis
 
   build_backend
   build_frontend

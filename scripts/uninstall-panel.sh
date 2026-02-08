@@ -22,6 +22,11 @@ SFTP_HOST_KEY="${ENV_DIR}/sftp_host_key"
 CADDYFILE="/etc/caddy/Caddyfile"
 CATALYST_USER="catalyst"
 CATALYST_GROUP="catalyst"
+CONTAINER_NAMESPACE="${CATALYST_CONTAINER_NAMESPACE:-catalyst}"
+POSTGRES_CONTAINER_NAME="${CATALYST_POSTGRES_CONTAINER_NAME:-catalyst-postgres}"
+REDIS_CONTAINER_NAME="${CATALYST_REDIS_CONTAINER_NAME:-catalyst-redis}"
+POSTGRES_VOLUME="${CATALYST_POSTGRES_VOLUME:-catalyst-postgres-data}"
+REDIS_VOLUME="${CATALYST_REDIS_VOLUME:-catalyst-redis-data}"
 
 NON_INTERACTIVE=false
 ASSUME_YES=false
@@ -56,8 +61,8 @@ Usage:
 
 Options:
   --install-root <path>        Install location. Defaults to /opt/catalyst.
-  --drop-database              Drop the PostgreSQL database and role created for Catalyst.
-  --purge-data                 Remove /var/lib/catalyst and /var/log/catalyst.
+  --drop-database              Drop Catalyst PostgreSQL data (nerdctl volume or local role/db).
+  --purge-data                 Remove /var/lib/catalyst and /var/log/catalyst (and Redis volume).
   --remove-firewall-rules      Remove ufw/firewalld rules for HTTP/HTTPS added by installer.
   --keep-caddy-config          Keep current /etc/caddy/Caddyfile and skip backup restore.
   --non-interactive            Fail instead of prompting.
@@ -131,6 +136,15 @@ detect_init_system() {
   INIT_SYSTEM="unknown"
 }
 
+nerdctl_ns() {
+  nerdctl --namespace "$CONTAINER_NAMESPACE" "$@"
+}
+
+volume_exists() {
+  local name="$1"
+  nerdctl_ns volume inspect "$name" >/dev/null 2>&1
+}
+
 as_postgres() {
   local cmd="$1"
   if command -v sudo >/dev/null 2>&1; then
@@ -175,6 +189,7 @@ confirm_uninstall() {
   echo
   echo "Catalyst uninstall summary:"
   echo "  Install root: ${INSTALL_ROOT}"
+  echo "  Container namespace: ${CONTAINER_NAMESPACE}"
   echo "  Drop database: ${DROP_DATABASE} (${DB_NAME}/${DB_USER})"
   echo "  Purge /var/lib/catalyst and /var/log/catalyst: ${PURGE_DATA}"
   echo "  Restore Caddy backup/remove Catalyst Caddyfile: ${RESTORE_CADDY}"
@@ -306,8 +321,28 @@ cleanup_backend_services() {
   daemon_reload
 }
 
+cleanup_dependency_containers() {
+  if ! command -v nerdctl >/dev/null 2>&1; then
+    return
+  fi
+
+  log "Stopping and removing dependency containers..."
+  nerdctl_ns rm -f "$REDIS_CONTAINER_NAME" >/dev/null 2>&1 || true
+  nerdctl_ns rm -f "$POSTGRES_CONTAINER_NAME" >/dev/null 2>&1 || true
+
+  if [ "$PURGE_DATA" = true ] && volume_exists "$REDIS_VOLUME"; then
+    nerdctl_ns volume rm "$REDIS_VOLUME" >/dev/null 2>&1 || warn "Could not remove Redis volume ${REDIS_VOLUME}."
+  fi
+}
+
 drop_database() {
   if [ "$DROP_DATABASE" = false ]; then
+    return
+  fi
+
+  if command -v nerdctl >/dev/null 2>&1 && volume_exists "$POSTGRES_VOLUME"; then
+    log "Removing PostgreSQL volume ${POSTGRES_VOLUME}..."
+    nerdctl_ns volume rm "$POSTGRES_VOLUME" >/dev/null 2>&1 || warn "Could not remove PostgreSQL volume ${POSTGRES_VOLUME}."
     return
   fi
 
@@ -392,6 +427,7 @@ main() {
   confirm_uninstall
 
   cleanup_backend_services
+  cleanup_dependency_containers
   cleanup_caddy
   drop_database
   remove_install_tree

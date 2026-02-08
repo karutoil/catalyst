@@ -133,8 +133,8 @@ export async function adminRoutes(app: FastifyInstance) {
       const where = searchQuery
         ? {
             OR: [
-              { email: { contains: searchQuery, mode: 'insensitive' } },
-              { username: { contains: searchQuery, mode: 'insensitive' } },
+              { email: { contains: searchQuery, mode: 'insensitive' as const } },
+              { username: { contains: searchQuery, mode: 'insensitive' as const } },
             ],
           }
         : undefined;
@@ -600,8 +600,8 @@ export async function adminRoutes(app: FastifyInstance) {
       const where = searchQuery
         ? {
             OR: [
-              { name: { contains: searchQuery, mode: 'insensitive' } },
-              { hostname: { contains: searchQuery, mode: 'insensitive' } },
+              { name: { contains: searchQuery, mode: 'insensitive' as const } },
+              { hostname: { contains: searchQuery, mode: 'insensitive' as const } },
             ],
           }
         : undefined;
@@ -682,9 +682,9 @@ export async function adminRoutes(app: FastifyInstance) {
         ...(searchQuery
           ? {
               OR: [
-                { name: { contains: searchQuery, mode: 'insensitive' } },
-                { id: { contains: searchQuery, mode: 'insensitive' } },
-                { node: { name: { contains: searchQuery, mode: 'insensitive' } } },
+                { name: { contains: searchQuery, mode: 'insensitive' as const } },
+                { id: { contains: searchQuery, mode: 'insensitive' as const } },
+                { node: { name: { contains: searchQuery, mode: 'insensitive' as const } } },
               ],
             }
           : {}),
@@ -1381,8 +1381,8 @@ export async function adminRoutes(app: FastifyInstance) {
       const where = searchQuery
         ? {
             OR: [
-              { email: { contains: searchQuery, mode: 'insensitive' } },
-              { ipAddress: { contains: searchQuery, mode: 'insensitive' } },
+              { email: { contains: searchQuery, mode: 'insensitive' as const } },
+              { ipAddress: { contains: searchQuery, mode: 'insensitive' as const } },
             ],
           }
         : undefined;
@@ -1688,7 +1688,7 @@ export async function adminRoutes(app: FastifyInstance) {
           gateway: gateway ?? pool.gateway,
           startIp: startIp ?? pool.startIp,
           endIp: endIp ?? pool.endIp,
-          reserved: reserved ?? pool.reserved,
+          reserved: (reserved ?? pool.reserved) as any,
         },
       });
 
