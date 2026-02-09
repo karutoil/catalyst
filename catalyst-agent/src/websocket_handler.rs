@@ -26,6 +26,15 @@ type WsStream = tokio_tungstenite::WebSocketStream<
 >;
 type WsWrite = SplitSink<WsStream, Message>;
 
+/// Shell-escape a value for safe interpolation into a bash script.
+/// Wraps the value in single quotes and escapes any embedded single quotes.
+fn shell_escape_value(value: &str) -> String {
+    // Single-quoting in bash prevents all interpretation except for single quotes themselves.
+    // To include a literal single quote: end the single-quoted string, add an escaped quote, restart.
+    let escaped = value.replace('\'', "'\"'\"'");
+    format!("'{}'", escaped)
+}
+
 pub struct WebSocketHandler {
     config: Arc<AgentConfig>,
     runtime: Arc<ContainerdRuntime>,
@@ -670,7 +679,9 @@ impl WebSocketHandler {
         for (key, value) in environment {
             let placeholder = format!("{{{{{}}}}}", key);
             let replacement = value.as_str().unwrap_or("");
-            final_script = final_script.replace(&placeholder, replacement);
+            // Shell-escape the value to prevent command injection via user-controlled env vars
+            let escaped = shell_escape_value(replacement);
+            final_script = final_script.replace(&placeholder, &escaped);
         }
 
         info!("Executing installation script");
@@ -1904,9 +1915,7 @@ impl WebSocketHandler {
             .await
             .map_err(|e| AgentError::NetworkError(e.to_string()))?;
 
-        if let Err(err) = result {
-            return Err(err);
-        }
+        result?;
 
         Ok(())
     }
@@ -1973,8 +1982,8 @@ impl WebSocketHandler {
         system.refresh_cpu();
         system.refresh_memory();
         let cpu_percent = system.global_cpu_info().cpu_usage();
-        let memory_usage_mb = (system.used_memory() / 1024) as u64;
-        let memory_total_mb = (system.total_memory() / 1024) as u64;
+        let memory_usage_mb = (system.used_memory() / 1024);
+        let memory_total_mb = (system.total_memory() / 1024);
         let mut disks = Disks::new_with_refreshed_list();
         disks.refresh();
         let mut disk_usage_mb = 0u64;
@@ -2293,7 +2302,7 @@ impl WebSocketHandler {
             let memory_usage_mb = parse_memory_usage_mb(&stats.memory_usage).unwrap_or(0);
             let (network_rx_bytes, network_tx_bytes) = parse_io_pair_bytes(&stats.net_io).unwrap_or((0, 0));
             let (disk_read_bytes, disk_write_bytes) = parse_io_pair_bytes(&stats.block_io).unwrap_or((0, 0));
-            let disk_io_mb = ((disk_read_bytes + disk_write_bytes) / (1024 * 1024)) as u64;
+            let disk_io_mb = ((disk_read_bytes + disk_write_bytes) / (1024 * 1024));
             let (disk_usage_mb, disk_total_mb) = match self
                 .runtime
                 .exec(&container.id, vec!["df", "-m", "/data"])
@@ -2379,7 +2388,7 @@ fn parse_percent(value: &str) -> Option<f64> {
 
 fn parse_memory_usage_mb(value: &str) -> Option<u64> {
     let first = value.split('/').next()?.trim();
-    parse_size_to_bytes(first).map(|bytes| (bytes / (1024 * 1024)) as u64)
+    parse_size_to_bytes(first).map(|bytes| (bytes / (1024 * 1024)))
 }
 
 fn parse_io_pair_bytes(value: &str) -> Option<(u64, u64)> {

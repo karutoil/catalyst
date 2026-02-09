@@ -160,6 +160,16 @@ function startSFTPServer(logger: Logger) {
       logger.debug('SFTP client connected');
 
       let session: SFTPSession | null = null;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+      const resetIdleTimer = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          logger.info({ username: session?.username }, 'SFTP session idle timeout, disconnecting');
+          client.end();
+        }, IDLE_TIMEOUT_MS);
+      };
 
       client
         .on('authentication', async (ctx) => {
@@ -180,6 +190,7 @@ function startSFTPServer(logger: Logger) {
         })
         .on('ready', () => {
           logger.debug({ username: session?.username }, 'SFTP client authenticated');
+          resetIdleTimer();
 
           client.on('session', (accept) => {
             const sshSession = accept();
@@ -193,6 +204,13 @@ function startSFTPServer(logger: Logger) {
                 return;
               }
 
+              // Reset idle timer on any SFTP activity
+              const origEmit = sftpStream.emit.bind(sftpStream);
+              sftpStream.emit = (...args: any[]) => {
+                resetIdleTimer();
+                return origEmit(...args);
+              };
+
               handleSFTPSession(sftpStream, session);
             });
           });
@@ -201,6 +219,7 @@ function startSFTPServer(logger: Logger) {
           logger.error({ err }, 'SFTP client error');
         })
         .on('close', () => {
+          if (idleTimer) clearTimeout(idleTimer);
           logger.debug('SFTP client disconnected');
         });
     }

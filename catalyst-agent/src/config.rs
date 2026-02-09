@@ -10,7 +10,7 @@ pub struct AgentConfig {
     pub logging: LoggingConfig,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
     pub backend_url: String,
     pub node_id: String,
@@ -19,6 +19,20 @@ pub struct ServerConfig {
     pub hostname: String,
     pub data_dir: PathBuf,
     pub max_connections: usize,
+}
+
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("backend_url", &self.backend_url)
+            .field("node_id", &self.node_id)
+            .field("secret", &"[REDACTED]")
+            .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
+            .field("hostname", &self.hostname)
+            .field("data_dir", &self.data_dir)
+            .field("max_connections", &self.max_connections)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

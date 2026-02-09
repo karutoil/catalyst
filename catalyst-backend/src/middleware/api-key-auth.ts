@@ -3,6 +3,24 @@ import { prisma } from "../db";
 import { auth } from "../auth";
 
 /**
+ * Check if an API key-authenticated request has the required permission scope.
+ * API key permissions are stored as Record<string, string[]>, e.g. { "servers": ["read", "start"] }.
+ * If the API key has no permissions defined (null/empty), it inherits full user access.
+ * Returns true if the action is allowed or if not an API key request.
+ */
+export function checkApiKeyScope(request: FastifyRequest, category: string, action: string): boolean {
+  const user = (request as any).user;
+  if (!user?.isApiKeyAuth) return true; // Not API key auth — no restriction
+  const perms = user.apiKeyPermissions;
+  if (!perms || typeof perms !== "object" || Object.keys(perms).length === 0) {
+    return true; // No scoped permissions — full access (backwards compatible)
+  }
+  const allowed = perms[category];
+  if (!Array.isArray(allowed)) return false;
+  return allowed.includes(action) || allowed.includes("*");
+}
+
+/**
  * Middleware that supports both JWT session auth AND API key auth.
  * Tries JWT first, falls back to API key if Authorization header matches pattern.
  */
@@ -100,6 +118,7 @@ export async function authOrApiKey(request: FastifyRequest, reply: FastifyReply)
           username: user.username,
           apiKeyId: apiKey.id,
           apiKeyPermissions: apiKey.permissions || {},
+          isApiKeyAuth: true,
         };
 
         return; // Continue to route handler

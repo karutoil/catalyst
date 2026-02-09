@@ -220,6 +220,16 @@ export class WebSocketGateway {
         socket.on("message", onMessage);
         socket.on("close", onClose);
         this.logger.info({ nodeId }, "Agent connected, awaiting handshake");
+
+        // Disconnect agent if handshake not completed within 10 seconds
+        setTimeout(() => {
+          const pending = this.agents.get(nodeId);
+          if (pending && !pending.authenticated) {
+            pending.socket.close();
+            this.agents.delete(nodeId);
+            this.logger.warn({ nodeId }, "Agent handshake timeout");
+          }
+        }, 10000);
       }
     } catch (err) {
       this.logger.error(err, "Error in agent connection");

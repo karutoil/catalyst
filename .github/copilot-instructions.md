@@ -6,6 +6,19 @@
 
 ---
 
+## Using AI Tools in This Repository
+
+**Code Search Skill:** This repository is indexed with semantic search. When you need to find code by natural language queries (e.g., "where is authentication implemented?", "find WebSocket message handlers"), use the `code-search` skill for fast, accurate results.
+
+Examples:
+- "How does RBAC middleware work?"
+- "Find all WebSocket message type definitions"
+- "Where are server state transitions validated?"
+
+Always prefer the code-search skill over grep/find when exploring unfamiliar parts of the codebase.
+
+---
+
 ## Architecture Overview
 
 Catalyst is a full-stack game server management system built as a three-tier monorepo. The architecture emphasizes **real-time communication**, **stateless services**, and **clear separation of concerns**.
@@ -76,8 +89,11 @@ npm run dev              # Start Fastify with tsx watch (port 3000)
 
 **Key commands:**
 - `npm run build` - Compile TypeScript to dist/
+- `npm run lint` - Run ESLint on src/
+- `npm run lint -- --fix` - Auto-fix linting issues
 - `npm run db:studio` - Graphical Prisma data viewer
 - `npm run db:migrate` - Create versioned migrations
+- `npm run db:generate` - Regenerate Prisma client
 
 ### Frontend Setup
 ```bash
@@ -88,11 +104,22 @@ npm run test             # Vitest unit tests
 npm run test:e2e         # Playwright integration tests
 ```
 
+**Key commands:**
+- `npm run build` - Build production bundle
+- `npm run preview` - Preview production build locally
+- `npm run lint` - Run ESLint on all .ts/.tsx files
+- `npm run lint -- --fix` - Auto-fix linting issues
+- `npm run format` - Format with Prettier
+- `npm run test:screenshots` - Run Playwright screenshot tests
+
 ### Agent Setup
 ```bash
 cd catalyst-agent
 cargo build --release   # ~2-3 minutes; produces `target/release/catalyst-agent`
 cargo build             # Debug build for development (slower runtime)
+cargo test              # Run Rust unit tests
+cargo clippy            # Run Rust linter
+cargo fmt               # Format Rust code
 
 # Configuration
 cp config.toml /opt/catalyst-agent/
@@ -261,9 +288,15 @@ Scripts in `tests/` directory; use [test-backend.sh](../test-backend.sh) as refe
 
 Integration tests are bash suites in `tests/` directory (`NN-name.test.sh` format):
 - [01-auth.test.sh](../tests/01-auth.test.sh) - auth flow patterns
+- [02-templates.test.sh](../tests/02-templates.test.sh) - template management
+- [03-nodes.test.sh](../tests/03-nodes.test.sh) - node registration & deployment
 - [04-servers.test.sh](../tests/04-servers.test.sh) - server state transitions
+- [05-permissions.test.sh](../tests/05-permissions.test.sh) - RBAC validation
 - [06-websocket.test.sh](../tests/06-websocket.test.sh) - WebSocket communication
+- [07-agent-connectivity.test.sh](../tests/07-agent-connectivity.test.sh) - agent health checks
+- [08-container-lifecycle.test.sh](../tests/08-container-lifecycle.test.sh) - container operations
 - [09-file-operations.test.sh](../tests/09-file-operations.test.sh) - path validation patterns
+- [10-full-workflow.test.sh](../tests/10-full-workflow.test.sh) - end-to-end scenarios
 
 **Test pattern:** Use `curl` with token extraction and variable setup from `tests/lib/` helpers.
 ```bash
@@ -274,6 +307,13 @@ TOKEN=$(curl -X POST http://localhost:3000/api/auth/login \
 
 # Use token in authenticated calls
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/servers
+```
+
+**Running individual tests:**
+```bash
+cd tests
+./01-auth.test.sh              # Run single test file
+./run-all-tests.sh             # Run entire suite
 ```
 
 **When adding endpoints:** Add corresponding test file to `tests/` with curl-based assertions.
@@ -537,3 +577,14 @@ cd catalyst-agent && cargo build --release  # Optimized
 - Refer to `backend-docs.md` for complete API specification + WebSocket protocol
 - Check existing tests in `tests/` for similar patterns
 - Review `plan.md` for architecture rationale on major decisions
+- See `AGENTS.md` for repository-level guidelines on structure, commits, and security
+
+---
+
+## Additional Documentation Files
+
+This repository has multiple instruction files for different purposes:
+- `.github/copilot-instructions.md` (this file) - Architecture, patterns, and workflows
+- `AGENTS.md` - Repository structure, build/test commands, and conventions
+- `README.md` - Quick start and configuration guide
+- `docs/` - User guides, admin guides, and customer documentation

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { PluginManifest } from './types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
 /**
  * Fetch all plugins

@@ -233,30 +233,20 @@ impl FileManager {
         Ok(entries)
     }
 
-    pub async fn compress_directory(&self, server_id: &str, path: &str) -> AgentResult<Vec<u8>> {
-        let full_path = self.resolve_path(server_id, path)?;
-
-        info!("Compressing directory: {:?}", full_path);
-
-        // This is a placeholder - in production, use flate2 or zip crate
-        Err(AgentError::InternalError(
-            "Compression not yet implemented".to_string(),
+    pub async fn compress_directory(&self, _server_id: &str, _path: &str) -> AgentResult<Vec<u8>> {
+        Err(AgentError::InvalidRequest(
+            "Directory compression is not supported yet".to_string(),
         ))
     }
 
     pub async fn decompress_archive(
         &self,
-        server_id: &str,
-        path: &str,
+        _server_id: &str,
+        _path: &str,
         _archive: &[u8],
     ) -> AgentResult<()> {
-        let full_path = self.resolve_path(server_id, path)?;
-
-        info!("Decompressing archive to: {:?}", full_path);
-
-        // This is a placeholder - in production, use flate2 or zip crate
-        Err(AgentError::InternalError(
-            "Decompression not yet implemented".to_string(),
+        Err(AgentError::InvalidRequest(
+            "Archive decompression is not supported yet".to_string(),
         ))
     }
 }

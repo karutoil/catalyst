@@ -3,8 +3,8 @@ use std::path::Path;
 use std::process::Command;
 use tracing::{error, info, warn};
 
-use crate::{AgentConfig, AgentError};
 use crate::config::CniNetworkConfig;
+use crate::{AgentConfig, AgentError};
 
 pub struct SystemSetup;
 
@@ -20,10 +20,19 @@ impl SystemSetup {
         // 2. Check and install containerd/nerdctl
         Self::ensure_container_runtime(&pkg_manager).await?;
 
-        // 3. Ensure IP tooling is available (iproute2)
+        // 3. Ensure low-level OCI runtime is available
+        Self::ensure_oci_runtime(&pkg_manager).await?;
+
+        // 4. Ensure containerd service/socket is ready
+        Self::ensure_containerd_running().await?;
+
+        // 5. Ensure IP tooling is available (iproute2)
         Self::ensure_iproute(&pkg_manager).await?;
 
-        // 4. Setup CNI networking only (static host-local IPAM)
+        // 6. Ensure CNI plugin binaries are installed
+        Self::ensure_cni_plugins(&pkg_manager).await?;
+
+        // 7. Setup CNI networking only (static host-local IPAM)
         Self::setup_cni_static_networking(config).await?;
 
         info!("✅ System initialization complete!");
@@ -45,7 +54,9 @@ impl SystemSetup {
             if Command::new("which")
                 .arg(cmd)
                 .output()
-                .map_err(|e| AgentError::IoError(format!("Failed to detect package manager: {}", e)))?
+                .map_err(|e| {
+                    AgentError::IoError(format!("Failed to detect package manager: {}", e))
+                })?
                 .status
                 .success()
             {
@@ -60,37 +71,46 @@ impl SystemSetup {
 
     /// Ensure container runtime is installed
     async fn ensure_container_runtime(pkg_manager: &str) -> Result<(), AgentError> {
-        // Check if nerdctl exists
-        if Command::new("which")
+        let has_nerdctl = Command::new("which")
             .arg("nerdctl")
             .output()
             .map_err(|e| AgentError::IoError(format!("Failed to check nerdctl: {}", e)))?
             .status
-            .success()
-        {
-            info!("✓ nerdctl already installed");
+            .success();
+        let has_containerd = Command::new("which")
+            .arg("containerd")
+            .output()
+            .map_err(|e| AgentError::IoError(format!("Failed to check containerd: {}", e)))?
+            .status
+            .success();
+
+        if has_nerdctl && has_containerd {
+            info!("✓ containerd and nerdctl already installed");
             return Ok(());
         }
 
         warn!("Container runtime not found, installing...");
 
-        match pkg_manager {
-            "apk" => {
-                Self::run_command("apk", &["add", "--no-cache", "containerd"], None)?;
-            }
+        let containerd_installed = match pkg_manager {
+            "apk" => Self::run_command_allow_failure("apk", &["add", "--no-cache", "containerd"]),
             "apt" => {
-                Self::run_command("apt-get", &["update", "-qq"], None)?;
-                Self::run_command("apt-get", &["install", "-y", "-qq", "containerd"], None)?;
+                let _ = Self::run_command_allow_failure("apt-get", &["update", "-qq"]);
+                Self::run_command_allow_failure("apt-get", &["install", "-y", "-qq", "containerd"])
+                    || Self::run_command_allow_failure(
+                        "apt-get",
+                        &["install", "-y", "-qq", "containerd.io"],
+                    )
             }
             "yum" | "dnf" => {
-                Self::run_command(pkg_manager, &["install", "-y", "containerd"], None)?;
+                Self::run_command_allow_failure(pkg_manager, &["install", "-y", "containerd"])
             }
             "pacman" => {
-                Self::run_command("pacman", &["-S", "--noconfirm", "containerd"], None)?;
+                Self::run_command_allow_failure("pacman", &["-S", "--noconfirm", "containerd"])
             }
-            "zypper" => {
-                Self::run_command("zypper", &["--non-interactive", "install", "containerd"], None)?;
-            }
+            "zypper" => Self::run_command_allow_failure(
+                "zypper",
+                &["--non-interactive", "install", "containerd"],
+            ),
             _ => {
                 warn!("Automatic installation not supported for {}", pkg_manager);
                 return Err(AgentError::InternalError(format!(
@@ -98,6 +118,12 @@ impl SystemSetup {
                     pkg_manager
                 )));
             }
+        };
+
+        if !containerd_installed {
+            return Err(AgentError::InternalError(
+                "Failed to install containerd package".to_string(),
+            ));
         }
 
         // Install nerdctl if not bundled
@@ -114,6 +140,80 @@ impl SystemSetup {
         }
 
         info!("✓ Container runtime installed");
+        Ok(())
+    }
+
+    /// Ensure runc/crun runtime binary is available
+    async fn ensure_oci_runtime(pkg_manager: &str) -> Result<(), AgentError> {
+        let has_runc = Command::new("which")
+            .arg("runc")
+            .output()
+            .map_err(|e| AgentError::IoError(format!("Failed to check runc: {}", e)))?
+            .status
+            .success();
+        let has_crun = Command::new("which")
+            .arg("crun")
+            .output()
+            .map_err(|e| AgentError::IoError(format!("Failed to check crun: {}", e)))?
+            .status
+            .success();
+
+        if has_runc || has_crun {
+            info!("✓ OCI runtime already installed");
+            return Ok(());
+        }
+
+        warn!("OCI runtime not found, installing runc...");
+        let installed = match pkg_manager {
+            "apk" => Self::run_command_allow_failure("apk", &["add", "--no-cache", "runc"]),
+            "apt" => {
+                let _ = Self::run_command_allow_failure("apt-get", &["update", "-qq"]);
+                Self::run_command_allow_failure("apt-get", &["install", "-y", "-qq", "runc"])
+            }
+            "yum" | "dnf" => {
+                Self::run_command_allow_failure(pkg_manager, &["install", "-y", "runc"])
+            }
+            "pacman" => Self::run_command_allow_failure("pacman", &["-S", "--noconfirm", "runc"]),
+            "zypper" => {
+                Self::run_command_allow_failure("zypper", &["--non-interactive", "install", "runc"])
+            }
+            _ => false,
+        };
+
+        if !installed {
+            return Err(AgentError::InternalError(
+                "Failed to install OCI runtime (runc/crun)".to_string(),
+            ));
+        }
+
+        info!("✓ OCI runtime installed");
+        Ok(())
+    }
+
+    /// Ensure containerd is started and socket exists
+    async fn ensure_containerd_running() -> Result<(), AgentError> {
+        let has_systemctl = Command::new("which")
+            .arg("systemctl")
+            .output()
+            .map_err(|e| AgentError::IoError(format!("Failed to check systemctl: {}", e)))?
+            .status
+            .success();
+
+        if has_systemctl {
+            Self::run_command("systemctl", &["daemon-reload"], None)?;
+            Self::run_command("systemctl", &["enable", "--now", "containerd"], None)?;
+            Self::run_command("systemctl", &["restart", "containerd"], None)?;
+        } else {
+            warn!("systemctl not available; containerd must be managed manually");
+        }
+
+        if !Path::new("/run/containerd/containerd.sock").exists() {
+            return Err(AgentError::InternalError(
+                "containerd socket is not available at /run/containerd/containerd.sock".to_string(),
+            ));
+        }
+
+        info!("✓ containerd service/socket ready");
         Ok(())
     }
 
@@ -147,7 +247,11 @@ impl SystemSetup {
                 Self::run_command("pacman", &["-S", "--noconfirm", "iproute2"], None)?;
             }
             "zypper" => {
-                Self::run_command("zypper", &["--non-interactive", "install", "iproute2"], None)?;
+                Self::run_command(
+                    "zypper",
+                    &["--non-interactive", "install", "iproute2"],
+                    None,
+                )?;
             }
             _ => {
                 warn!("Automatic installation not supported for {}", pkg_manager);
@@ -196,13 +300,21 @@ impl SystemSetup {
             }
             "apt" => {
                 Self::run_command("apt-get", &["update", "-qq"], None)?;
-                Self::run_command("apt-get", &["install", "-y", "-qq", "curl", "tar", "gzip"], None)?;
+                Self::run_command(
+                    "apt-get",
+                    &["install", "-y", "-qq", "curl", "tar", "gzip"],
+                    None,
+                )?;
             }
             "yum" | "dnf" => {
                 Self::run_command(pkg_manager, &["install", "-y", "curl", "tar", "gzip"], None)?;
             }
             "pacman" => {
-                Self::run_command("pacman", &["-S", "--noconfirm", "curl", "tar", "gzip"], None)?;
+                Self::run_command(
+                    "pacman",
+                    &["-S", "--noconfirm", "curl", "tar", "gzip"],
+                    None,
+                )?;
             }
             "zypper" => {
                 Self::run_command(
@@ -222,6 +334,90 @@ impl SystemSetup {
 
         info!("✓ Download tools installed");
         Ok(())
+    }
+
+    /// Ensure required CNI plugin binaries are installed
+    async fn ensure_cni_plugins(pkg_manager: &str) -> Result<(), AgentError> {
+        if Self::has_required_cni_plugins() {
+            info!("✓ Required CNI plugins already installed");
+            return Ok(());
+        }
+
+        warn!("CNI plugins missing, installing...");
+        Self::ensure_download_tools(pkg_manager).await?;
+
+        let packaged_install = match pkg_manager {
+            "apt" => {
+                let _ = Self::run_command_allow_failure("apt-get", &["update", "-qq"]);
+                Self::run_command_allow_failure(
+                    "apt-get",
+                    &["install", "-y", "-qq", "containernetworking-plugins"],
+                )
+            }
+            "apk" => Self::run_command_allow_failure("apk", &["add", "--no-cache", "cni-plugins"]),
+            "yum" | "dnf" => Self::run_command_allow_failure(
+                pkg_manager,
+                &["install", "-y", "containernetworking-plugins"],
+            ),
+            "pacman" => Self::run_command_allow_failure(
+                "pacman",
+                &["-S", "--noconfirm", "containernetworking-plugins"],
+            ),
+            "zypper" => Self::run_command_allow_failure(
+                "zypper",
+                &["--non-interactive", "install", "cni-plugins"],
+            ),
+            _ => false,
+        };
+
+        if packaged_install && Self::has_required_cni_plugins() {
+            info!("✓ Required CNI plugins installed via package manager");
+            return Ok(());
+        }
+
+        let arch = match std::env::consts::ARCH {
+            "x86_64" => "amd64",
+            "aarch64" => "arm64",
+            other => {
+                return Err(AgentError::InternalError(format!(
+                    "Unsupported architecture for CNI plugin install: {}",
+                    other
+                )));
+            }
+        };
+        let version = "v1.4.1";
+        let url = format!(
+            "https://github.com/containernetworking/plugins/releases/download/{}/cni-plugins-linux-{}-{}.tgz",
+            version, arch, version
+        );
+
+        fs::create_dir_all("/opt/cni/bin")
+            .map_err(|e| AgentError::IoError(format!("Failed to create /opt/cni/bin: {}", e)))?;
+        let archive_path = format!("/tmp/cni-plugins-{}-{}.tgz", version, arch);
+        Self::run_command("curl", &["-fsSL", "-o", &archive_path, &url], None)?;
+        Self::run_command(
+            "tar",
+            &["-xz", "-C", "/opt/cni/bin", "-f", &archive_path],
+            None,
+        )?;
+        let _ = fs::remove_file(&archive_path);
+
+        if !Self::has_required_cni_plugins() {
+            return Err(AgentError::InternalError(
+                "CNI plugins installation completed but required binaries are still missing"
+                    .to_string(),
+            ));
+        }
+
+        info!("✓ Required CNI plugins installed");
+        Ok(())
+    }
+
+    fn has_required_cni_plugins() -> bool {
+        const REQUIRED: [&str; 4] = ["bridge", "host-local", "portmap", "macvlan"];
+        REQUIRED
+            .iter()
+            .all(|name| Path::new(&format!("/opt/cni/bin/{}", name)).exists())
     }
 
     /// Install nerdctl from GitHub releases
@@ -256,7 +452,14 @@ impl SystemSetup {
         Self::run_command("sha256sum", &["-c", "--strict", "-"], Some(&verify_cmd))?;
         Self::run_command(
             "tar",
-            &["-xz", "-C", "/usr/local/bin", "nerdctl", "-f", &archive_path],
+            &[
+                "-xz",
+                "-C",
+                "/usr/local/bin",
+                "nerdctl",
+                "-f",
+                &archive_path,
+            ],
             None,
         )?;
         let _ = fs::remove_file(&archive_path);
@@ -308,14 +511,8 @@ impl SystemSetup {
                 None => Self::detect_interface_cidr(&interface)?,
             };
             let (default_start, default_end) = Self::cidr_usable_range(&cidr)?;
-            let range_start = network
-                .range_start
-                .clone()
-                .unwrap_or(default_start);
-            let range_end = network
-                .range_end
-                .clone()
-                .unwrap_or(default_end);
+            let range_start = network.range_start.clone().unwrap_or(default_start);
+            let range_end = network.range_end.clone().unwrap_or(default_end);
             let gateway = match network.gateway.as_ref() {
                 Some(value) => value.clone(),
                 None => Self::detect_default_gateway()?,
@@ -483,7 +680,9 @@ impl SystemSetup {
             .parse()
             .map_err(|_| AgentError::InvalidRequest("Invalid CIDR prefix".to_string()))?;
         if prefix > 32 {
-            return Err(AgentError::InvalidRequest("Invalid CIDR prefix".to_string()));
+            return Err(AgentError::InvalidRequest(
+                "Invalid CIDR prefix".to_string(),
+            ));
         }
 
         let addr: std::net::Ipv4Addr = addr_str
@@ -507,7 +706,9 @@ impl SystemSetup {
             .parse()
             .map_err(|_| AgentError::InvalidRequest("Invalid CIDR prefix".to_string()))?;
         if prefix > 32 {
-            return Err(AgentError::InvalidRequest("Invalid CIDR prefix".to_string()));
+            return Err(AgentError::InvalidRequest(
+                "Invalid CIDR prefix".to_string(),
+            ));
         }
 
         let addr: std::net::Ipv4Addr = addr_str
@@ -536,13 +737,8 @@ impl SystemSetup {
         ))
     }
 
-
     /// Helper to run a command and check for errors
-    fn run_command(
-        cmd: &str,
-        args: &[&str],
-        stdin: Option<&str>,
-    ) -> Result<(), AgentError> {
+    fn run_command(cmd: &str, args: &[&str], stdin: Option<&str>) -> Result<(), AgentError> {
         let mut command = Command::new(cmd);
         command.args(args);
         if stdin.is_some() {
@@ -554,9 +750,9 @@ impl SystemSetup {
         if let Some(input) = stdin {
             if let Some(mut handle) = child.stdin.take() {
                 use std::io::Write;
-                handle
-                    .write_all(input.as_bytes())
-                    .map_err(|e| AgentError::IoError(format!("Failed to write to {}: {}", cmd, e)))?;
+                handle.write_all(input.as_bytes()).map_err(|e| {
+                    AgentError::IoError(format!("Failed to write to {}: {}", cmd, e))
+                })?;
             }
         }
         let output = child
@@ -570,5 +766,12 @@ impl SystemSetup {
         }
 
         Ok(())
+    }
+
+    fn run_command_allow_failure(cmd: &str, args: &[&str]) -> bool {
+        match Command::new(cmd).args(args).status() {
+            Ok(status) => status.success(),
+            Err(_) => false,
+        }
     }
 }

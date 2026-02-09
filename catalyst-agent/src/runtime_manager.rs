@@ -82,7 +82,15 @@ impl ContainerdRuntime {
 
         // Set resource limits
         cmd.arg(format!("--memory={}m", memory_mb));
-        cmd.arg("--cpus").arg(&cpu_cores.to_string());
+        cmd.arg("--cpus").arg(cpu_cores.to_string());
+
+        // Security hardening: prevent privilege escalation and drop unnecessary capabilities
+        cmd.arg("--security-opt").arg("no-new-privileges");
+        cmd.arg("--cap-drop").arg("ALL");
+        cmd.arg("--cap-add").arg("CHOWN");
+        cmd.arg("--cap-add").arg("SETUID");
+        cmd.arg("--cap-add").arg("SETGID");
+        cmd.arg("--cap-add").arg("NET_BIND_SERVICE");
 
         // Volume mount (host data directory → /data in container)
         cmd.arg("-v").arg(format!("{}:/data", data_dir));
@@ -291,7 +299,7 @@ impl ContainerdRuntime {
         let mut fifo_perms = fs::metadata(&fifo_path)
             .map_err(|e| AgentError::ContainerError(format!("Failed to stat console FIFO: {}", e)))?
             .permissions();
-        fifo_perms.set_mode(0o666);
+        fifo_perms.set_mode(0o660);
         fs::set_permissions(&fifo_path, fifo_perms).map_err(|e| {
             AgentError::ContainerError(format!(
                 "Failed to set console FIFO permissions: {}",
@@ -1128,7 +1136,7 @@ fn create_fifo(path: &Path) -> std::io::Result<()> {
     match mkfifo(path, Mode::from_bits_truncate(0o600)) {
         Ok(()) => Ok(()),
         Err(Errno::EEXIST) => Ok(()),
-        Err(err) => Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
+        Err(err) => Err(std::io::Error::other(err)),
     }
 }
 

@@ -7,9 +7,10 @@
 set -euo pipefail
 export PATH="/usr/local/bin:$PATH"
 
-CONTAINERD_VERSION="latest"   # set to e.g. 1.7.17 to pin
-NERDCTL_VERSION="latest"      # set to e.g. 0.30.0 to pin
-BUILDKIT_VERSION="latest"     # set to e.g. v0.13.1 to pin
+CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.7.24}"
+NERDCTL_VERSION="${NERDCTL_VERSION:-1.8.1}"
+BUILDKIT_VERSION="${BUILDKIT_VERSION:-v0.17.2}"
+CNI_PLUGINS_VERSION="${CNI_PLUGINS_VERSION:-v1.4.1}"
 
 # Tools we will attempt to install via packages
 COMMON_PKGS=(curl ca-certificates tar gzip jq)
@@ -86,11 +87,16 @@ run_update_and_install() {
 apt_add_docker_repo() {
   # Add Docker repo to get a recent containerd package (for Debian/Ubuntu)
   if command -v apt-get >/dev/null 2>&1; then
+    local repo_id
+    repo_id="${OS_ID,,}"
+    if [ "$repo_id" != "ubuntu" ] && [ "$repo_id" != "debian" ]; then
+      repo_id="ubuntu"
+    fi
     $SUDO mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | $SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL "https://download.docker.com/linux/${repo_id}/gpg" | $SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     ARCH=$(dpkg --print-architecture 2>/dev/null || true)
     if [ -z "$ARCH" ]; then ARCH=amd64; fi
-    echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
+    echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${repo_id} $(lsb_release -cs) stable" | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
     $SUDO apt-get update -y
   fi
 }
@@ -101,6 +107,7 @@ install_containerd_package() {
     apt)
       apt_add_docker_repo
       if $SUDO apt-get install -y containerd; then return 0; fi
+      if $SUDO apt-get install -y containerd.io; then return 0; fi
       ;;
     apk)
       if $SUDO apk add --no-cache containerd; then return 0; fi
@@ -119,6 +126,38 @@ install_containerd_package() {
       ;;
   esac
   return 1
+}
+
+install_runtime_tools() {
+  log "Installing runtime utilities required by the agent"
+  case "$PM" in
+    apt)
+      $SUDO apt-get install -y iproute2 iptables rsync util-linux e2fsprogs
+      ;;
+    apk)
+      $SUDO apk add --no-cache iproute2 iptables rsync util-linux e2fsprogs
+      ;;
+    dnf|yum)
+      $SUDO $PM -y install iproute iptables rsync util-linux e2fsprogs
+      ;;
+    pacman)
+      $SUDO pacman -Sy --noconfirm iproute2 iptables rsync util-linux e2fsprogs
+      ;;
+    zypper)
+      $SUDO zypper install -y iproute2 iptables rsync util-linux e2fsprogs
+      ;;
+  esac
+}
+
+map_arch() {
+  local arch
+  arch=$(uname -m)
+  case "$arch" in
+    x86_64) echo "amd64" ;;
+    aarch64) echo "arm64" ;;
+    armv7l) echo "armv7" ;;
+    *) echo "amd64" ;;
+  esac
 }
 
 download_github_release_asset() {
@@ -200,18 +239,8 @@ EOF
 
 install_nerdctl() {
   log "Installing nerdctl"
-  ARCH=$(uname -m)
-  case "$ARCH" in
-    x86_64) ARCH=amd64 ;;
-    aarch64) ARCH=arm64 ;;
-    armv7l) ARCH=armv7 ;;
-    *) ARCH=amd64 ;;
-  esac
-  if [ "$NERDCTL_VERSION" = "latest" ]; then
-    tag="latest"
-  else
-    tag="v${NERDCTL_VERSION#v}"
-  fi
+  ARCH="$(map_arch)"
+  tag="v${NERDCTL_VERSION#v}"
   tmp="/tmp/nerdctl-${tag}-${ARCH}.tar.gz"
   if download_github_release_asset "containerd/nerdctl" "$tag" "linux.*${ARCH}.*\.tar\.gz|nerdctl-.*linux-${ARCH}.*\.tar\.gz" "$tmp"; then
     $SUDO tar -C /usr/local -xzf "$tmp"
@@ -224,19 +253,8 @@ install_nerdctl() {
 
 install_buildctl() {
   log "Installing buildctl (BuildKit)"
-  ARCH=$(uname -m)
-  case "$ARCH" in
-    x86_64) ARCH=amd64 ;;
-    aarch64) ARCH=arm64 ;;
-    armv7l) ARCH=armv7 ;;
-    *) ARCH=amd64 ;;
-  esac
-
-  if [ "$BUILDKIT_VERSION" = "latest" ]; then
-    tag="latest"
-  else
-    tag="${BUILDKIT_VERSION#v}"
-  fi
+  ARCH="$(map_arch)"
+  tag="${BUILDKIT_VERSION#v}"
   tmp="/tmp/buildkit-${tag}-${ARCH}.tar.gz"
   # The repo is moby/buildkit
   # Asset names vary; match linux and arch and include buildctl
@@ -254,6 +272,81 @@ install_buildctl() {
     rm -rf /tmp/buildkit-extract "$tmp"
   else
     error "Failed to download buildkit release"
+  fi
+}
+
+has_required_cni_plugins() {
+  local required=(bridge host-local portmap macvlan)
+  local plugin
+  for plugin in "${required[@]}"; do
+    if [ ! -x "/opt/cni/bin/${plugin}" ]; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+install_cni_plugins() {
+  if has_required_cni_plugins; then
+    log "CNI plugins already installed"
+    return 0
+  fi
+
+  log "Installing CNI plugins"
+  case "$PM" in
+    apt)
+      $SUDO apt-get install -y containernetworking-plugins || true
+      ;;
+    apk)
+      $SUDO apk add --no-cache cni-plugins || true
+      ;;
+    dnf|yum)
+      $SUDO $PM -y install containernetworking-plugins || true
+      ;;
+    pacman)
+      $SUDO pacman -Sy --noconfirm containernetworking-plugins || true
+      ;;
+    zypper)
+      $SUDO zypper install -y cni-plugins || true
+      ;;
+  esac
+
+  if has_required_cni_plugins; then
+    log "CNI plugins installed via package manager"
+    return 0
+  fi
+
+  ARCH="$(map_arch)"
+  if [ "$ARCH" = "armv7" ]; then
+    error "CNI plugin release install is only supported for amd64/arm64 in this script"
+  fi
+  version_tag="${CNI_PLUGINS_VERSION#v}"
+  cni_archive="/tmp/cni-plugins-${version_tag}-${ARCH}.tgz"
+  cni_url="https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/cni-plugins-linux-${ARCH}-${CNI_PLUGINS_VERSION}.tgz"
+
+  $SUDO mkdir -p /opt/cni/bin
+  curl -fsSL "$cni_url" -o "$cni_archive"
+  $SUDO tar -xzf "$cni_archive" -C /opt/cni/bin
+  rm -f "$cni_archive"
+
+  has_required_cni_plugins || error "CNI plugin installation finished but required binaries are missing"
+}
+
+ensure_containerd_config() {
+  log "Ensuring /etc/containerd/config.toml is present and compatible"
+  $SUDO mkdir -p /etc/containerd /etc/cni/net.d /var/lib/cni/networks
+  if [ ! -s /etc/containerd/config.toml ]; then
+    containerd config default | $SUDO tee /etc/containerd/config.toml >/dev/null
+  fi
+
+  if grep -q 'SystemdCgroup = false' /etc/containerd/config.toml; then
+    $SUDO sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+  elif ! grep -q 'SystemdCgroup = true' /etc/containerd/config.toml; then
+    cat <<'EOF' | $SUDO tee -a /etc/containerd/config.toml >/dev/null
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+  SystemdCgroup = true
+EOF
   fi
 }
 
@@ -292,6 +385,11 @@ post_install_checks() {
   command -v containerd >/dev/null 2>&1 && log "containerd: $(containerd --version 2>/dev/null || true)" || log "containerd not found in PATH"
   command -v nerdctl >/dev/null 2>&1 && log "nerdctl: $(nerdctl --version 2>/dev/null || true)" || log "nerdctl not found in PATH"
   command -v buildctl >/dev/null 2>&1 && log "buildctl: $(buildctl --version 2>/dev/null || true)" || log "buildctl not found in PATH"
+  if has_required_cni_plugins; then
+    log "CNI plugins: bridge, host-local, portmap, macvlan present"
+  else
+    log "CNI plugins missing required binaries"
+  fi
 }
 
 main() {
@@ -299,6 +397,7 @@ main() {
   log "Detected OS/package manager: $PM"
 
   run_update_and_install
+  install_runtime_tools
 
   if ! install_containerd_package; then
     log "Package install failed or unavailable, falling back to binary release"
@@ -308,10 +407,12 @@ main() {
   install_nerdctl
   install_buildctl
   install_runc_or_crun
+  install_cni_plugins
+  ensure_containerd_config
   enable_and_start_containerd
   post_install_checks
 
-  log "Done — containerd, nerdctl and buildctl should be installed."
+  log "Done — containerd, nerdctl, buildctl and CNI plugins should be installed."
   log "You may need to logout/login or add your user to the 'docker' or 'wheel' group for non-root usage." 
   log "If you use cgroup v2, ensure your system is configured accordingly and that containerd/runc/crun support it."
 }

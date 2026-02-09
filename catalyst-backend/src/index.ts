@@ -57,9 +57,10 @@ app.setErrorHandler((error, _request, reply) => {
   const status = (error as any).statusCode && (error as any).statusCode >= 400 ? (error as any).statusCode : 500;
   let message = "Internal Server Error";
   if (status !== 500) {
-    // Only expose validation/client error messages, never Prisma or internal details
     const raw = (error as Error).message || "";
-    message = raw.includes("\n") || raw.length > 200 ? "Bad Request" : raw;
+    // Only expose safe, short validation messages — never Prisma or internal details
+    const isPrismaError = raw.includes("prisma") || raw.includes("Unique constraint") || raw.includes("Foreign key");
+    message = raw.includes("\n") || raw.length > 200 || isPrismaError ? "Bad Request" : raw;
   }
   reply.status(status).send({ error: message });
 });
@@ -510,6 +511,19 @@ async function bootstrap() {
       return reply.send(fs.createReadStream(agentPath));
     });
 
+    // Canonical node deployment script endpoint (public)
+    app.get("/api/agent/deploy-script", async (_request, reply) => {
+      const deployScriptPath = path.resolve(process.cwd(), "..", "scripts", "deploy-agent.sh");
+
+      if (!fs.existsSync(deployScriptPath)) {
+        return reply.status(404).send({ error: "Deploy script not found" });
+      }
+
+      reply.header("Content-Type", "text/x-shellscript");
+      reply.header("Content-Disposition", "attachment; filename=deploy-agent.sh");
+      return reply.send(fs.createReadStream(deployScriptPath));
+    });
+
     // Node deployment script endpoint (public)
     app.get("/api/deploy/:token", async (request, reply) => {
       const { token } = request.params as { token: string };
@@ -645,140 +659,40 @@ function generateDeploymentScript(
   hostName: string,
   apiKey: string | null,
 ): string {
-  const safeApiKey = apiKey ? apiKey.replace(/'/g, "'\"'\"'") : "";
-  return `#!/bin/bash
-set -e
+  const shellEscape = (value: string) => `'${value.replace(/'/g, `'\"'\"'`)}'`;
+  const safeApiKey = apiKey ?? "";
 
-# Catalyst Agent Auto-Installer
-echo "Installing Catalyst Agent..."
+  return `#!/usr/bin/env bash
+set -euo pipefail
 
-# Resolve backend URLs for download + WebSocket
 BACKEND_HTTP_URL="${backendUrl}"
-BACKEND_WS_URL="$BACKEND_HTTP_URL"
-if [[ "$BACKEND_WS_URL" == https://* ]]; then
-  BACKEND_WS_URL="wss://$(echo "$BACKEND_WS_URL" | sed 's#^https://##')"
-elif [[ "$BACKEND_WS_URL" == http://* ]]; then
-  BACKEND_WS_URL="ws://$(echo "$BACKEND_WS_URL" | sed 's#^http://##')"
-fi
-if [[ "$BACKEND_WS_URL" != */ws ]]; then
-  BACKEND_WS_URL="$(echo "$BACKEND_WS_URL" | sed 's#/*$##')/ws"
-fi
-if [[ "$BACKEND_HTTP_URL" == *"/ws" ]]; then
-  BACKEND_HTTP_URL="$(echo "$BACKEND_HTTP_URL" | sed 's#/ws$##')"
-fi
+case "$BACKEND_HTTP_URL" in
+  ws://*) BACKEND_HTTP_URL="http://\${BACKEND_HTTP_URL#ws://}" ;;
+  wss://*) BACKEND_HTTP_URL="https://\${BACKEND_HTTP_URL#wss://}" ;;
+esac
+BACKEND_HTTP_URL="\${BACKEND_HTTP_URL%/}"
+BACKEND_HTTP_URL="\${BACKEND_HTTP_URL%/ws}"
+BACKEND_HTTP_URL="\${BACKEND_HTTP_URL%/}"
 
-# Install dependencies
-detect_pkg_manager() {
-  if command -v apt-get >/dev/null 2>&1; then echo "apt"; return; fi
-  if command -v apk >/dev/null 2>&1; then echo "apk"; return; fi
-  if command -v dnf >/dev/null 2>&1; then echo "dnf"; return; fi
-  if command -v yum >/dev/null 2>&1; then echo "yum"; return; fi
-  if command -v pacman >/dev/null 2>&1; then echo "pacman"; return; fi
-  if command -v zypper >/dev/null 2>&1; then echo "zypper"; return; fi
-  echo ""
+NODE_ID=${shellEscape(nodeId)}
+NODE_SECRET=${shellEscape(secret)}
+NODE_API_KEY=${shellEscape(safeApiKey)}
+NODE_HOSTNAME=${shellEscape(hostName)}
+
+DEPLOY_SCRIPT_URL="\${BACKEND_HTTP_URL}/api/agent/deploy-script"
+TMP_SCRIPT="$(mktemp /tmp/catalyst-deploy-agent.XXXXXX.sh)"
+
+cleanup() {
+  rm -f "$TMP_SCRIPT"
 }
+trap cleanup EXIT
 
-install_packages() {
-  local pm="$1"
-  case "$pm" in
-    apt)
-      apt-get update
-      apt-get install -y curl wget unzip pkg-config build-essential libssl-dev containerd.io nerdctl
-      ;;
-    apk)
-      apk add --no-cache curl wget unzip pkgconfig build-base openssl-dev containerd nerdctl
-      ;;
-    yum)
-      yum install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel containerd nerdctl
-      ;;
-    dnf)
-      dnf install -y curl wget unzip pkgconfig gcc gcc-c++ make openssl-devel containerd nerdctl
-      ;;
-    pacman)
-      pacman -Sy --noconfirm curl wget unzip pkgconf base-devel openssl containerd nerdctl
-      ;;
-    zypper)
-      zypper --non-interactive install curl wget unzip pkg-config gcc gcc-c++ make libopenssl-devel containerd nerdctl
-      ;;
-    *)
-      echo "Unsupported package manager. Please install curl, wget, unzip, pkg-config, build tools, and OpenSSL dev headers."
-      exit 1
-      ;;
-  esac
-}
+echo "Fetching deploy script from \${DEPLOY_SCRIPT_URL}"
+curl -fsSL "\${DEPLOY_SCRIPT_URL}" -o "$TMP_SCRIPT"
+chmod +x "$TMP_SCRIPT"
 
-PKG_MANAGER="$(detect_pkg_manager)"
-if [ -z "$PKG_MANAGER" ]; then
-  echo "No supported package manager found."
-  exit 1
-fi
-install_packages "$PKG_MANAGER"
-
-# Ensure containerd is available
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl enable --now containerd
-fi
-
-# Create agent directories
-  mkdir -p /opt/catalyst-agent
-  mkdir -p /var/lib/catalyst
-  cd /opt/catalyst-agent
-
-# Download agent binary
-echo "Downloading Catalyst Agent binary..."
-  curl -fsSL "$BACKEND_HTTP_URL/api/agent/download" -o /opt/catalyst-agent/catalyst-agent
-  if [ ! -s /opt/catalyst-agent/catalyst-agent ]; then
-    echo "Agent download failed or empty response from $BACKEND_HTTP_URL/api/agent/download"
-    exit 1
-  fi
-  chmod +x /opt/catalyst-agent/catalyst-agent
-
-# Create config file (overwrite on install/reinstall)
-cat > /opt/catalyst-agent/config.toml << EOF
-[server]
-backend_url = "$BACKEND_WS_URL"
-node_id = "${nodeId}"
-secret = "${secret}"
-api_key = "${safeApiKey}"
-hostname = "${hostName}"
-data_dir = "/var/lib/catalyst"
-max_connections = 100
-
-[containerd]
-socket_path = "/run/containerd/containerd.sock"
-namespace = "catalyst"
-
-[logging]
-level = "info"
-format = "json"
-EOF
-
-# Create systemd service
-cat > /etc/systemd/system/catalyst-agent.service << 'EOF'
-[Unit]
-Description=Catalyst Agent
-After=network.target containerd.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/catalyst-agent
-ExecStart=/opt/catalyst-agent/catalyst-agent
-Restart=on-failure
-RestartSec=10
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  systemctl daemon-reload
-  systemctl enable catalyst-agent
-  systemctl start catalyst-agent
-
-echo "Catalyst Agent installed successfully!"
-systemctl status catalyst-agent
+echo "Running deploy script..."
+"$TMP_SCRIPT" "$BACKEND_HTTP_URL" "$NODE_ID" "$NODE_SECRET" "$NODE_API_KEY" "$NODE_HOSTNAME"
 `;
 }
 
