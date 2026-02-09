@@ -59,7 +59,7 @@ export function createPluginContext(
     
     sendWebSocketMessage(target: string, message: any) {
       // Try to send to specific client ID
-      const client = wsGateway.clients.get(target);
+      const client = (wsGateway as any).clients?.get?.(target);
       if (client) {
         try {
           client.socket.send(JSON.stringify(message));
