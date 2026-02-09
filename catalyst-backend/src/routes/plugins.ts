@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { FastifyInstance } from 'fastify';
 import type { PluginLoader } from '../plugins/loader';
 import type { RbacMiddleware } from '../middleware/rbac';
@@ -9,7 +8,6 @@ const EnablePluginSchema = z.object({
 });
 
 const UpdatePluginConfigSchema = z.object({
-// @ts-nocheck
   config: z.record(z.any()),
 });
 
