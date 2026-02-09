@@ -195,6 +195,7 @@ Agents send health updates every 30 seconds to backend:
 - `health_report`: container status, uptime, error logs
 - Backend persists to `ServerMetrics` and `NodeMetrics` tables (with TTL indices)
 - Frontend uses WebSocket subscriptions for real-time metric streams
+- **Immediate metrics**: When a client subscribes to a server, backend sends `request_immediate_stats` to agent to provide instant data (avoids 30-second wait)
 
 **Important:** Metrics gaps > 2 minutes indicate agent disconnect; alert user.
 

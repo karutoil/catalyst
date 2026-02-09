@@ -392,6 +392,12 @@ impl WebSocketHandler {
             Some("upload_backup_complete") => self.handle_upload_backup_complete(&msg, write).await?,
             Some("resize_storage") => self.handle_resize_storage(&msg, write).await?,
             Some("resume_console") => self.resume_console(&msg).await?,
+            Some("request_immediate_stats") => {
+                info!("Received immediate stats request from backend");
+                if let Err(e) = self.send_resource_stats().await {
+                    warn!("Failed to send immediate stats: {}", e);
+                }
+            }
             Some("node_handshake_response") => {
                 info!("Handshake accepted by backend");
             }

@@ -1430,6 +1430,12 @@ export class WebSocketGateway {
         if (canConsoleRead) {
           await this.requestConsoleStream(server.id, server.uuid);
         }
+        // Request immediate metrics to avoid 30-second wait
+        if (server.nodeId) {
+          await this.sendToAgent(server.nodeId, {
+            type: "request_immediate_stats",
+          });
+        }
         return;
       }
 
