@@ -27,7 +27,7 @@ lazy_static = "1.4"
 regex = "1.10"
 sha2 = "0.10"
 base64 = "0.22"
-sysinfo = "0.30"
+sysinfo = "0.38"
 nix = { version = "0.28", features = ["fs"] }
 libc = "0.2"
 
