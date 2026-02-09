@@ -25,9 +25,12 @@ export const auth = betterAuth({
       userAgent: { type: "string", required: false },
     },
   },
-  trustedOrigins: [process.env.FRONTEND_URL, process.env.CORS_ORIGIN, "http://localhost:5173"].filter(
-    (origin): origin is string => Boolean(origin)
-  ),
+  trustedOrigins: [
+    baseUrl,
+    process.env.FRONTEND_URL, 
+    process.env.CORS_ORIGIN, 
+    "http://localhost:5173"
+  ].filter((origin): origin is string => Boolean(origin)),
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   emailAndPassword: {
     enabled: true,
@@ -85,9 +88,12 @@ export const auth = betterAuth({
       adminRoles: ["administrator"],
     }),
     passkey({
-      origin: [process.env.FRONTEND_URL, process.env.CORS_ORIGIN, "http://localhost:5173"].filter(
-        (origin): origin is string => Boolean(origin)
-      ),
+      origin: [
+        baseUrl,
+        process.env.FRONTEND_URL, 
+        process.env.CORS_ORIGIN, 
+        "http://localhost:5173"
+      ].filter((origin): origin is string => Boolean(origin)),
       rpID: process.env.PASSKEY_RP_ID || undefined,
       advanced: {
         webAuthnChallengeCookie: "better-auth-passkey",

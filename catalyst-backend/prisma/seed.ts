@@ -44,7 +44,8 @@ async function main() {
 
   console.log("✓ Node created");
 
-  // Create admin user
+  // Create admin user via better-auth API
+  // This ensures password is properly hashed and stored in the account table
   let user = await prisma.user.findUnique({
     where: { email: "admin@example.com" },
   });
@@ -73,6 +74,12 @@ async function main() {
   if (!user) {
     throw new Error("Failed to create admin user via better-auth");
   }
+
+  // Mark email as verified for development
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { emailVerified: true },
+  });
 
   console.log("✓ Admin user created (admin@example.com / admin123)");
 

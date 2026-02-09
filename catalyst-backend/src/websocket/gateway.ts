@@ -208,6 +208,7 @@ export class WebSocketGateway {
             { nodeId, authType: authResult.authType },
             "Agent authenticated during connection",
           );
+          agent.authenticated = true;
           await this.finalizeAgentConnection(authResult.node, agent);
         } else {
           this.logger.warn(`Agent authentication failed for node: ${nodeId}`);
@@ -238,7 +239,8 @@ export class WebSocketGateway {
   }
 
   private async finalizeAgentConnection(node: any, agent: ConnectedAgent) {
-    agent.authenticated = true;
+    // Note: agent.authenticated should be set to true BEFORE calling this function
+    // to prevent race conditions with the handshake timeout
     await this.prisma.node.update({
       where: { id: node.id },
       data: { isOnline: true, lastSeenAt: new Date() },
@@ -501,6 +503,8 @@ export class WebSocketGateway {
           this.agents.delete(nodeId);
           return;
         }
+        // Set authenticated flag IMMEDIATELY to prevent timeout from disconnecting during async operations
+        agent.authenticated = true;
         await this.finalizeAgentConnection(authResult.node, agent);
         return;
       }
