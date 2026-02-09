@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 import type { FastifyRequest, FastifyReply, RouteOptions } from 'fastify';
