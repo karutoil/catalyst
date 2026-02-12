@@ -11,6 +11,7 @@ import {
   CatalystError,
   ErrorCodes,
 } from "../shared-types";
+import { hasPermission } from "../lib/permissions";
 import { ServerStateMachine } from "../services/state-machine";
 import { normalizeHostIp } from "../utils/ipam";
 
@@ -115,23 +116,34 @@ export class WebSocketGateway {
 
   private async verifyAgentApiKey(nodeId: string, tokenValue: string) {
     try {
-      const verification = await auth.api.verifyApiKey({
-        body: {
-          key: tokenValue,
-        },
-      } as any);
-      const verificationData = (verification as any)?.response ?? verification;
-      if (!verificationData || typeof verificationData !== "object") {
+      // Direct database lookup to bypass better-auth's rate limiting
+      // Agent API keys are stored with metadata.nodeId for validation
+      const apiKeyRecord = await this.prisma.apikey.findUnique({
+        where: { key: tokenValue },
+      });
+
+      if (!apiKeyRecord) {
         return false;
       }
-      if (!verificationData?.valid || !verificationData?.key) {
+
+      // Check if the key is enabled
+      if (!apiKeyRecord.enabled) {
+        this.logger.warn({ nodeId }, "Agent API key is disabled");
         return false;
       }
-      const metadata = verificationData.key?.metadata;
+
+      // Check if the key is expired
+      if (apiKeyRecord.expiresAt && new Date(apiKeyRecord.expiresAt) < new Date()) {
+        this.logger.warn({ nodeId }, "Agent API key has expired");
+        return false;
+      }
+
+      // Verify the metadata contains the matching nodeId
+      const metadata = apiKeyRecord.metadata as Record<string, unknown> | null;
       if (!metadata || typeof metadata !== "object") {
         return false;
       }
-      const metaNodeId = (metadata as Record<string, unknown>).nodeId;
+      const metaNodeId = metadata.nodeId;
       return typeof metaNodeId === "string" && metaNodeId === nodeId;
     } catch (err) {
       this.logger.warn({ err, nodeId }, "Agent API key verification failed");
@@ -362,6 +374,15 @@ export class WebSocketGateway {
     } catch (err) {
       this.logger.error(err, "Error in client connection");
       socket.close();
+    }
+  }
+
+  private async userHasAdminRead(userId: string) {
+    try {
+      return await hasPermission(this.prisma, userId, "admin.read");
+    } catch (err) {
+      this.logger.warn({ err, userId }, "Failed to evaluate admin.read permission");
+      return false;
     }
   }
 
@@ -1421,16 +1442,35 @@ export class WebSocketGateway {
         if (!server) {
           return;
         }
+        const isAdmin = await this.userHasAdminRead(client.userId);
         const access = await this.prisma.serverAccess.findUnique({
           where: { userId_serverId: { userId: client.userId, serverId: server.id } },
         });
-        if (!access && server.ownerId !== client.userId) {
+        if (!access && server.ownerId !== client.userId && !isAdmin) {
+          if (client.socket.readyState === 1) {
+            client.socket.send(
+              JSON.stringify({
+                type: "error",
+                error: ErrorCodes.PERMISSION_DENIED,
+                serverId: server.id,
+              })
+            );
+          }
           return;
         }
         const isOwner = server.ownerId === client.userId;
-        const canConsoleRead = isOwner || access?.permissions?.includes("console.read");
-        const canServerRead = isOwner || access?.permissions?.includes("server.read");
+        const canConsoleRead = isOwner || isAdmin || access?.permissions?.includes("console.read");
+        const canServerRead = isOwner || isAdmin || access?.permissions?.includes("server.read");
         if (!canConsoleRead && !canServerRead) {
+          if (client.socket.readyState === 1) {
+            client.socket.send(
+              JSON.stringify({
+                type: "error",
+                error: ErrorCodes.PERMISSION_DENIED,
+                serverId: server.id,
+              })
+            );
+          }
           return;
         }
         client.subscriptions.add(server.id);
@@ -1482,11 +1522,13 @@ export class WebSocketGateway {
 
         // Check if client is owner or has access
         const isOwner = server.ownerId === client.userId;
-        if (!isOwner && !access) {
+        const isAdmin = await this.userHasAdminRead(client.userId);
+        if (!isOwner && !access && !isAdmin) {
           return client.socket.send(
             JSON.stringify({
               type: "error",
               error: ErrorCodes.PERMISSION_DENIED,
+              serverId: server.id,
             })
           );
         }
@@ -1494,10 +1536,11 @@ export class WebSocketGateway {
         if (process.env.SUSPENSION_ENFORCED !== "false" && server.suspendedAt) {
           return client.socket.send(
             JSON.stringify({
-              type: "error",
-              error: "SERVER_SUSPENDED",
-            })
-          );
+                type: "error",
+                error: "SERVER_SUSPENDED",
+                serverId: server.id,
+              })
+            );
         }
         const requiredPermission =
           event.action === "start"
@@ -1507,11 +1550,12 @@ export class WebSocketGateway {
               : event.action === "restart" || event.action === "reboot" || event.action === "kill"
                 ? "server.start"
                 : "server.start";
-        if (!isOwner && !access?.permissions?.includes(requiredPermission)) {
+        if (!isOwner && !isAdmin && !access?.permissions?.includes(requiredPermission)) {
           return client.socket.send(
             JSON.stringify({
               type: "error",
               error: ErrorCodes.PERMISSION_DENIED,
+              serverId: server.id,
             })
           );
         }
@@ -1530,6 +1574,7 @@ export class WebSocketGateway {
             JSON.stringify({
               type: "error",
               error: ErrorCodes.NODE_OFFLINE,
+              serverId: server.id,
             })
           );
         }
@@ -1549,32 +1594,40 @@ export class WebSocketGateway {
               JSON.stringify({
                 type: "error",
                 error: ErrorCodes.SERVER_NOT_FOUND,
+                serverId: event.serverId,
               })
             );
           }
           return;
         }
 
+        const isAdmin = await this.userHasAdminRead(client.userId);
         const access = await this.prisma.serverAccess.findUnique({
           where: { userId_serverId: { userId: client.userId, serverId: server.id } },
         });
-        if (!access && server.ownerId !== client.userId) {
+        if (!access && server.ownerId !== client.userId && !isAdmin) {
           if (client.socket.readyState === 1) {
             client.socket.send(
               JSON.stringify({
                 type: "error",
                 error: ErrorCodes.PERMISSION_DENIED,
+                serverId: server.id,
               })
             );
           }
           return;
         }
-        if (!access?.permissions?.includes("console.write") && server.ownerId !== client.userId) {
+        if (
+          !access?.permissions?.includes("console.write") &&
+          server.ownerId !== client.userId &&
+          !isAdmin
+        ) {
           if (client.socket.readyState === 1) {
             client.socket.send(
               JSON.stringify({
                 type: "error",
                 error: ErrorCodes.PERMISSION_DENIED,
+                serverId: server.id,
               })
             );
           }
@@ -1586,6 +1639,7 @@ export class WebSocketGateway {
               JSON.stringify({
                 type: "error",
                 error: "SERVER_SUSPENDED",
+                serverId: server.id,
               })
             );
           }
@@ -1629,6 +1683,7 @@ export class WebSocketGateway {
             JSON.stringify({
               type: "error",
               error: ErrorCodes.NODE_OFFLINE,
+              serverId: server.id,
             })
           );
         }

@@ -92,6 +92,15 @@ export function useConsole(serverId?: string, options: ConsoleOptions = {}) {
     if (!serverId) return;
     subscribe(serverId);
     const unsubscribeHandler = onMessage((message) => {
+      if (message.type === 'error') {
+        if (message.serverId && message.serverId !== serverId) return;
+        appendEntry({
+          stream: 'system',
+          data: `[Catalyst] ${message.error}\n`,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
       if (message.type !== 'console_output' || message.serverId !== serverId) return;
       appendEntry({
         stream: message.stream ?? 'stdout',

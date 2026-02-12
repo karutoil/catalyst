@@ -397,9 +397,12 @@ async function bootstrap() {
       return { status: "ok", timestamp: new Date().toISOString() };
     });
 
-    // WebSocket gateway
+    // WebSocket gateway - exempt from global rate limiting (authentication happens via handshake)
     app.register(async (app) => {
-      app.get("/ws", { websocket: true }, async (socket, request) => {
+      app.get("/ws", {
+        websocket: true,
+        config: { rateLimit: { max: 10000, timeWindow: '1 minute' } }
+      }, async (socket, request) => {
         await wsGateway.handleConnection(socket, request);
       });
     });

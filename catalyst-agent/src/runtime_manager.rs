@@ -16,7 +16,7 @@ use containerd_client::services::v1::tasks_client::TasksClient;
 use containerd_client::services::v1::events_client::EventsClient;
 use containerd_client::services::v1::{
     Container, CreateContainerRequest, DeleteContainerRequest, GetContainerRequest,
-    ListContainersRequest, ReadContentRequest,
+    InfoRequest, ListContainersRequest, ReadContentRequest,
 };
 use containerd_client::services::v1::{
     CreateTaskRequest, DeleteTaskRequest, ExecProcessRequest,
@@ -329,13 +329,24 @@ impl ContainerdRuntime {
             "TERM=xterm".to_string(),
         ];
         for (k, v) in env { env_list.push(format!("{}={}", k, v)); }
+        let caps = [
+            "CAP_CHOWN",
+            "CAP_DAC_OVERRIDE",
+            "CAP_DAC_READ_SEARCH",
+            "CAP_FOWNER",
+            "CAP_SETUID",
+            "CAP_SETGID",
+            "CAP_NET_BIND_SERVICE",
+        ];
 
         let spec = serde_json::json!({
             "ociVersion": "1.1.0",
             "process": {
                 "terminal": false, "user": {"uid":0,"gid":0},
                 "args": ["sh", "-c", script], "env": env_list,
-                "cwd": "/data", "noNewPrivileges": true
+                "cwd": "/data",
+                "capabilities":{"bounding":caps,"effective":caps,"permitted":caps,"ambient":caps},
+                "noNewPrivileges": true
             },
             "root": {"path":"rootfs","readonly":false},
             "hostname": &container_id,
@@ -520,7 +531,14 @@ impl ContainerdRuntime {
 
     pub async fn send_input(&self, container_id: &str, input: &str) -> AgentResult<()> {
         debug!("Sending input to container: {}", container_id);
-        self.ensure_container_io(container_id).await?;
+        if !self.is_container_running(container_id).await.unwrap_or(false) {
+            return Err(AgentError::ContainerError(format!(
+                "Cannot send input: container {} is not running",
+                container_id
+            )));
+        }
+
+        let has_io = self.ensure_container_io(container_id).await?;
         let handle = {
             let mut m = self.container_io.lock().await;
             m.get_mut(container_id).and_then(|io| io.stdin_writer.as_ref().and_then(|w| w.try_clone().ok()))
@@ -535,6 +553,14 @@ impl ContainerdRuntime {
             }).await.map_err(|e| AgentError::ContainerError(e.to_string()))??;
             return Ok(());
         }
+
+        if !has_io {
+            warn!(
+                "No stdin FIFO found for {}, falling back to exec-based stdin injection",
+                container_id
+            );
+        }
+
         // Fallback: exec
         let exec_id = format!("stdin-{}", &uuid::Uuid::new_v4().to_string()[..8]);
         let io_dir = PathBuf::from(CONSOLE_BASE_DIR).join(container_id);
@@ -555,12 +581,20 @@ impl ContainerdRuntime {
         tasks.exec(req).await.map_err(grpc_err)?;
         let req = StartRequest { container_id: container_id.to_string(), exec_id: exec_id.clone() };
         let req = with_namespace!(req, &self.namespace);
-        let _ = tasks.start(req).await;
+        tasks.start(req).await.map_err(grpc_err)?;
         let epc = ep.clone();
         let input_owned = input.to_string();
-        spawn_blocking(move || {
-            if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open(&epc) { let _ = f.write_all(input_owned.as_bytes()); }
-        }).await.ok();
+        spawn_blocking(move || -> AgentResult<()> {
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .open(&epc)
+                .map_err(|e| AgentError::ContainerError(format!("stdin fallback open: {}", e)))?;
+            f.write_all(input_owned.as_bytes())
+                .map_err(|e| AgentError::ContainerError(format!("stdin fallback write: {}", e)))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| AgentError::ContainerError(e.to_string()))??;
         let _ = fs::remove_file(&ep);
         let _ = fs::remove_file(&eo);
         Ok(())
@@ -891,39 +925,7 @@ impl ContainerdRuntime {
     }
 
     async fn get_image_env_inner(&self, image: &str) -> AgentResult<Vec<String>> {
-        let mut images = ImagesClient::new(self.channel.clone());
-        let req = GetImageRequest { name: image.to_string() };
-        let req = with_namespace!(req, &self.namespace);
-        let resp = images.get(req).await.map_err(grpc_err)?;
-        let img = resp.into_inner().image
-            .ok_or_else(|| AgentError::ContainerError("No image returned".into()))?;
-        let target = img.target
-            .ok_or_else(|| AgentError::ContainerError("Image has no target descriptor".into()))?;
-
-        let manifest_bytes = self.read_content_blob(&target.digest).await?;
-        let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
-            .map_err(|e| AgentError::ContainerError(format!("Bad manifest JSON: {}", e)))?;
-
-        // Handle manifest index (multi-platform) vs single manifest
-        let config_digest = if let Some(manifests) = manifest.get("manifests").and_then(|v| v.as_array()) {
-            let m = manifests.iter()
-                .find(|m| {
-                    let p = m.get("platform");
-                    p.and_then(|p| p.get("architecture")).and_then(|v| v.as_str()) == Some("amd64")
-                        && p.and_then(|p| p.get("os")).and_then(|v| v.as_str()) == Some("linux")
-                })
-                .or_else(|| manifests.first())
-                .and_then(|m| m.get("digest")).and_then(|v| v.as_str())
-                .ok_or_else(|| AgentError::ContainerError("No manifest in index".into()))?;
-            let inner_bytes = self.read_content_blob(m).await?;
-            let inner: serde_json::Value = serde_json::from_slice(&inner_bytes)
-                .map_err(|e| AgentError::ContainerError(format!("Bad inner manifest: {}", e)))?;
-            inner.get("config").and_then(|c| c.get("digest")).and_then(|v| v.as_str())
-                .ok_or_else(|| AgentError::ContainerError("No config in manifest".into()))?.to_string()
-        } else {
-            manifest.get("config").and_then(|c| c.get("digest")).and_then(|v| v.as_str())
-                .ok_or_else(|| AgentError::ContainerError("No config in manifest".into()))?.to_string()
-        };
+        let config_digest = self.resolve_image_config_digest(image).await?;
 
         let config_bytes = self.read_content_blob(&config_digest).await?;
         let config: serde_json::Value = serde_json::from_slice(&config_bytes)
@@ -933,6 +935,73 @@ impl ContainerdRuntime {
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default())
+    }
+
+    async fn resolve_image_config_digest(&self, image: &str) -> AgentResult<String> {
+        let mut images = ImagesClient::new(self.channel.clone());
+        let req = GetImageRequest {
+            name: image.to_string(),
+        };
+        let req = with_namespace!(req, &self.namespace);
+        let resp = images.get(req).await.map_err(grpc_err)?;
+        let img = resp
+            .into_inner()
+            .image
+            .ok_or_else(|| AgentError::ContainerError("No image returned".into()))?;
+        let target = img
+            .target
+            .ok_or_else(|| AgentError::ContainerError("Image has no target descriptor".into()))?;
+
+        let manifest_bytes = self.read_content_blob(&target.digest).await?;
+        let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
+            .map_err(|e| AgentError::ContainerError(format!("Bad manifest JSON: {}", e)))?;
+
+        if let Some(manifests) = manifest.get("manifests").and_then(|v| v.as_array()) {
+            let manifest_digest = manifests
+                .iter()
+                .find(|m| {
+                    let p = m.get("platform");
+                    p.and_then(|p| p.get("architecture")).and_then(|v| v.as_str())
+                        == Some("amd64")
+                        && p.and_then(|p| p.get("os")).and_then(|v| v.as_str()) == Some("linux")
+                })
+                .or_else(|| manifests.first())
+                .and_then(|m| m.get("digest"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| AgentError::ContainerError("No manifest in index".into()))?;
+            let inner_bytes = self.read_content_blob(manifest_digest).await?;
+            let inner: serde_json::Value = serde_json::from_slice(&inner_bytes)
+                .map_err(|e| AgentError::ContainerError(format!("Bad inner manifest: {}", e)))?;
+            return inner
+                .get("config")
+                .and_then(|c| c.get("digest"))
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string())
+                .ok_or_else(|| AgentError::ContainerError("No config in manifest".into()));
+        }
+
+        manifest
+            .get("config")
+            .and_then(|c| c.get("digest"))
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string())
+            .ok_or_else(|| AgentError::ContainerError("No config in manifest".into()))
+    }
+
+    async fn resolve_snapshot_parent_key(&self, image: &str) -> AgentResult<Option<String>> {
+        let config_digest = self.resolve_image_config_digest(image).await?;
+        let mut content = ContentClient::new(self.channel.clone());
+        let req = InfoRequest {
+            digest: config_digest,
+        };
+        let req = with_namespace!(req, &self.namespace);
+        let resp = content.info(req).await.map_err(grpc_err)?;
+        let labels = resp
+            .into_inner()
+            .info
+            .map(|info| info.labels)
+            .unwrap_or_default();
+        Ok(labels.get("containerd.io/gc.ref.snapshot.overlayfs").cloned())
     }
 
     async fn read_content_blob(&self, digest: &str) -> AgentResult<Vec<u8>> {
@@ -953,27 +1022,30 @@ impl ContainerdRuntime {
             .output().await;
 
         let mut snaps = SnapshotsClient::new(self.channel.clone());
-        // Try using image ref as parent first
+        // Try using image ref as parent first (works on some containerd setups).
         let req = PrepareSnapshotRequest {
             snapshotter: "overlayfs".to_string(), key: key.to_string(), parent: image.to_string(), ..Default::default()
         };
         let req = with_namespace!(req, &self.namespace);
         if snaps.prepare(req).await.is_ok() { return Ok(()); }
 
-        // Find the correct committed snapshot parent
-        if let Ok(out) = Command::new("ctr").arg("-n").arg(&self.namespace).arg("snapshot").arg("ls").output().await {
-            let text = String::from_utf8_lossy(&out.stdout);
-            for line in text.lines().skip(1) {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 3 && parts[2] == "Committed" {
-                    let req = PrepareSnapshotRequest {
-                        snapshotter: "overlayfs".to_string(), key: key.to_string(), parent: parts[0].to_string(), ..Default::default()
-                    };
-                    let req = with_namespace!(req, &self.namespace);
-                    if snaps.prepare(req).await.is_ok() { return Ok(()); }
-                }
+        // Resolve the exact unpacked snapshot parent for this image from content labels.
+        if let Some(parent) = self.resolve_snapshot_parent_key(image).await? {
+            let req = PrepareSnapshotRequest {
+                snapshotter: "overlayfs".to_string(),
+                key: key.to_string(),
+                parent: parent.clone(),
+                ..Default::default()
+            };
+            let req = with_namespace!(req, &self.namespace);
+            if snaps.prepare(req).await.is_ok() {
+                return Ok(());
             }
+            warn!("prepare snapshot with resolved parent {} failed for image {}", parent, image);
+        } else {
+            warn!("No overlayfs snapshot parent label found for image {}", image);
         }
+
         Err(AgentError::ContainerError(format!("Failed to prepare snapshot for {}", image)))
     }
 
@@ -993,29 +1065,50 @@ impl ContainerdRuntime {
                 env_map.insert(k.to_string(), v.to_string());
             }
         }
-        // Ensure basic defaults exist (don't override image PATH if present)
-        env_map.entry("PATH".to_string())
-            .or_insert_with(|| "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string());
-        env_map.insert("TERM".to_string(), "xterm".to_string());
         // Template/config env takes highest priority
         for (k, v) in config.env { env_map.insert(k.to_string(), v.to_string()); }
+        // Ensure PATH is usable for JVM-based images even if image env probing fails
+        // or template/server env accidentally overrides PATH.
+        // The Pterodactyl Hytale image provides java at /opt/java/openjdk/bin/java.
+        const DEFAULT_PATH: &str =
+            "/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+        let path_value = env_map.get("PATH").map(|v| v.trim()).unwrap_or("");
+        if path_value.is_empty() {
+            env_map.insert("PATH".to_string(), DEFAULT_PATH.to_string());
+        } else if !path_value.split(':').any(|segment| segment == "/opt/java/openjdk/bin") {
+            env_map.insert(
+                "PATH".to_string(),
+                format!("/opt/java/openjdk/bin:{}", path_value),
+            );
+        }
+        env_map.insert("TERM".to_string(), "xterm".to_string());
         let env_list: Vec<String> = env_map.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect();
 
         let args = if !config.startup_command.is_empty() {
-            let ep = io_dir.join("catalyst-entrypoint");
             let fifo = io_dir.join("stdin");
-            let script = format!("#!/bin/bash\nset -e\nFIFO=\"{}\"\nexec 3<> \"$FIFO\"\nexec < \"$FIFO\"\nexec {}\n", fifo.display(), config.startup_command);
-            let mut f = File::create(&ep).map_err(|e| AgentError::ContainerError(e.to_string()))?;
-            f.write_all(script.as_bytes()).map_err(|e| AgentError::ContainerError(e.to_string()))?;
-            let mut p = fs::metadata(&ep).map_err(|e| AgentError::ContainerError(e.to_string()))?.permissions();
-            p.set_mode(0o755); fs::set_permissions(&ep, p).ok();
-            vec![ep.to_string_lossy().to_string()]
-        } else { vec!["sh".to_string()] };
+            let escaped_startup = shell_escape_value(config.startup_command);
+            let wrapped_command = format!(
+                "export PATH=\"/opt/java/openjdk/bin:${{PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}}\"; FIFO=\"{}\"; exec 3<> \"$FIFO\"; exec < \"$FIFO\"; exec /bin/sh -c {}",
+                fifo.display(),
+                escaped_startup
+            );
+            vec!["/bin/sh".to_string(), "-c".to_string(), wrapped_command]
+        } else {
+            vec!["/bin/sh".to_string()]
+        };
 
         let mem_limit = (config.memory_mb as i64) * 1024 * 1024;
         let cpu_quota = (config.cpu_cores as i64) * 100_000;
         let cgroup_path = format!("/{}/{}", self.namespace, config.container_id);
-        let caps = ["CAP_CHOWN","CAP_SETUID","CAP_SETGID","CAP_NET_BIND_SERVICE"];
+        let caps = [
+            "CAP_CHOWN",
+            "CAP_DAC_OVERRIDE",
+            "CAP_DAC_READ_SEARCH",
+            "CAP_FOWNER",
+            "CAP_SETUID",
+            "CAP_SETGID",
+            "CAP_NET_BIND_SERVICE",
+        ];
         let mut mounts = base_mounts(config.data_dir);
         mounts.push(serde_json::json!({"destination":io_dir.to_string_lossy().to_string(),"type":"bind","source":io_dir.to_string_lossy().to_string(),"options":["rbind","rw"]}));
 
@@ -1211,6 +1304,11 @@ fn open_fifo_rdwr(path: &Path) -> AgentResult<File> {
 
 fn set_dir_perms(path: &Path, mode: u32) {
     if let Ok(md) = fs::metadata(path) { let mut p = md.permissions(); p.set_mode(mode); fs::set_permissions(path, p).ok(); }
+}
+
+fn shell_escape_value(value: &str) -> String {
+    let escaped = value.replace('\'', "'\"'\"'");
+    format!("'{}'", escaped)
 }
 
 fn grpc_err(e: tonic::Status) -> AgentError {

@@ -5,7 +5,6 @@ use regex::Regex;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -23,6 +22,7 @@ use crate::config::CniNetworkConfig;
 type WsStream =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 type WsWrite = SplitSink<WsStream, Message>;
+const CONTAINER_SERVER_DIR: &str = "/data";
 
 /// Shell-escape a value for safe interpolation into a bash script.
 /// Wraps the value in single quotes and escapes any embedded single quotes.
@@ -31,6 +31,27 @@ fn shell_escape_value(value: &str) -> String {
     // To include a literal single quote: end the single-quoted string, add an escaped quote, restart.
     let escaped = value.replace('\'', "'\"'\"'");
     format!("'{}'", escaped)
+}
+
+/// Normalize common bash arithmetic condition syntax so startup commands run under /bin/sh.
+/// Example: `((1))` -> `[ $((1)) -ne 0 ]`
+fn normalize_startup_for_sh(command: &str) -> String {
+    static ARITH_COND_RE: OnceLock<Regex> = OnceLock::new();
+    let re = ARITH_COND_RE.get_or_init(|| {
+        Regex::new(r"\(\(\s*([^()]*)\s*\)\)").expect("valid arithmetic condition regex")
+    });
+    re.replace_all(command, |caps: &regex::Captures<'_>| {
+        let expr = caps
+            .get(1)
+            .map(|m| m.as_str().trim())
+            .unwrap_or("");
+        if expr.is_empty() {
+            "[ 0 -ne 0 ]".to_string()
+        } else {
+            format!("[ $(( {} )) -ne 0 ]", expr)
+        }
+    })
+    .into_owned()
 }
 
 pub struct WebSocketHandler {
@@ -60,96 +81,6 @@ impl Clone for WebSocketHandler {
 }
 
 impl WebSocketHandler {
-    fn is_hytale_template(template: &serde_json::Map<String, Value>) -> bool {
-        let name = template
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let image = template
-            .get("image")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let startup = template
-            .get("startup")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let install_script = template
-            .get("installScript")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-
-        name.to_lowercase().contains("hytale")
-            || image.to_lowercase().contains("hytale")
-            || startup.contains("HytaleServer.jar")
-            || install_script.contains("hytale-downloader")
-    }
-
-    async fn ensure_hytale_runtime_permissions(
-        &self,
-        server_id: &str,
-        template: &serde_json::Map<String, Value>,
-        server_dir: &str,
-    ) -> AgentResult<()> {
-        if !Self::is_hytale_template(template) {
-            return Ok(());
-        }
-
-        if let Ok(metadata) = tokio::fs::metadata(server_dir).await {
-            if metadata.uid() == 1001 {
-                return Ok(());
-            }
-        }
-
-        self.emit_console_output(
-            server_id,
-            "system",
-            "[Catalyst] Repairing Hytale file permissions for runtime user...\n",
-        )
-        .await?;
-
-        let ownership_status = tokio::process::Command::new("chown")
-            .arg("-R")
-            .arg("1001:1001")
-            .arg(server_dir)
-            .status()
-            .await
-            .map_err(|e| AgentError::IoError(format!("Failed to run chown: {}", e)))?;
-        if !ownership_status.success() {
-            warn!(
-                "Failed to chown Hytale server directory {} for server {}",
-                server_dir, server_id
-            );
-            self.emit_console_output(
-                server_id,
-                "system",
-                "[Catalyst] Warning: failed to set ownership to uid/gid 1001.\n",
-            )
-            .await?;
-        }
-
-        let chmod_status = tokio::process::Command::new("chmod")
-            .arg("-R")
-            .arg("u+rwX")
-            .arg(server_dir)
-            .status()
-            .await
-            .map_err(|e| AgentError::IoError(format!("Failed to run chmod: {}", e)))?;
-        if !chmod_status.success() {
-            warn!(
-                "Failed to chmod Hytale server directory {} for server {}",
-                server_dir, server_id
-            );
-            self.emit_console_output(
-                server_id,
-                "system",
-                "[Catalyst] Warning: failed to apply chmod u+rwX on server files.\n",
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-
     pub fn new(
         config: Arc<AgentConfig>,
         runtime: Arc<ContainerdRuntime>,
@@ -221,9 +152,25 @@ impl WebSocketHandler {
     }
 
     async fn establish_connection(&self) -> AgentResult<()> {
+        // Include token in URL for rate limit bypass before WebSocket upgrade
+        let auth_token = if let Some(api_key) =
+            self.config.server.api_key.as_ref().and_then(|value| {
+                if value.trim().is_empty() {
+                    None
+                } else {
+                    Some(value)
+                }
+            }) {
+            api_key.as_str()
+        } else {
+            self.config.server.secret.as_str()
+        };
+
         let ws_url = format!(
-            "{}?nodeId={}",
-            self.config.server.backend_url, self.config.server.node_id
+            "{}?nodeId={}&token={}",
+            self.config.server.backend_url,
+            self.config.server.node_id,
+            auth_token
         );
 
         info!(
@@ -511,16 +458,74 @@ impl WebSocketHandler {
         server_id: &str,
         server_uuid: &str,
     ) -> Option<String> {
-        if self.runtime.container_exists(server_id).await {
-            warn!(
-                "Console container lookup using serverId {} (uuid {})",
+        let server_id_exists = self.runtime.container_exists(server_id).await;
+        let server_uuid_exists = if server_uuid != server_id {
+            self.runtime.container_exists(server_uuid).await
+        } else {
+            false
+        };
+
+        if !server_id_exists && !server_uuid_exists {
+            return None;
+        }
+
+        let server_id_running = if server_id_exists {
+            self.runtime
+                .is_container_running(server_id)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        let server_uuid_running = if server_uuid_exists {
+            self.runtime
+                .is_container_running(server_uuid)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if server_id_running && !server_uuid_running {
+            debug!(
+                "Console container resolved to serverId {} (uuid {})",
                 server_id, server_uuid
             );
             return Some(server_id.to_string());
         }
-        if self.runtime.container_exists(server_uuid).await {
+
+        if server_uuid_running && !server_id_running {
+            warn!(
+                "Console container resolved to uuid {} because serverId {} is not running",
+                server_uuid, server_id
+            );
             return Some(server_uuid.to_string());
         }
+
+        if server_id_running && server_uuid_running {
+            warn!(
+                "Both serverId {} and uuid {} containers are running; using serverId",
+                server_id, server_uuid
+            );
+            return Some(server_id.to_string());
+        }
+
+        if server_id_exists {
+            debug!(
+                "Console container resolved to serverId {} (uuid {}), container is stopped",
+                server_id, server_uuid
+            );
+            return Some(server_id.to_string());
+        }
+
+        if server_uuid_exists {
+            debug!(
+                "Console container resolved to uuid {} (serverId {}), container is stopped",
+                server_uuid, server_id
+            );
+            return Some(server_uuid.to_string());
+        }
+
         None
     }
 
@@ -730,8 +735,8 @@ impl WebSocketHandler {
 
         self.cleanup_all_server_containers(server_id, server_uuid).await?;
 
-        // Backend should provide SERVER_DIR automatically
-        let server_dir = environment
+        // Backend provides a host path for mounting. Inside containers, files are available at /data.
+        let host_server_dir = environment
             .get("SERVER_DIR")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
@@ -741,12 +746,12 @@ impl WebSocketHandler {
             });
 
         let disk_mb = msg["allocatedDiskMb"].as_u64().unwrap_or(10240);
-        let server_dir_path = PathBuf::from(&server_dir);
+        let server_dir_path = PathBuf::from(&host_server_dir);
         self.storage_manager
             .ensure_mounted(server_uuid, &server_dir_path, disk_mb)
             .await?;
 
-        let server_dir_path = std::path::PathBuf::from(&server_dir);
+        let server_dir_path = std::path::PathBuf::from(&host_server_dir);
 
         tokio::fs::create_dir_all(&server_dir_path)
             .await
@@ -762,7 +767,11 @@ impl WebSocketHandler {
         final_script = final_script.replace("\r\n", "\n").replace('\r', "\n");
         for (key, value) in environment {
             let placeholder = format!("{{{{{}}}}}", key);
-            let replacement = value.as_str().unwrap_or("");
+            let replacement = if key == "SERVER_DIR" {
+                CONTAINER_SERVER_DIR
+            } else {
+                value.as_str().unwrap_or("")
+            };
             // Shell-escape the value to prevent command injection via user-controlled env vars
             let escaped = shell_escape_value(replacement);
             final_script = final_script.replace(&placeholder, &escaped);
@@ -781,6 +790,8 @@ impl WebSocketHandler {
                 env_map.insert(key.clone(), s.to_string());
             }
         }
+        env_map.insert("HOST_SERVER_DIR".to_string(), host_server_dir.clone());
+        env_map.insert("SERVER_DIR".to_string(), CONTAINER_SERVER_DIR.to_string());
 
         info!(
             "Executing installation script in containerized environment using image: {}",
@@ -793,7 +804,7 @@ impl WebSocketHandler {
         // The container mounts the server directory at /data and runs the script there
         let installer = self
             .runtime
-            .spawn_installer_container(install_image, &final_script, &env_map, &server_dir)
+            .spawn_installer_container(install_image, &final_script, &env_map, &host_server_dir)
             .await
             .map_err(|e| AgentError::IoError(format!("Failed to spawn installer container: {}", e)))?;
 
@@ -885,9 +896,6 @@ impl WebSocketHandler {
             self.emit_console_output(server_id, "system", "[Catalyst] Installation complete.\n")
                 .await?;
         }
-
-        self.ensure_hytale_runtime_permissions(server_id, template, &server_dir)
-            .await?;
 
         // Stop any existing log streams for this server before marking as stopped
         // This ensures clean state when transitioning to game server container
@@ -1079,19 +1087,19 @@ impl WebSocketHandler {
                 }
             }
 
-            // Get SERVER_DIR from environment
-            let server_dir = environment
+            // Backend provides host mount path via SERVER_DIR. Inside containers, the mounted path is /data.
+            let host_server_dir = environment
                 .get("SERVER_DIR")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("/tmp/catalyst-servers/{}", server_uuid));
 
-            let server_dir_path = PathBuf::from(&server_dir);
+            let server_dir_path = PathBuf::from(&host_server_dir);
             self.storage_manager
                 .ensure_mounted(server_uuid, &server_dir_path, disk_mb)
                 .await?;
-            self.ensure_hytale_runtime_permissions(server_id, template, &server_dir)
-                .await?;
+            env_map.insert("HOST_SERVER_DIR".to_string(), host_server_dir.clone());
+            env_map.insert("SERVER_DIR".to_string(), CONTAINER_SERVER_DIR.to_string());
 
             info!("Starting server: {} (UUID: {})", server_id, server_uuid);
             info!(
@@ -1126,6 +1134,9 @@ impl WebSocketHandler {
                 let placeholder = format!("{{{{{}}}}}", key);
                 final_startup_command = final_startup_command.replace(&placeholder, value);
             }
+
+            // Some templates use bash-style arithmetic tests like ((1)); convert for /bin/sh.
+            final_startup_command = normalize_startup_for_sh(&final_startup_command);
 
             info!("Final startup command: {}", final_startup_command);
 
@@ -1165,7 +1176,7 @@ impl WebSocketHandler {
                     env: &env_map,
                     memory_mb,
                     cpu_cores,
-                    data_dir: &server_dir,
+                    data_dir: &host_server_dir,
                     port: primary_port,
                     port_bindings: &port_bindings,
                     network_mode,
@@ -1354,6 +1365,12 @@ impl WebSocketHandler {
             .get("serverUuid")
             .and_then(|value| value.as_str())
             .unwrap_or(server_id);
+        info!(
+            "Received console input for server {} (uuid {}), bytes={}",
+            server_id,
+            server_uuid,
+            data.len()
+        );
         let container_id = self.resolve_container_id(server_id, server_uuid).await;
         if container_id.is_empty() {
             let err =
@@ -1386,6 +1403,11 @@ impl WebSocketHandler {
                 .await;
             return Err(err);
         }
+
+        info!(
+            "Console input delivered for server {} to container {}",
+            server_id, container_id
+        );
 
         Ok(())
     }

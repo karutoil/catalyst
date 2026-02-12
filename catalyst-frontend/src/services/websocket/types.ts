@@ -1,5 +1,11 @@
 export type WebSocketMessage =
   | {
+      type: 'error';
+      error: string;
+      serverId?: string;
+      timestamp?: number | string;
+    }
+  | {
       type: 'console_output';
       serverId: string;
       stream?: string;
